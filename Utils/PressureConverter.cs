@@ -17,7 +17,7 @@ namespace VacX_OutSense.Utils
         public enum PressureUnit
         {
             Torr,       // 토르 (기본 단위)
-            Mbar,       // 밀리바
+            mbar,       // 밀리바
             Pascal,     // 파스칼
             Bar,        // 바
             Psi,        // 파운드/평방인치
@@ -43,7 +43,7 @@ namespace VacX_OutSense.Utils
             {
                 case PressureUnit.Torr:
                     return torr;
-                case PressureUnit.Mbar:
+                case PressureUnit.mbar:
                     return torr * TORR_TO_MBAR;
                 case PressureUnit.Pascal:
                     return torr * TORR_TO_PASCAL;
@@ -70,7 +70,7 @@ namespace VacX_OutSense.Utils
             {
                 case PressureUnit.Torr:
                     return pressure;
-                case PressureUnit.Mbar:
+                case PressureUnit.mbar:
                     return pressure / TORR_TO_MBAR;
                 case PressureUnit.Pascal:
                     return pressure / TORR_TO_PASCAL;
@@ -114,7 +114,7 @@ namespace VacX_OutSense.Utils
             {
                 case PressureUnit.Torr:
                     return "Torr";
-                case PressureUnit.Mbar:
+                case PressureUnit.mbar:
                     return "mbar";
                 case PressureUnit.Pascal:
                     return "Pa";

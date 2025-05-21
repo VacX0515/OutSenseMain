@@ -9,16 +9,24 @@ using VacX_OutSense.Core.Devices.IO_Module;
 using VacX_OutSense.Core.Devices.IO_Module.Enum;
 using VacX_OutSense.Core.Devices.IO_Module.Models;
 using VacX_OutSense.Core.Devices.Relay_Module;
-using VacX_OutSense.Core.Devices.Relay_Module.Enum; 
+using VacX_OutSense.Core.Devices.Relay_Module.Enum;
 using VacX_OutSense.Core.Devices.Relay_Module.Models;
 using VacX_OutSense.Core.Devices.TurboPump;
 using VacX_OutSense.Core.Devices.TempController;
+// 필요한 using 문 추가
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+using VacX_OutSense.Utils; // LoggerService와 DataLoggerService가 있는 네임스페이스
 
 namespace VacX_OutSense
 {
     public partial class MainForm : Form
     {
         #region 필드 및 속성
+
+        // 로깅 관련 필드 추가
+        private bool _isLoggingEnabled = true; // 기본적으로 로깅 활성화
 
         // 통신 관리자
         private MultiPortSerialManager _multiPortManager;
@@ -47,15 +55,15 @@ namespace VacX_OutSense
         private System.Windows.Forms.Timer _turboPumpUpdateTimer;
         private System.Windows.Forms.Timer _bathCirculatorUpdateTimer;
         private System.Windows.Forms.Timer _tempControllerUpdateTimer;
-
+        private System.Windows.Forms.Timer _updateTimer;
 
         // 타이머 간격 (밀리초)
         private const int DEFAULT_IO_UPDATE_INTERVAL = 200;        // 0.5초
         private const int DEFAULT_RELAY_UPDATE_INTERVAL = 200;     // 0.5초
-        private const int DEFAULT_DRYPUMP_UPDATE_INTERVAL = 300;  // 1초
-        private const int DEFAULT_TURBOPUMP_UPDATE_INTERVAL = 300; // 1초
-        private const int DEFAULT_BATHCIRCULATOR_UPDATE_INTERVAL = 300; // 1초
-        private const int DEFAULT_TEMP_CONTROLLER_UPDATE_INTERVAL = 300; // 0.5초
+        private const int DEFAULT_DRYPUMP_UPDATE_INTERVAL = 500;  // 1초
+        private const int DEFAULT_TURBOPUMP_UPDATE_INTERVAL = 500; // 1초
+        private const int DEFAULT_BATHCIRCULATOR_UPDATE_INTERVAL = 1000; // 1초
+        private const int DEFAULT_TEMP_CONTROLLER_UPDATE_INTERVAL = 200; // 0.5초
 
         // 비동기 통신 상태 추적
         private bool _isUpdatingIOData = false;
@@ -135,9 +143,73 @@ namespace VacX_OutSense
         {
             InitializeComponent();
             SetupEventHandlers();
-            InitializeTimer();
-            InitializeSerialManager();
-            InitializeDevices();
+
+            InitializeWithLoadingScreen();
+        }
+
+        private async void InitializeWithLoadingScreen()
+        {
+            // 로딩창 생성
+            LoadingForm loadingForm = new LoadingForm();
+
+            // 메인 폼은 초기에 숨김 처리
+            this.Opacity = 0;
+
+            // 백그라운드 작업 설정
+            CancellationTokenSource cts = new CancellationTokenSource();
+            Task initTask = Task.Run(() =>
+            {
+                try
+                {
+                    // 로딩창 메시지 업데이트
+                    loadingForm.UpdateStatus("타이머 초기화 중...");
+                    InitializeTimer();
+                    Thread.Sleep(100);
+
+                    // 로딩창 메시지 업데이트
+                    loadingForm.UpdateStatus("통신 관리자 초기화 중...");
+                    InitializeSerialManager();
+                    Thread.Sleep(100); // UI 업데이트를 위한 짧은 지연
+
+                    //// 로딩창 메시지 업데이트
+                    //loadingForm.UpdateStatus("장치 초기화 중...");
+                    //InitializeDevices();
+                    //Thread.Sleep(100);
+
+                    // 로딩창 메시지 업데이트
+                    loadingForm.UpdateStatus("로깅 시스템 초기화 중...");
+                    InitializeLogging();
+                    Thread.Sleep(100);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"초기화 중 오류가 발생했습니다: {ex.Message}", "초기화 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }, cts.Token);
+
+            // 로딩창 표시
+            loadingForm.Show();
+
+            // 초기화 작업이 완료될 때까지 대기
+            await initTask;
+
+            // 로딩창 닫기
+            loadingForm.Close();
+            loadingForm.Dispose();
+
+            // 메인 폼 표시
+            this.Opacity = 1;
+
+            // 중요: 타이머 시작을 UI 스레드에서 명시적으로 다시 호출
+            SafeInvoke(() =>
+            {
+                InitializeDevices();
+                LoggerService.Instance.LogInfo("장치 타이머를 시작했습니다.");
+            });
+
+
+            // 로그 메시지
+            LoggerService.Instance.LogInfo("VacX_OutSense 시스템 초기화 완료");
         }
 
         private void InitializeTimer()
@@ -199,10 +271,10 @@ namespace VacX_OutSense
                 RegisterDevicePort("COM5", _bathCirculatorDefaultSettings); // 칠러
                 RegisterDevicePort("COM6", _tempControllerDefaultSettings);
 
-                // IO 모듈 초기화
-                _ioModule = new IO_Module(_deviceAdapters["COM4"], "M31-XAXA0404G-L", 1);
-                connectionIndicator_iomodule.DataSource = _ioModule;
-                connectionIndicator_iomodule.DataMember = "IsConnected";
+                // 터보 펌프 초기화
+                _turboPump = new TurboPump(_deviceAdapters["COM1"], "MAG W 1300", 1);
+                connectionIndicator_turbopump.DataSource = _turboPump;
+                connectionIndicator_turbopump.DataMember = "IsConnected";
 
                 // 릴레이 모듈 초기화
                 _relayModule = new RelayModule(_deviceAdapters["COM2"]);
@@ -214,10 +286,15 @@ namespace VacX_OutSense
                 connectionIndicator_drypump.DataSource = _dryPump;
                 connectionIndicator_drypump.DataMember = "IsConnected";
 
-                // 터보 펌프 초기화
-                _turboPump = new TurboPump(_deviceAdapters["COM1"], "MAG W 1300", 1);
-                connectionIndicator_turbopump.DataSource = _turboPump;
-                connectionIndicator_turbopump.DataMember = "IsConnected";
+                // IO 모듈 초기화
+                _ioModule = new IO_Module(_deviceAdapters["COM4"], "M31-XAXA0404G-L", 1);
+                connectionIndicator_iomodule.DataSource = _ioModule;
+                connectionIndicator_iomodule.DataMember = "IsConnected";
+
+                // Bath Circulator(칠러) 초기화
+                _bathCirculator = new BathCirculator(_deviceAdapters["COM5"], "LK-1000", 1);
+                connectionIndicator_bathcirculator.DataSource = _bathCirculator;
+                connectionIndicator_bathcirculator.DataMember = "IsConnected";
 
                 // 온도 컨트롤러 인스턴스 생성 (국번: 1)
                 _tempController = new TempController(_deviceAdapters["COM6"], 1);
@@ -228,11 +305,6 @@ namespace VacX_OutSense
                 _atmSwitch = new ATMswitch();
                 _piraniGauge = new PiraniGauge();
                 _ionGauge = new IonGauge();
-
-                // Bath Circulator(칠러) 초기화
-                _bathCirculator = new BathCirculator(_deviceAdapters["COM5"], "LK-1000", 1);
-                connectionIndicator_bathcirculator.DataSource = _bathCirculator;
-                connectionIndicator_bathcirculator.DataMember = "IsConnected";
 
                 // 장치 목록에 추가
                 _deviceList.Add(_ioModule);
@@ -313,10 +385,10 @@ namespace VacX_OutSense
         // 타이머 시작을 위한 별도의 메서드
         private void StartDeviceTimers()
         {
-            StartTimerIfInitialized(_ioModuleUpdateTimer, "IO 모듈");
-            StartTimerIfInitialized(_relayModuleUpdateTimer, "릴레이 모듈");
-            StartTimerIfInitialized(_dryPumpUpdateTimer, "드라이 펌프");
-            StartTimerIfInitialized(_turboPumpUpdateTimer, "터보 펌프");
+            StartTimerIfInitialized(_ioModuleUpdateTimer, "IO Module");
+            StartTimerIfInitialized(_relayModuleUpdateTimer, "Relay Module");
+            StartTimerIfInitialized(_dryPumpUpdateTimer, "Dry Pump");
+            StartTimerIfInitialized(_turboPumpUpdateTimer, "Turbo Pump");
             StartTimerIfInitialized(_bathCirculatorUpdateTimer, "Bath Circulator");
             StartTimerIfInitialized(_tempControllerUpdateTimer, "Temp Controller");
         }
@@ -336,8 +408,25 @@ namespace VacX_OutSense
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
+            LoggerService.Instance.LogInfo("애플리케이션 종료 중...");
+
             // 연결 해제 및 리소스 정리
             DisconnectAllDevices();
+
+            // 로깅 세션 종료
+            DataLoggerService.Instance.StopAllLogging();
+
+            // 리소스 정리
+            if (_updateTimer != null)
+            {
+                _updateTimer.Dispose();
+            }
+
+            // 이벤트 핸들러 정리
+            LoggerService.Instance.LogAdded -= LoggerService_LogAdded;
+
+            // 종료 로그
+            LoggerService.Instance.LogInfo("애플리케이션이 종료되었습니다.");
         }
 
         #endregion
@@ -423,6 +512,57 @@ namespace VacX_OutSense
                     try
                     {
                         SafeInvoke(() => UpdateTempControllerUI());
+                        // 활성화된 경우에만 데이터 로깅 수행
+                        if (_isLoggingEnabled)
+                        {
+                            try
+                            {
+                                List<string> tempControllerValues = new List<string>();
+
+                                // 채널 1 데이터
+                                //250520 YH 요청 로그에 온도 단위 제거(그래프)
+                                if (_tempController.Status.ChannelStatus.Length > 0)
+                                {
+                                    var ch1 = _tempController.Status.ChannelStatus[0];
+                                    tempControllerValues.Add(ch1.FormattedPresentValue.Trim('C').Trim('°'));
+                                    tempControllerValues.Add(ch1.FormattedSetValue.Trim('C').Trim('°'));
+                                    tempControllerValues.Add(ch1.HeatingMV.ToString("F1"));
+                                    tempControllerValues.Add(_tempController.GetChannelStatusText(1));
+                                }
+                                else
+                                {
+                                    tempControllerValues.Add("N/A");
+                                    tempControllerValues.Add("N/A");
+                                    tempControllerValues.Add("N/A");
+                                    tempControllerValues.Add("N/A");
+                                }
+
+                                // 채널 2 데이터
+                                if (_tempController.Status.ChannelStatus.Length > 1)
+                                {
+                                    var ch2 = _tempController.Status.ChannelStatus[1];
+                                    tempControllerValues.Add(ch2.FormattedPresentValue.Trim('C').Trim('°'));
+                                    tempControllerValues.Add(ch2.FormattedSetValue.Trim('C').Trim('°'));
+                                    tempControllerValues.Add(ch2.HeatingMV.ToString("F1"));
+                                    tempControllerValues.Add(_tempController.GetChannelStatusText(2));
+                                }
+                                else
+                                {
+                                    tempControllerValues.Add("N/A");
+                                    tempControllerValues.Add("N/A");
+                                    tempControllerValues.Add("N/A");
+                                    tempControllerValues.Add("N/A");
+                                }
+
+                                await DataLoggerService.Instance.LogDataAsync("TempController", tempControllerValues).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                LoggerService.Instance.LogError($"온도 컨트롤러 데이터 로깅 중 오류: {ex.Message}", ex);
+                            }
+
+
+                        }
                     }
                     finally
                     {
@@ -462,6 +602,7 @@ namespace VacX_OutSense
                         txtCh1HeatingMV.Text = $"{channelStatus.HeatingMV:F1} %";
                         btnCh1Start.Enabled = !channelStatus.IsRunning;
                         btnCh1Stop.Enabled = channelStatus.IsRunning;
+                        txtCh1IsAutotune.Text = channelStatus.IsAutoTuning ? "Autotune On" : "Autotune Off";
                         break;
 
                     case 1: // CH2
@@ -471,6 +612,7 @@ namespace VacX_OutSense
                         txtCh2HeatingMV.Text = $"{channelStatus.HeatingMV:F1} %";
                         btnCh2Start.Enabled = !channelStatus.IsRunning;
                         btnCh2Stop.Enabled = channelStatus.IsRunning;
+                        txtCh2IsAutotune.Text = channelStatus.IsAutoTuning ? "Autotune On" : "Autotune Off";
                         break;
 
                         //case 2: // CH3
@@ -506,6 +648,9 @@ namespace VacX_OutSense
         private void btnCh1Start_Click(object sender, EventArgs e)
         {
             ExecuteTempControllerCommand(() => _tempController.Start(1), "CH1 시작");
+
+            ExecuteTempControllerCommand(() => _tempController.StartAutoTuning(1), "CH1 오토튜닝");
+
         }
 
         // 채널1 정지 버튼
@@ -530,6 +675,8 @@ namespace VacX_OutSense
         private void btnCh2Start_Click(object sender, EventArgs e)
         {
             ExecuteTempControllerCommand(() => _tempController.Start(2), "CH2 시작");
+
+            ExecuteTempControllerCommand(() => _tempController.StartAutoTuning(2), "CH2 오토튜닝");
         }
 
         // 채널2 정지 버튼
@@ -673,8 +820,6 @@ namespace VacX_OutSense
                 else
                     AppendLog($"온도 컨트롤러 {commandName} 명령 실패", true);
 
-                // 상태 즉시 업데이트
-                UpdateTempControllerDataAsync();
             }
             catch (Exception ex)
             {
@@ -704,6 +849,46 @@ namespace VacX_OutSense
                     try
                     {
                         SafeInvoke(() => UpdateIOModuleUI(analogInputs));
+
+                        // 활성화된 경우에만 데이터 로깅 수행
+                        if (_isLoggingEnabled)
+                        {
+                            try
+                            {
+                                List<string> pressureValues = new List<string>
+                                    {
+                                        _atmSwitch.PressureInkPa.ToString("E2"),
+                                        _piraniGauge.PressureInTorr.ToString("E2"),
+                                        _ionGauge.PressureInTorr.ToString("E2"),
+                                        _ionGauge.Status
+                                    };
+
+                                // 아날로그 입력 값 로깅
+                                List<string> analogValues = new List<string>();
+
+                                // 마스터 모듈 전류 값
+                                foreach (double value in analogInputs.MasterCurrentValues)
+                                {
+                                    analogValues.Add(value.ToString("F3"));
+                                }
+
+                                // 확장 모듈 전압 값
+                                foreach (double value in analogInputs.ExpansionVoltageValues)
+                                {
+                                    analogValues.Add(value.ToString("F3"));
+                                }
+
+                                // 비동기 로깅 - 메인 스레드를 차단하지 않도록 ConfigureAwait(false) 사용
+                                await Task.WhenAll(
+                                    DataLoggerService.Instance.LogDataAsync("PressureInTorr", pressureValues),
+                                    DataLoggerService.Instance.LogDataAsync("AnalogInput", analogValues)
+                                ).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                LoggerService.Instance.LogError($"IO 모듈 데이터 로깅 중 오류: {ex.Message}", ex);
+                            }
+                        }
                     }
                     finally
                     {
@@ -724,11 +909,29 @@ namespace VacX_OutSense
 
         private void UpdateIOModuleUI(AnalogInputValues values)
         {
-            bindableTextBox1.TextValue = _atmSwitch.ConvertVoltageToPressure(values.ExpansionVoltageValues[0]).ToString();
-            bindableTextBox2.TextValue = _piraniGauge.ConvertVoltageToPressure(values.ExpansionVoltageValues[1]).ToString("E1");
-            bindableTextBox3.TextValue = _ionGauge.ConvertVoltageToPressure(values.ExpansionVoltageValues[2]).ToString("E1");
+            bindableTextBox1.TextValue = _atmSwitch.ConvertVoltageToPressureInkPa(values.ExpansionVoltageValues[0]).ToString();
+            txtPG.TextValue = _piraniGauge.ConvertVoltageToPressureInTorr(values.ExpansionVoltageValues[1]).ToString("E2");
+            txtIG.TextValue = _ionGauge.ConvertVoltageToPressureInTorr(values.ExpansionVoltageValues[2]).ToString("E2");
             bindableTextBox4.TextValue = _ionGauge.CheckGaugeStatus(values.ExpansionVoltageValues[2], values.ExpansionVoltageValues[3]).ToString();
 
+            //Interlock : 이온 게이지는 Enable 1E-3 Torr 이하일때만 버튼 활성화 및 자동으로 끄기(PG 기준 2V)
+            if (_piraniGauge.PressureInTorr > 1E-3)
+            {
+                IongaugeOff();
+                btn_iongauge.Enabled = false;
+            }
+            else
+            {
+                btn_iongauge.Enabled = true;
+            }
+
+            //Interlock : VV open condition, > 1atm
+            if (_piraniGauge.PressureInTorr >= 730)
+            {
+                VentValveOpen();
+            }
+
+            //게이트 밸브 상태
             if (values.MasterCurrentValues[3] > 10)
             {
                 btn_GV.Text = "Opened";
@@ -740,6 +943,20 @@ namespace VacX_OutSense
             else
             {
                 btn_GV.Text = "Moving";
+            }
+
+            //Interlock : VV, EV Enable condition 
+            if (_turboPump.Status.CurrentSpeed == 0)
+            {
+                if (!btn_VV.Enabled)
+                {
+                    btn_VV.Enabled = true;
+                }
+
+                if (!btn_EV.Enabled)
+                {
+                    btn_EV.Enabled = true;
+                }
             }
         }
 
@@ -761,6 +978,30 @@ namespace VacX_OutSense
                     try
                     {
                         SafeInvoke(() => UpdateRelayModuleUI(relayStates));
+
+                        // 활성화된 경우에만 데이터 로깅 수행
+                        if (_isLoggingEnabled)
+                        {
+                            try
+                            {
+                                // 릴레이 상태 데이터 로깅
+                                List<string> relayValues = new List<string>();
+
+                                for (int i = 0; i < 8; i++)
+                                {
+                                    if (i < relayStates.RelayStates.Length)
+                                        relayValues.Add(relayStates.RelayStates[i] ? "ON" : "OFF");
+                                    else
+                                        relayValues.Add("N/A");
+                                }
+
+                                await DataLoggerService.Instance.LogDataAsync("Relay", relayValues).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                LoggerService.Instance.LogError($"릴레이 모듈 데이터 로깅 중 오류: {ex.Message}", ex);
+                            }
+                        }
                     }
                     finally
                     {
@@ -805,6 +1046,31 @@ namespace VacX_OutSense
                     try
                     {
                         SafeInvoke(() => UpdateDryPumpUI());
+                        // 활성화된 경우에만 데이터 로깅 수행
+                        if (_isLoggingEnabled)
+                        {
+                            try
+                            {
+                                List<string> dryPumpValues = new List<string>
+                        {
+                            _dryPump.GetStatusText(),
+                            _dryPump.Status.MotorFrequency.ToString("F1"),
+                            _dryPump.Status.MotorCurrent.ToString("F2"),
+                            _dryPump.Status.MotorPower.ToString("F1"),
+                            _dryPump.Status.MotorTemperature.ToString("F1"),
+                            _dryPump.Status.RunTimeHours.ToString("F1"),
+                            _dryPump.Status.IsServiceDue.ToString(),
+                            _dryPump.Status.HasWarning.ToString(),
+                            _dryPump.Status.HasFault.ToString()
+                        };
+
+                                await DataLoggerService.Instance.LogDataAsync("DryPump", dryPumpValues).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                LoggerService.Instance.LogError($"드라이 펌프 데이터 로깅 중 오류: {ex.Message}", ex);
+                            }
+                        }
                     }
                     finally
                     {
@@ -830,11 +1096,11 @@ namespace VacX_OutSense
             // 값들 업데이트
             txtDryPumpFrequency.Text = $"{_dryPump.Status.MotorFrequency:F1} Hz";
             txtDryPumpCurrent.Text = $"{_dryPump.Status.MotorCurrent:F2} A";
-            txtDryPumpPower.Text = $"{_dryPump.Status.MotorPower:F1} W";
+            //txtDryPumpPower.Text = $"{_dryPump.Status.MotorPower:F1} W";
             txtDryPumpMotorTemp.Text = $"{_dryPump.Status.MotorTemperature:F1} °C";
 
             // 실행 시간 표시
-            txtDryPumpRunTime.Text = $"{_dryPump.Status.RunTimeHours:F1} 시간";
+            //txtDryPumpRunTime.Text = $"{_dryPump.Status.RunTimeHours:F1} 시간";
 
             // 서비스 필요 표시
             lblDryPumpService.Visible = _dryPump.Status.IsServiceDue;
@@ -888,7 +1154,14 @@ namespace VacX_OutSense
 
         private void btnDryPumpStop_Click(object sender, EventArgs e)
         {
-            ExecuteDryPumpCommand(() => _dryPump.Stop(), "정지");
+            if (_turboPump.IsRunning)
+            {
+                MessageBox.Show("TurboPump is in running status.", "Interlock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else
+            {
+                ExecuteDryPumpCommand(() => _dryPump.Stop(), "정지");
+            }
         }
 
         private void btnDryPumpStandby_Click(object sender, EventArgs e)
@@ -938,6 +1211,31 @@ namespace VacX_OutSense
                     try
                     {
                         SafeInvoke(() => UpdateTurboPumpUI());
+                        try
+                        {
+                            List<string> turboPumpValues = new List<string>
+                        {
+                            _turboPump.GetStatusText(),
+                            _turboPump.Status.CurrentSpeed.ToString(),
+                            _turboPump.Status.MotorCurrent.ToString("F2"),
+                            _turboPump.Status.MotorTemperature.ToString(),
+                            _turboPump.Status.ElectronicsTemperature.ToString(),
+                            _turboPump.Status.BearingTemperature.ToString(),
+                            _turboPump.Status.IsRemoteActive.ToString(),
+                            _turboPump.Status.IsReady.ToString(),
+                            _turboPump.Status.IsInNormalOperation.ToString(),
+                            _turboPump.Status.RunningTimeHours.ToString(),
+                            _turboPump.Status.HasWarning.ToString(),
+                            _turboPump.Status.HasError.ToString()
+                        };
+
+                            await DataLoggerService.Instance.LogDataAsync("TurboPump", turboPumpValues).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerService.Instance.LogError($"터보 펌프 데이터 로깅 중 오류: {ex.Message}", ex);
+                        }
+
                     }
                     finally
                     {
@@ -1020,7 +1318,37 @@ namespace VacX_OutSense
         // 터보 펌프 버튼 이벤트 핸들러들
         private void btnTurboPumpStart_Click(object sender, EventArgs e)
         {
-            ExecuteTurboPumpCommand(() => _turboPump.Start(), "시작");
+            //터보 펌프 인터락
+            if (!_dryPump.Status.IsRunning)
+            {
+                MessageBox.Show("Drypump is not in running status.", "Interlock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else if (_piraniGauge.PressureInTorr > 1)
+            {
+                MessageBox.Show("Chamber pressure is over 1 Torr.", "Interlock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else if (btn_GV.Text != "Opened")
+            {
+                MessageBox.Show("GateValve is not opened.", "Interlock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else if (btn_VV.Text == "Opened")
+            {
+                MessageBox.Show("VentValve is opened.", "Interlock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else if (btn_EV.Text == "Opened")
+            {
+                MessageBox.Show("ExhaustValve is opened.", "Interlock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else if (!_bathCirculator.IsRunning)
+            {
+                MessageBox.Show("Chiller is not in running status.", "Interlock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else
+            {
+                ExecuteTurboPumpCommand(() => _turboPump.Start(), "시작");
+                btn_VV.Enabled = false;
+                btn_EV.Enabled = false;
+            }
         }
 
         private void btnTurboPumpStop_Click(object sender, EventArgs e)
@@ -1064,6 +1392,20 @@ namespace VacX_OutSense
 
         #endregion
 
+        #region 이온 게이지
+
+        #endregion
+        private void IongaugeOn()
+        {
+            _relayModule.TurnOnRelay(4);
+
+        }
+
+        private void IongaugeOff()
+        {
+            _relayModule.TurnOffRelay(4);
+
+        }
         #region Bath Circulator 관련 기능
 
         private async void UpdateBathCirculatorDataAsync()
@@ -1340,14 +1682,26 @@ namespace VacX_OutSense
 
         private void btn_iongauge_Click(object sender, EventArgs e)
         {
-            if (_relayModule.ReadRelayState(4) == true)
+            if (_relayModule.CurrentValues.RelayStates[3] == true)
             {
-                _relayModule.TurnOffRelay(4);
+                IongaugeOff();
             }
             else
             {
-                _relayModule.TurnOnRelay(4);
+                IongaugeOn();
             }
+        }
+
+        private void VentValveOpen()
+        {
+            if (_relayModule.CurrentValues.RelayStates[1] == false)
+                _relayModule.TurnOnRelay(2);
+        }
+
+        private void VentValveClose()
+        {
+            if (_relayModule.CurrentValues.RelayStates[1] == true)
+                _relayModule.TurnOffRelay(2);
         }
 
         private void btn_VV_Click(object sender, EventArgs e)
@@ -1396,31 +1750,13 @@ namespace VacX_OutSense
 
         private void AppendLog(string message, bool isError = false)
         {
-            lock (_logLock)
+            if (isError)
             {
-                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-                string logEntry = $"[{timestamp}] {(isError ? "[오류] " : "")}{message}";
-
-                // 로그 버퍼에 추가
-                _logBuffer.AppendLine(logEntry);
-
-                // 최대 로그 항목 수 유지
-                string[] lines = _logBuffer.ToString().Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-                if (lines.Length > MAX_LOG_ENTRIES)
-                {
-                    _logBuffer.Clear();
-                    for (int i = lines.Length - MAX_LOG_ENTRIES; i < lines.Length; i++)
-                    {
-                        _logBuffer.AppendLine(lines[i]);
-                    }
-                }
-
-                // UI 스레드에서 실행해야 하는 경우 SafeInvoke 사용
-                SafeInvoke(() =>
-                {
-                    // 여기에 로그 표시 컨트롤 업데이트 코드 추가
-                    txtLog.Text = _logBuffer.ToString();
-                });
+                LoggerService.Instance.LogError(message);
+            }
+            else
+            {
+                LoggerService.Instance.LogInfo(message);
             }
         }
 
@@ -1516,6 +1852,7 @@ namespace VacX_OutSense
             _dryPumpUpdateTimer?.Stop();
             _turboPumpUpdateTimer?.Stop();
             _bathCirculatorUpdateTimer?.Stop();
+            _tempControllerUpdateTimer?.Stop();
         }
 
         #endregion
@@ -1547,14 +1884,14 @@ namespace VacX_OutSense
 
         private void bindableTextBox2_Load(object sender, EventArgs e)
         {
-            bindableTextBox2.LabelText = "Pirani(Torr)";
-            bindableTextBox2.IsReadOnly = true;
+            txtPG.LabelText = "Pirani(Torr)";
+            txtPG.IsReadOnly = true;
         }
 
         private void bindableTextBox3_Load(object sender, EventArgs e)
         {
-            bindableTextBox3.LabelText = "Ion(Torr)";
-            bindableTextBox3.IsReadOnly = true;
+            txtIG.LabelText = "Ion(Torr)";
+            txtIG.IsReadOnly = true;
         }
 
         private void bindableTextBox4_Load_1(object sender, EventArgs e)
@@ -1610,6 +1947,339 @@ namespace VacX_OutSense
             // 이벤트 처리 코드가 필요한 경우 여기에 추가
         }
 
-#endregion
+        #endregion
+
+        #region 로깅 메뉴 기능 (선택사항)
+
+        // 로깅 메뉴 추가 (선택사항)
+        private void AddLoggingMenu()
+        {
+            // 기존 메뉴에 로깅 관련 메뉴 추가
+            ToolStripMenuItem menuLogging = new ToolStripMenuItem("로깅(&L)");
+
+            ToolStripMenuItem menuStartLogging = new ToolStripMenuItem("로깅 시작");
+            menuStartLogging.Click += (s, e) => ToggleLogging(true);
+
+            ToolStripMenuItem menuStopLogging = new ToolStripMenuItem("로깅 중지");
+            menuStopLogging.Click += (s, e) => ToggleLogging(false);
+
+            ToolStripMenuItem menuOpenLogFolder = new ToolStripMenuItem("로그 폴더 열기");
+            menuOpenLogFolder.Click += (s, e) => OpenLogFolder();
+
+            ToolStripMenuItem menuOpenDataFolder = new ToolStripMenuItem("데이터 폴더 열기");
+            menuOpenDataFolder.Click += (s, e) => OpenDataFolder();
+
+            // 메뉴 구성
+            menuLogging.DropDownItems.Add(menuStartLogging);
+            menuLogging.DropDownItems.Add(menuStopLogging);
+            menuLogging.DropDownItems.Add(new ToolStripSeparator());
+            menuLogging.DropDownItems.Add(menuOpenLogFolder);
+            menuLogging.DropDownItems.Add(menuOpenDataFolder);
+
+            // 메인 메뉴에 추가 (menuStrip이 있는 경우)
+            if (menuStrip != null && menuStrip.Items.Count > 0)
+            {
+                menuStrip.Items.Add(menuLogging);
+            }
+        }
+
+        // 로그 폴더 열기
+        private void OpenLogFolder()
+        {
+            try
+            {
+                string logFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                if (!Directory.Exists(logFolder))
+                {
+                    Directory.CreateDirectory(logFolder);
+                }
+
+                System.Diagnostics.Process.Start("explorer.exe", logFolder);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"로그 폴더를 열지 못했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // 데이터 폴더 열기
+        private void OpenDataFolder()
+        {
+            try
+            {
+                string dataFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+                if (!Directory.Exists(dataFolder))
+                {
+                    Directory.CreateDirectory(dataFolder);
+                }
+
+                System.Diagnostics.Process.Start("explorer.exe", dataFolder);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"데이터 폴더를 열지 못했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 데이터 로깅 활성화/비활성화 전환
+        /// </summary>
+        public void ToggleLogging(bool enable)
+        {
+            _isLoggingEnabled = enable;
+
+            if (enable)
+            {
+                LoggerService.Instance.LogInfo("데이터 로깅이 활성화되었습니다.");
+            }
+            else
+            {
+                LoggerService.Instance.LogInfo("데이터 로깅이 비활성화되었습니다.");
+            }
+
+            // 메뉴 UI 업데이트 (메뉴가 있는 경우)
+            UpdateLoggingMenuState();
+        }
+
+        /// <summary>
+        /// 로깅 메뉴 상태 업데이트
+        /// </summary>
+        private void UpdateLoggingMenuState()
+        {
+            //// 로깅 메뉴가 있는 경우 UI 상태 업데이트
+            //if (menuDataStartLogging != null && menuDataStopLogging != null)
+            //{
+            //    menuDataStartLogging.Enabled = !_isLoggingEnabled;
+            //    menuDataStopLogging.Enabled = _isLoggingEnabled;
+            //}
+        }
+
+        /// <summary>
+        /// 데이터 로깅 초기화
+        /// </summary>
+        private void InitializeDataLogging()
+        {
+            // 압력 데이터 로깅 설정
+            List<string> pressureHeaders = new List<string>
+    {
+        "ATM_Pressure(kPa)",
+        "Pirani_Pressure(Torr)",
+        "Ion_Pressure(Torr)",
+        "Gauge_Status"
+    };
+
+            // 릴레이 상태 데이터 로깅 설정
+            List<string> relayHeaders = new List<string>
+    {
+        "Relay1_State",
+        "Relay2_State",
+        "Relay3_State",
+        "Relay4_State",
+        "Relay5_State",
+        "Relay6_State",
+        "Relay7_State",
+        "Relay8_State"
+    };
+
+            // 아날로그 입력 값 로깅 설정
+            List<string> analogHeaders = new List<string>
+    {
+        "Master_Ch1(mA)",
+        "Master_Ch2(mA)",
+        "Master_Ch3(mA)",
+        "Master_Ch4(mA)",
+        "Expansion_Ch1(V)",
+        "Expansion_Ch2(V)",
+        "Expansion_Ch3(V)",
+        "Expansion_Ch4(V)",
+        "Expansion_Ch5(V)",
+        "Expansion_Ch6(V)",
+        "Expansion_Ch7(V)",
+        "Expansion_Ch8(V)"
+    };
+
+            // 드라이 펌프 데이터 로깅 설정
+            List<string> dryPumpHeaders = new List<string>
+    {
+        "Status",
+        "Frequency(Hz)",
+        "Current(A)",
+        "Power(W)",
+        "Temperature(°C)",
+        "RunTime(h)",
+        "IsServiceDue",
+        "HasWarning",
+        "HasFault"
+    };
+
+            // 터보 펌프 데이터 로깅 설정
+            List<string> turboPumpHeaders = new List<string>
+    {
+        "Status",
+        "Speed(RPM)",
+        "Current(A)",
+        "MotorTemp(°C)",
+        "ElectronicsTemp(°C)",
+        "BearingTemp(°C)",
+        "IsRemote",
+        "IsReady",
+        "IsNormal",
+        "RunTime(h)",
+        "HasWarning",
+        "HasError"
+    };
+
+            // 온도 컨트롤러 데이터 로깅 설정
+            List<string> tempControllerHeaders = new List<string>
+    {
+        "Ch1_PV(°C)",
+        "Ch1_SV(°C)",
+        "Ch1_HeatingMV(%)",
+        "Ch1_Status",
+        "Ch2_PV(°C)",
+        "Ch2_SV(°C)",
+        "Ch2_HeatingMV(%)",
+        "Ch2_Status"
+    };
+
+            // 로그 세션 시작
+            DataLoggerService.Instance.StartLogging("PressureInTorr", pressureHeaders);
+            DataLoggerService.Instance.StartLogging("Relay", relayHeaders);
+            DataLoggerService.Instance.StartLogging("AnalogInput", analogHeaders);
+            DataLoggerService.Instance.StartLogging("DryPump", dryPumpHeaders);
+            DataLoggerService.Instance.StartLogging("TurboPump", turboPumpHeaders);
+            DataLoggerService.Instance.StartLogging("TempController", tempControllerHeaders);
+        }
+
+        /// <summary>
+        /// 로그 이벤트 핸들러
+        /// </summary>
+        private void LoggerService_LogAdded(object sender, string logMessage)
+        {
+            // UI 스레드에서 실행 확인
+            if (this.InvokeRequired)
+            {
+                this.BeginInvoke(new Action(() => LoggerService_LogAdded(sender, logMessage)));
+                return;
+            }
+
+            // 로그 창에 로그 추가
+            if (txtLog != null)
+            {
+                // 최대 로그 표시 개수 제한 (성능 최적화)
+                const int MAX_VISIBLE_LOGS = 1000;
+                string[] lines = txtLog.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (lines.Length > MAX_VISIBLE_LOGS)
+                {
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = lines.Length - MAX_VISIBLE_LOGS; i < lines.Length; i++)
+                    {
+                        sb.AppendLine(lines[i]);
+                    }
+                    txtLog.Text = sb.ToString();
+                }
+
+                // 새 로그 추가
+                txtLog.AppendText(logMessage + Environment.NewLine);
+                txtLog.SelectionStart = txtLog.Text.Length;
+                txtLog.ScrollToCaret();
+            }
+        }
+
+        /// <summary>
+        /// 로깅 시스템 초기화
+        /// </summary>
+        private void InitializeLogging()
+        {
+            try
+            {
+                // 로그 폴더가 없으면 생성
+                string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                if (!Directory.Exists(logDirectory))
+                {
+                    Directory.CreateDirectory(logDirectory);
+                }
+
+                string dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+                if (!Directory.Exists(dataDirectory))
+                {
+                    Directory.CreateDirectory(dataDirectory);
+                }
+
+                // 로그 서비스 초기화
+                LoggerService.Instance.LogAdded += LoggerService_LogAdded;
+                LoggerService.Instance.LogInfo("애플리케이션이 시작되었습니다.");
+
+                // 데이터 로거 초기화
+                InitializeDataLogging();
+
+                // 로깅 시작 시 알림
+                LoggerService.Instance.LogInfo("데이터 로깅이 활성화되었습니다.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"로깅 시스템 초기화 중 오류가 발생했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        #endregion
+
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            //DisableButtonKeyboardBehavior();
+        }
+
+        #region 버튼 클릭 방지(스페이스, 엔터 키)
+        // 2. 폼에서 모든 버튼의 기본 포커스 동작 변경 (사용 시 MainForm 클래스에 추가)
+        private void DisableButtonKeyboardBehavior()
+        {
+            // 폼의 모든 버튼에 대해 처리
+            foreach (Control control in this.Controls)
+            {
+                ProcessControlsRecursively(control);
+            }
+        }
+
+        private void ProcessControlsRecursively(Control parent)
+        {
+            // 현재 컨트롤이 버튼인 경우 처리
+            if (parent is Button button)
+            {
+                // 키 입력으로 클릭되지 않도록 설정
+                button.PreviewKeyDown += Button_PreviewKeyDown;
+            }
+
+            // 컨테이너 컨트롤이면 자식 컨트롤들도 처리
+            foreach (Control child in parent.Controls)
+            {
+                ProcessControlsRecursively(child);
+            }
+        }
+
+        private void Button_PreviewKeyDown(object sender, PreviewKeyDownEventArgs e)
+        {
+            // 스페이스바와 엔터키 처리 방지
+            if (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter)
+            {
+                e.IsInputKey = false;
+            }
+        }
+
+        // 방법 3: 폼 레벨에서 처리하는 방법 (폼 클래스에 추가)
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            // 폼에 있는 어떤 버튼이든 포커스가 있을 때 엔터나 스페이스를 처리
+            if ((keyData == Keys.Enter || keyData == Keys.Space) &&
+                this.ActiveControl is Button)
+            {
+                return true; // 키 입력 처리됨으로 표시하여 기본 동작 방지
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+
+        #endregion
+
     }
 }

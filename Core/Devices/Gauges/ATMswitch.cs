@@ -15,7 +15,9 @@ namespace VacX_OutSense.Core.Devices.Gauges
         private const double MinPressure = 0.0;   // 최소 압력값 (kPa)
         private const double MaxPressure = 100.0;  // 최대 압력값 (kPa)
 
-        public double ConvertVoltageToPressure(double atm_voltage)
+        public double PressureInkPa { get; set; }
+
+        public double ConvertVoltageToPressureInkPa(double atm_voltage)
         {
             double atm_pressure = 0;
 
@@ -29,7 +31,9 @@ namespace VacX_OutSense.Core.Devices.Gauges
             // 공식: P = (V - Vmin) * (Pmax - Pmin) / (Vmax - Vmin) + Pmin
             atm_pressure = (atm_voltage - MinVoltage) * (MaxPressure - MinPressure) / (MaxVoltage - MinVoltage) + MinPressure;
 
-            return Math.Round(atm_pressure, 1);
+            PressureInkPa = Math.Round(atm_pressure, 2);
+
+            return PressureInkPa;
         }
     }
 }

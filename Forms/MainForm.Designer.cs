@@ -37,13 +37,17 @@ namespace VacX_OutSense
             tableLayoutPanel2 = new TableLayoutPanel();
             tableLayoutPanel3 = new TableLayoutPanel();
             tableLayoutPanel4 = new TableLayoutPanel();
-            connectionIndicator_tempcontroller = new Forms.UserControls.ConnectionIndicator();
             connectionIndicator_bathcirculator = new Forms.UserControls.ConnectionIndicator();
+            connectionIndicator_tempcontroller = new Forms.UserControls.ConnectionIndicator();
             connectionIndicator_relaymodule = new Forms.UserControls.ConnectionIndicator();
             connectionIndicator_iomodule = new Forms.UserControls.ConnectionIndicator();
             connectionIndicator_drypump = new Forms.UserControls.ConnectionIndicator();
             connectionIndicator_turbopump = new Forms.UserControls.ConnectionIndicator();
             panel1 = new Panel();
+            bindableTextBox4 = new Forms.UserControls.BindableTextBox();
+            txtIG = new Forms.UserControls.BindableTextBox();
+            txtPG = new Forms.UserControls.BindableTextBox();
+            bindableTextBox1 = new Forms.UserControls.BindableTextBox();
             panel5 = new Panel();
             tableLayoutPanel8 = new TableLayoutPanel();
             btnCh2Start = new Button();
@@ -73,6 +77,8 @@ namespace VacX_OutSense
             button2 = new Button();
             button3 = new Button();
             button4 = new Button();
+            txtCh2IsAutotune = new TextBox();
+            txtCh1IsAutotune = new TextBox();
             panel4 = new Panel();
             tableLayoutPanel7 = new TableLayoutPanel();
             btnBathCirculatorSetTemp = new Button();
@@ -154,10 +160,6 @@ namespace VacX_OutSense
             label2 = new Label();
             label3 = new Label();
             btn_iongauge = new Button();
-            bindableTextBox4 = new Forms.UserControls.BindableTextBox();
-            bindableTextBox3 = new Forms.UserControls.BindableTextBox();
-            bindableTextBox2 = new Forms.UserControls.BindableTextBox();
-            bindableTextBox1 = new Forms.UserControls.BindableTextBox();
             tabPage2 = new TabPage();
             txtLog = new RichTextBox();
             menuStrip = new MenuStrip();
@@ -202,12 +204,12 @@ namespace VacX_OutSense
             tableLayoutPanelMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             tableLayoutPanelMain.Controls.Add(tabControlMain, 0, 0);
             tableLayoutPanelMain.Dock = DockStyle.Fill;
-            tableLayoutPanelMain.Location = new Point(0, 33);
+            tableLayoutPanelMain.Location = new Point(0, 24);
             tableLayoutPanelMain.Name = "tableLayoutPanelMain";
             tableLayoutPanelMain.RowCount = 1;
             tableLayoutPanelMain.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             tableLayoutPanelMain.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
-            tableLayoutPanelMain.Size = new Size(1186, 664);
+            tableLayoutPanelMain.Size = new Size(1186, 683);
             tableLayoutPanelMain.TabIndex = 0;
             // 
             // tabControlMain
@@ -218,16 +220,16 @@ namespace VacX_OutSense
             tabControlMain.Location = new Point(3, 3);
             tabControlMain.Name = "tabControlMain";
             tabControlMain.SelectedIndex = 0;
-            tabControlMain.Size = new Size(1180, 658);
+            tabControlMain.Size = new Size(1180, 677);
             tabControlMain.TabIndex = 1;
             // 
             // tabPage1
             // 
             tabPage1.Controls.Add(tableLayoutPanel2);
-            tabPage1.Location = new Point(4, 34);
+            tabPage1.Location = new Point(4, 24);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3);
-            tabPage1.Size = new Size(1172, 620);
+            tabPage1.Size = new Size(1172, 649);
             tabPage1.TabIndex = 2;
             tabPage1.Text = "Main";
             tabPage1.UseVisualStyleBackColor = true;
@@ -245,7 +247,7 @@ namespace VacX_OutSense
             tableLayoutPanel2.RowCount = 2;
             tableLayoutPanel2.RowStyles.Add(new RowStyle(SizeType.Percent, 10F));
             tableLayoutPanel2.RowStyles.Add(new RowStyle(SizeType.Percent, 90F));
-            tableLayoutPanel2.Size = new Size(1166, 614);
+            tableLayoutPanel2.Size = new Size(1166, 643);
             tableLayoutPanel2.TabIndex = 0;
             // 
             // tableLayoutPanel3
@@ -259,7 +261,7 @@ namespace VacX_OutSense
             tableLayoutPanel3.Name = "tableLayoutPanel3";
             tableLayoutPanel3.RowCount = 1;
             tableLayoutPanel3.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            tableLayoutPanel3.Size = new Size(1160, 55);
+            tableLayoutPanel3.Size = new Size(1160, 58);
             tableLayoutPanel3.TabIndex = 0;
             // 
             // tableLayoutPanel4
@@ -271,8 +273,8 @@ namespace VacX_OutSense
             tableLayoutPanel4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666666F));
             tableLayoutPanel4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666666F));
             tableLayoutPanel4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666666F));
-            tableLayoutPanel4.Controls.Add(connectionIndicator_tempcontroller, 5, 0);
-            tableLayoutPanel4.Controls.Add(connectionIndicator_bathcirculator, 4, 0);
+            tableLayoutPanel4.Controls.Add(connectionIndicator_bathcirculator, 5, 0);
+            tableLayoutPanel4.Controls.Add(connectionIndicator_tempcontroller, 4, 0);
             tableLayoutPanel4.Controls.Add(connectionIndicator_relaymodule, 3, 0);
             tableLayoutPanel4.Controls.Add(connectionIndicator_iomodule, 2, 0);
             tableLayoutPanel4.Controls.Add(connectionIndicator_drypump, 1, 0);
@@ -283,24 +285,8 @@ namespace VacX_OutSense
             tableLayoutPanel4.RowCount = 1;
             tableLayoutPanel4.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             tableLayoutPanel4.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
-            tableLayoutPanel4.Size = new Size(458, 49);
+            tableLayoutPanel4.Size = new Size(458, 52);
             tableLayoutPanel4.TabIndex = 1;
-            // 
-            // connectionIndicator_tempcontroller
-            // 
-            connectionIndicator_tempcontroller.ComponentName = "Temp PID";
-            connectionIndicator_tempcontroller.ConnectedColor = Color.LimeGreen;
-            connectionIndicator_tempcontroller.DataMember = null;
-            connectionIndicator_tempcontroller.DataSource = null;
-            connectionIndicator_tempcontroller.DisconnectedColor = Color.Red;
-            connectionIndicator_tempcontroller.Dock = DockStyle.Fill;
-            connectionIndicator_tempcontroller.Font = new Font("Arial Narrow", 6.75F);
-            connectionIndicator_tempcontroller.IsConnected = false;
-            connectionIndicator_tempcontroller.Location = new Point(383, 4);
-            connectionIndicator_tempcontroller.Margin = new Padding(3, 4, 3, 4);
-            connectionIndicator_tempcontroller.Name = "connectionIndicator_tempcontroller";
-            connectionIndicator_tempcontroller.Size = new Size(72, 41);
-            connectionIndicator_tempcontroller.TabIndex = 5;
             // 
             // connectionIndicator_bathcirculator
             // 
@@ -309,45 +295,53 @@ namespace VacX_OutSense
             connectionIndicator_bathcirculator.DataMember = null;
             connectionIndicator_bathcirculator.DataSource = null;
             connectionIndicator_bathcirculator.DisconnectedColor = Color.Red;
-            connectionIndicator_bathcirculator.Dock = DockStyle.Fill;
-            connectionIndicator_bathcirculator.Font = new Font("Arial Narrow", 6.75F);
             connectionIndicator_bathcirculator.IsConnected = false;
-            connectionIndicator_bathcirculator.Location = new Point(307, 4);
+            connectionIndicator_bathcirculator.Location = new Point(383, 4);
             connectionIndicator_bathcirculator.Margin = new Padding(3, 4, 3, 4);
             connectionIndicator_bathcirculator.Name = "connectionIndicator_bathcirculator";
-            connectionIndicator_bathcirculator.Size = new Size(70, 41);
-            connectionIndicator_bathcirculator.TabIndex = 4;
+            connectionIndicator_bathcirculator.Size = new Size(70, 44);
+            connectionIndicator_bathcirculator.TabIndex = 5;
+            // 
+            // connectionIndicator_tempcontroller
+            // 
+            connectionIndicator_tempcontroller.ComponentName = "PIDCon";
+            connectionIndicator_tempcontroller.ConnectedColor = Color.LimeGreen;
+            connectionIndicator_tempcontroller.DataMember = null;
+            connectionIndicator_tempcontroller.DataSource = null;
+            connectionIndicator_tempcontroller.DisconnectedColor = Color.Red;
+            connectionIndicator_tempcontroller.IsConnected = false;
+            connectionIndicator_tempcontroller.Location = new Point(307, 4);
+            connectionIndicator_tempcontroller.Margin = new Padding(3, 4, 3, 4);
+            connectionIndicator_tempcontroller.Name = "connectionIndicator_tempcontroller";
+            connectionIndicator_tempcontroller.Size = new Size(70, 44);
+            connectionIndicator_tempcontroller.TabIndex = 4;
             // 
             // connectionIndicator_relaymodule
             // 
-            connectionIndicator_relaymodule.ComponentName = "RelayModule";
+            connectionIndicator_relaymodule.ComponentName = "Relay";
             connectionIndicator_relaymodule.ConnectedColor = Color.LimeGreen;
             connectionIndicator_relaymodule.DataMember = null;
             connectionIndicator_relaymodule.DataSource = null;
             connectionIndicator_relaymodule.DisconnectedColor = Color.Red;
-            connectionIndicator_relaymodule.Dock = DockStyle.Fill;
-            connectionIndicator_relaymodule.Font = new Font("Arial Narrow", 6.75F);
             connectionIndicator_relaymodule.IsConnected = false;
             connectionIndicator_relaymodule.Location = new Point(231, 4);
             connectionIndicator_relaymodule.Margin = new Padding(3, 4, 3, 4);
             connectionIndicator_relaymodule.Name = "connectionIndicator_relaymodule";
-            connectionIndicator_relaymodule.Size = new Size(70, 41);
+            connectionIndicator_relaymodule.Size = new Size(70, 44);
             connectionIndicator_relaymodule.TabIndex = 3;
             // 
             // connectionIndicator_iomodule
             // 
-            connectionIndicator_iomodule.ComponentName = "IO Module";
+            connectionIndicator_iomodule.ComponentName = "IOModule";
             connectionIndicator_iomodule.ConnectedColor = Color.LimeGreen;
             connectionIndicator_iomodule.DataMember = null;
             connectionIndicator_iomodule.DataSource = null;
             connectionIndicator_iomodule.DisconnectedColor = Color.Red;
-            connectionIndicator_iomodule.Dock = DockStyle.Fill;
-            connectionIndicator_iomodule.Font = new Font("Arial Narrow", 6.75F);
             connectionIndicator_iomodule.IsConnected = false;
             connectionIndicator_iomodule.Location = new Point(155, 4);
             connectionIndicator_iomodule.Margin = new Padding(3, 4, 3, 4);
             connectionIndicator_iomodule.Name = "connectionIndicator_iomodule";
-            connectionIndicator_iomodule.Size = new Size(70, 41);
+            connectionIndicator_iomodule.Size = new Size(70, 44);
             connectionIndicator_iomodule.TabIndex = 2;
             // 
             // connectionIndicator_drypump
@@ -357,13 +351,11 @@ namespace VacX_OutSense
             connectionIndicator_drypump.DataMember = null;
             connectionIndicator_drypump.DataSource = null;
             connectionIndicator_drypump.DisconnectedColor = Color.Red;
-            connectionIndicator_drypump.Dock = DockStyle.Fill;
-            connectionIndicator_drypump.Font = new Font("Arial Narrow", 6.75F);
             connectionIndicator_drypump.IsConnected = false;
             connectionIndicator_drypump.Location = new Point(79, 4);
             connectionIndicator_drypump.Margin = new Padding(3, 4, 3, 4);
             connectionIndicator_drypump.Name = "connectionIndicator_drypump";
-            connectionIndicator_drypump.Size = new Size(70, 41);
+            connectionIndicator_drypump.Size = new Size(70, 44);
             connectionIndicator_drypump.TabIndex = 1;
             // 
             // connectionIndicator_turbopump
@@ -373,34 +365,87 @@ namespace VacX_OutSense
             connectionIndicator_turbopump.DataMember = null;
             connectionIndicator_turbopump.DataSource = null;
             connectionIndicator_turbopump.DisconnectedColor = Color.Red;
-            connectionIndicator_turbopump.Dock = DockStyle.Fill;
-            connectionIndicator_turbopump.Font = new Font("Arial Narrow", 6.75F);
             connectionIndicator_turbopump.IsConnected = false;
             connectionIndicator_turbopump.Location = new Point(3, 4);
             connectionIndicator_turbopump.Margin = new Padding(3, 4, 3, 4);
             connectionIndicator_turbopump.Name = "connectionIndicator_turbopump";
-            connectionIndicator_turbopump.Size = new Size(70, 41);
+            connectionIndicator_turbopump.Size = new Size(70, 44);
             connectionIndicator_turbopump.TabIndex = 0;
             // 
             // panel1
             // 
             panel1.BorderStyle = BorderStyle.FixedSingle;
+            panel1.Controls.Add(bindableTextBox4);
+            panel1.Controls.Add(txtIG);
+            panel1.Controls.Add(txtPG);
+            panel1.Controls.Add(bindableTextBox1);
             panel1.Controls.Add(panel5);
             panel1.Controls.Add(panel4);
             panel1.Controls.Add(panel3);
             panel1.Controls.Add(panel2);
             panel1.Controls.Add(tableLayoutPanel5);
             panel1.Controls.Add(btn_iongauge);
-            panel1.Controls.Add(bindableTextBox4);
-            panel1.Controls.Add(bindableTextBox3);
-            panel1.Controls.Add(bindableTextBox2);
-            panel1.Controls.Add(bindableTextBox1);
             panel1.Dock = DockStyle.Fill;
-            panel1.Location = new Point(3, 64);
+            panel1.Location = new Point(3, 67);
             panel1.Name = "panel1";
-            panel1.Size = new Size(1160, 547);
+            panel1.Size = new Size(1160, 573);
             panel1.TabIndex = 1;
-            panel1.Paint += panel1_Paint;
+            // 
+            // bindableTextBox4
+            // 
+            bindableTextBox4.DataMember = null;
+            bindableTextBox4.DataSource = null;
+            bindableTextBox4.FormatString = null;
+            bindableTextBox4.IsReadOnly = false;
+            bindableTextBox4.LabelText = "IG status";
+            bindableTextBox4.Location = new Point(810, 55);
+            bindableTextBox4.Name = "bindableTextBox4";
+            bindableTextBox4.Padding = new Padding(0, 0, 0, 3);
+            bindableTextBox4.Size = new Size(250, 32);
+            bindableTextBox4.TabIndex = 19;
+            bindableTextBox4.TextValue = "";
+            // 
+            // txtIG
+            // 
+            txtIG.DataMember = null;
+            txtIG.DataSource = null;
+            txtIG.FormatString = null;
+            txtIG.IsReadOnly = false;
+            txtIG.LabelText = "IG(Torr)";
+            txtIG.Location = new Point(809, 19);
+            txtIG.Name = "txtIG";
+            txtIG.Padding = new Padding(0, 0, 0, 3);
+            txtIG.Size = new Size(250, 32);
+            txtIG.TabIndex = 18;
+            txtIG.TextValue = "";
+            // 
+            // txtPG
+            // 
+            txtPG.DataMember = null;
+            txtPG.DataSource = null;
+            txtPG.FormatString = null;
+            txtPG.IsReadOnly = false;
+            txtPG.LabelText = "PG(Torr)";
+            txtPG.Location = new Point(531, 19);
+            txtPG.Name = "txtPG";
+            txtPG.Padding = new Padding(0, 0, 0, 3);
+            txtPG.Size = new Size(250, 32);
+            txtPG.TabIndex = 17;
+            txtPG.TextValue = "";
+            // 
+            // bindableTextBox1
+            // 
+            bindableTextBox1.DataMember = null;
+            bindableTextBox1.DataSource = null;
+            bindableTextBox1.FormatString = null;
+            bindableTextBox1.IsReadOnly = false;
+            bindableTextBox1.LabelText = "ATM(kPa)";
+            bindableTextBox1.Location = new Point(249, 19);
+            bindableTextBox1.Name = "bindableTextBox1";
+            bindableTextBox1.Padding = new Padding(0, 0, 0, 3);
+            bindableTextBox1.Size = new Size(250, 32);
+            bindableTextBox1.TabIndex = 16;
+            bindableTextBox1.TextValue = "";
             // 
             // panel5
             // 
@@ -449,6 +494,8 @@ namespace VacX_OutSense
             tableLayoutPanel8.Controls.Add(button2, 0, 5);
             tableLayoutPanel8.Controls.Add(button3, 4, 3);
             tableLayoutPanel8.Controls.Add(button4, 4, 5);
+            tableLayoutPanel8.Controls.Add(txtCh2IsAutotune, 4, 2);
+            tableLayoutPanel8.Controls.Add(txtCh1IsAutotune, 0, 2);
             tableLayoutPanel8.Dock = DockStyle.Fill;
             tableLayoutPanel8.Location = new Point(0, 0);
             tableLayoutPanel8.Name = "tableLayoutPanel8";
@@ -489,7 +536,7 @@ namespace VacX_OutSense
             txtCh2HeatingMV.Location = new Point(388, 86);
             txtCh2HeatingMV.Name = "txtCh2HeatingMV";
             txtCh2HeatingMV.ReadOnly = true;
-            txtCh2HeatingMV.Size = new Size(71, 31);
+            txtCh2HeatingMV.Size = new Size(71, 23);
             txtCh2HeatingMV.TabIndex = 24;
             txtCh2HeatingMV.TextAlign = HorizontalAlignment.Center;
             // 
@@ -498,7 +545,7 @@ namespace VacX_OutSense
             txtCh2Status.Location = new Point(315, 86);
             txtCh2Status.Name = "txtCh2Status";
             txtCh2Status.ReadOnly = true;
-            txtCh2Status.Size = new Size(67, 31);
+            txtCh2Status.Size = new Size(67, 23);
             txtCh2Status.TabIndex = 23;
             txtCh2Status.TextAlign = HorizontalAlignment.Center;
             // 
@@ -572,7 +619,7 @@ namespace VacX_OutSense
             txtCh1HeatingMV.Location = new Point(149, 86);
             txtCh1HeatingMV.Name = "txtCh1HeatingMV";
             txtCh1HeatingMV.ReadOnly = true;
-            txtCh1HeatingMV.Size = new Size(67, 31);
+            txtCh1HeatingMV.Size = new Size(67, 23);
             txtCh1HeatingMV.TabIndex = 7;
             txtCh1HeatingMV.TextAlign = HorizontalAlignment.Center;
             // 
@@ -582,7 +629,7 @@ namespace VacX_OutSense
             txtCh1Status.Location = new Point(76, 86);
             txtCh1Status.Name = "txtCh1Status";
             txtCh1Status.ReadOnly = true;
-            txtCh1Status.Size = new Size(67, 31);
+            txtCh1Status.Size = new Size(67, 23);
             txtCh1Status.TabIndex = 6;
             txtCh1Status.TextAlign = HorizontalAlignment.Center;
             // 
@@ -694,7 +741,7 @@ namespace VacX_OutSense
             txtCh1PresentValue.Location = new Point(76, 136);
             txtCh1PresentValue.Name = "txtCh1PresentValue";
             txtCh1PresentValue.ReadOnly = true;
-            txtCh1PresentValue.Size = new Size(67, 31);
+            txtCh1PresentValue.Size = new Size(67, 23);
             txtCh1PresentValue.TabIndex = 32;
             txtCh1PresentValue.TextAlign = HorizontalAlignment.Center;
             // 
@@ -704,7 +751,7 @@ namespace VacX_OutSense
             txtCh1SetValue.Location = new Point(149, 136);
             txtCh1SetValue.Name = "txtCh1SetValue";
             txtCh1SetValue.ReadOnly = true;
-            txtCh1SetValue.Size = new Size(67, 31);
+            txtCh1SetValue.Size = new Size(67, 23);
             txtCh1SetValue.TabIndex = 33;
             txtCh1SetValue.TextAlign = HorizontalAlignment.Center;
             // 
@@ -714,7 +761,7 @@ namespace VacX_OutSense
             txtCh2PresentValue.Location = new Point(315, 136);
             txtCh2PresentValue.Name = "txtCh2PresentValue";
             txtCh2PresentValue.ReadOnly = true;
-            txtCh2PresentValue.Size = new Size(67, 31);
+            txtCh2PresentValue.Size = new Size(67, 23);
             txtCh2PresentValue.TabIndex = 34;
             txtCh2PresentValue.TextAlign = HorizontalAlignment.Center;
             // 
@@ -724,7 +771,7 @@ namespace VacX_OutSense
             txtCh2SetValue.Location = new Point(388, 136);
             txtCh2SetValue.Name = "txtCh2SetValue";
             txtCh2SetValue.ReadOnly = true;
-            txtCh2SetValue.Size = new Size(71, 31);
+            txtCh2SetValue.Size = new Size(71, 23);
             txtCh2SetValue.TabIndex = 35;
             txtCh2SetValue.TextAlign = HorizontalAlignment.Center;
             // 
@@ -771,6 +818,26 @@ namespace VacX_OutSense
             button4.Text = "SetTemp";
             button4.UseVisualStyleBackColor = true;
             button4.Click += btnCh2SetTemp_Click;
+            // 
+            // txtCh2IsAutotune
+            // 
+            txtCh2IsAutotune.Dock = DockStyle.Fill;
+            txtCh2IsAutotune.Location = new Point(242, 66);
+            txtCh2IsAutotune.Name = "txtCh2IsAutotune";
+            txtCh2IsAutotune.ReadOnly = true;
+            txtCh2IsAutotune.Size = new Size(67, 23);
+            txtCh2IsAutotune.TabIndex = 41;
+            txtCh2IsAutotune.TextAlign = HorizontalAlignment.Center;
+            // 
+            // txtCh1IsAutotune
+            // 
+            txtCh1IsAutotune.Dock = DockStyle.Fill;
+            txtCh1IsAutotune.Location = new Point(3, 66);
+            txtCh1IsAutotune.Name = "txtCh1IsAutotune";
+            txtCh1IsAutotune.ReadOnly = true;
+            txtCh1IsAutotune.Size = new Size(67, 23);
+            txtCh1IsAutotune.TabIndex = 40;
+            txtCh1IsAutotune.TextAlign = HorizontalAlignment.Center;
             // 
             // panel4
             // 
@@ -845,7 +912,7 @@ namespace VacX_OutSense
             txtBathCirculatorTargetTemp.Location = new Point(371, 86);
             txtBathCirculatorTargetTemp.Name = "txtBathCirculatorTargetTemp";
             txtBathCirculatorTargetTemp.ReadOnly = true;
-            txtBathCirculatorTargetTemp.Size = new Size(86, 31);
+            txtBathCirculatorTargetTemp.Size = new Size(86, 23);
             txtBathCirculatorTargetTemp.TabIndex = 24;
             txtBathCirculatorTargetTemp.TextAlign = HorizontalAlignment.Center;
             // 
@@ -854,7 +921,7 @@ namespace VacX_OutSense
             txtBathCirculatorCurrentTemp.Location = new Point(279, 86);
             txtBathCirculatorCurrentTemp.Name = "txtBathCirculatorCurrentTemp";
             txtBathCirculatorCurrentTemp.ReadOnly = true;
-            txtBathCirculatorCurrentTemp.Size = new Size(86, 31);
+            txtBathCirculatorCurrentTemp.Size = new Size(86, 23);
             txtBathCirculatorCurrentTemp.TabIndex = 23;
             txtBathCirculatorCurrentTemp.TextAlign = HorizontalAlignment.Center;
             // 
@@ -938,7 +1005,7 @@ namespace VacX_OutSense
             txtBathCirculatorMode.Location = new Point(187, 86);
             txtBathCirculatorMode.Name = "txtBathCirculatorMode";
             txtBathCirculatorMode.ReadOnly = true;
-            txtBathCirculatorMode.Size = new Size(86, 31);
+            txtBathCirculatorMode.Size = new Size(86, 23);
             txtBathCirculatorMode.TabIndex = 7;
             txtBathCirculatorMode.TextAlign = HorizontalAlignment.Center;
             // 
@@ -948,10 +1015,9 @@ namespace VacX_OutSense
             txtBathCirculatorTime.Location = new Point(95, 86);
             txtBathCirculatorTime.Name = "txtBathCirculatorTime";
             txtBathCirculatorTime.ReadOnly = true;
-            txtBathCirculatorTime.Size = new Size(86, 31);
+            txtBathCirculatorTime.Size = new Size(86, 23);
             txtBathCirculatorTime.TabIndex = 6;
             txtBathCirculatorTime.TextAlign = HorizontalAlignment.Center;
-            txtBathCirculatorTime.TextChanged += txtBathCirculatorTime_TextChanged;
             // 
             // btnBathCirculatorStart
             // 
@@ -994,7 +1060,7 @@ namespace VacX_OutSense
             txtBathCirculatorStatus.Location = new Point(3, 86);
             txtBathCirculatorStatus.Name = "txtBathCirculatorStatus";
             txtBathCirculatorStatus.ReadOnly = true;
-            txtBathCirculatorStatus.Size = new Size(86, 31);
+            txtBathCirculatorStatus.Size = new Size(86, 23);
             txtBathCirculatorStatus.TabIndex = 5;
             txtBathCirculatorStatus.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1076,7 +1142,7 @@ namespace VacX_OutSense
             txtTurboPumpReady.Location = new Point(448, 139);
             txtTurboPumpReady.Name = "txtTurboPumpReady";
             txtTurboPumpReady.ReadOnly = true;
-            txtTurboPumpReady.Size = new Size(84, 31);
+            txtTurboPumpReady.Size = new Size(84, 23);
             txtTurboPumpReady.TabIndex = 30;
             txtTurboPumpReady.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1086,7 +1152,7 @@ namespace VacX_OutSense
             txtTurboPumpNormal.Location = new Point(359, 139);
             txtTurboPumpNormal.Name = "txtTurboPumpNormal";
             txtTurboPumpNormal.ReadOnly = true;
-            txtTurboPumpNormal.Size = new Size(83, 31);
+            txtTurboPumpNormal.Size = new Size(83, 23);
             txtTurboPumpNormal.TabIndex = 29;
             txtTurboPumpNormal.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1122,7 +1188,7 @@ namespace VacX_OutSense
             txtTurboPumpRemote.Location = new Point(448, 89);
             txtTurboPumpRemote.Name = "txtTurboPumpRemote";
             txtTurboPumpRemote.ReadOnly = true;
-            txtTurboPumpRemote.Size = new Size(84, 31);
+            txtTurboPumpRemote.Size = new Size(84, 23);
             txtTurboPumpRemote.TabIndex = 26;
             txtTurboPumpRemote.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1255,7 +1321,6 @@ namespace VacX_OutSense
             label14.TabIndex = 15;
             label14.Text = "상태";
             label14.TextAlign = ContentAlignment.MiddleCenter;
-            label14.Click += label14_Click;
             // 
             // txtTurboPumpRunTime
             // 
@@ -1263,7 +1328,7 @@ namespace VacX_OutSense
             txtTurboPumpRunTime.Location = new Point(92, 139);
             txtTurboPumpRunTime.Name = "txtTurboPumpRunTime";
             txtTurboPumpRunTime.ReadOnly = true;
-            txtTurboPumpRunTime.Size = new Size(83, 31);
+            txtTurboPumpRunTime.Size = new Size(83, 23);
             txtTurboPumpRunTime.TabIndex = 13;
             txtTurboPumpRunTime.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1283,7 +1348,7 @@ namespace VacX_OutSense
             txtTurboPumpBearingTemp.Location = new Point(3, 139);
             txtTurboPumpBearingTemp.Name = "txtTurboPumpBearingTemp";
             txtTurboPumpBearingTemp.ReadOnly = true;
-            txtTurboPumpBearingTemp.Size = new Size(83, 31);
+            txtTurboPumpBearingTemp.Size = new Size(83, 23);
             txtTurboPumpBearingTemp.TabIndex = 10;
             txtTurboPumpBearingTemp.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1293,7 +1358,7 @@ namespace VacX_OutSense
             txtTurboPumpElectronicsTemp.Location = new Point(359, 89);
             txtTurboPumpElectronicsTemp.Name = "txtTurboPumpElectronicsTemp";
             txtTurboPumpElectronicsTemp.ReadOnly = true;
-            txtTurboPumpElectronicsTemp.Size = new Size(83, 31);
+            txtTurboPumpElectronicsTemp.Size = new Size(83, 23);
             txtTurboPumpElectronicsTemp.TabIndex = 9;
             txtTurboPumpElectronicsTemp.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1303,7 +1368,7 @@ namespace VacX_OutSense
             txtTurboPumpMotorTemp.Location = new Point(270, 89);
             txtTurboPumpMotorTemp.Name = "txtTurboPumpMotorTemp";
             txtTurboPumpMotorTemp.ReadOnly = true;
-            txtTurboPumpMotorTemp.Size = new Size(83, 31);
+            txtTurboPumpMotorTemp.Size = new Size(83, 23);
             txtTurboPumpMotorTemp.TabIndex = 8;
             txtTurboPumpMotorTemp.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1313,7 +1378,7 @@ namespace VacX_OutSense
             txtTurboPumpCurrent.Location = new Point(181, 89);
             txtTurboPumpCurrent.Name = "txtTurboPumpCurrent";
             txtTurboPumpCurrent.ReadOnly = true;
-            txtTurboPumpCurrent.Size = new Size(83, 31);
+            txtTurboPumpCurrent.Size = new Size(83, 23);
             txtTurboPumpCurrent.TabIndex = 7;
             txtTurboPumpCurrent.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1323,7 +1388,7 @@ namespace VacX_OutSense
             txtTurboPumpSpeed.Location = new Point(92, 89);
             txtTurboPumpSpeed.Name = "txtTurboPumpSpeed";
             txtTurboPumpSpeed.ReadOnly = true;
-            txtTurboPumpSpeed.Size = new Size(83, 31);
+            txtTurboPumpSpeed.Size = new Size(83, 23);
             txtTurboPumpSpeed.TabIndex = 6;
             txtTurboPumpSpeed.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1390,7 +1455,7 @@ namespace VacX_OutSense
             txtTurboPumpStatus.Location = new Point(3, 89);
             txtTurboPumpStatus.Name = "txtTurboPumpStatus";
             txtTurboPumpStatus.ReadOnly = true;
-            txtTurboPumpStatus.Size = new Size(83, 31);
+            txtTurboPumpStatus.Size = new Size(83, 23);
             txtTurboPumpStatus.TabIndex = 5;
             txtTurboPumpStatus.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1559,7 +1624,7 @@ namespace VacX_OutSense
             txtDryPumpRunTime.Location = new Point(3, 136);
             txtDryPumpRunTime.Name = "txtDryPumpRunTime";
             txtDryPumpRunTime.ReadOnly = true;
-            txtDryPumpRunTime.Size = new Size(86, 31);
+            txtDryPumpRunTime.Size = new Size(86, 23);
             txtDryPumpRunTime.TabIndex = 10;
             txtDryPumpRunTime.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1569,7 +1634,7 @@ namespace VacX_OutSense
             txtDryPumpMotorTemp.Location = new Point(371, 86);
             txtDryPumpMotorTemp.Name = "txtDryPumpMotorTemp";
             txtDryPumpMotorTemp.ReadOnly = true;
-            txtDryPumpMotorTemp.Size = new Size(88, 31);
+            txtDryPumpMotorTemp.Size = new Size(88, 23);
             txtDryPumpMotorTemp.TabIndex = 9;
             txtDryPumpMotorTemp.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1579,7 +1644,7 @@ namespace VacX_OutSense
             txtDryPumpPower.Location = new Point(279, 86);
             txtDryPumpPower.Name = "txtDryPumpPower";
             txtDryPumpPower.ReadOnly = true;
-            txtDryPumpPower.Size = new Size(86, 31);
+            txtDryPumpPower.Size = new Size(86, 23);
             txtDryPumpPower.TabIndex = 8;
             txtDryPumpPower.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1589,7 +1654,7 @@ namespace VacX_OutSense
             txtDryPumpCurrent.Location = new Point(187, 86);
             txtDryPumpCurrent.Name = "txtDryPumpCurrent";
             txtDryPumpCurrent.ReadOnly = true;
-            txtDryPumpCurrent.Size = new Size(86, 31);
+            txtDryPumpCurrent.Size = new Size(86, 23);
             txtDryPumpCurrent.TabIndex = 7;
             txtDryPumpCurrent.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1599,7 +1664,7 @@ namespace VacX_OutSense
             txtDryPumpFrequency.Location = new Point(95, 86);
             txtDryPumpFrequency.Name = "txtDryPumpFrequency";
             txtDryPumpFrequency.ReadOnly = true;
-            txtDryPumpFrequency.Size = new Size(86, 31);
+            txtDryPumpFrequency.Size = new Size(86, 23);
             txtDryPumpFrequency.TabIndex = 6;
             txtDryPumpFrequency.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1666,7 +1731,7 @@ namespace VacX_OutSense
             txtDryPumpStatus.Location = new Point(3, 86);
             txtDryPumpStatus.Name = "txtDryPumpStatus";
             txtDryPumpStatus.ReadOnly = true;
-            txtDryPumpStatus.Size = new Size(86, 31);
+            txtDryPumpStatus.Size = new Size(86, 23);
             txtDryPumpStatus.TabIndex = 5;
             txtDryPumpStatus.TextAlign = HorizontalAlignment.Center;
             // 
@@ -1771,7 +1836,6 @@ namespace VacX_OutSense
             label2.TabIndex = 4;
             label2.Text = "VentValve";
             label2.TextAlign = ContentAlignment.MiddleCenter;
-            label2.Click += label2_Click;
             // 
             // label3
             // 
@@ -1785,7 +1849,6 @@ namespace VacX_OutSense
             label3.TabIndex = 5;
             label3.Text = "ExhaustValve";
             label3.TextAlign = ContentAlignment.MiddleCenter;
-            label3.Click += label3_Click;
             // 
             // btn_iongauge
             // 
@@ -1797,77 +1860,13 @@ namespace VacX_OutSense
             btn_iongauge.UseVisualStyleBackColor = true;
             btn_iongauge.Click += btn_iongauge_Click;
             // 
-            // bindableTextBox4
-            // 
-            bindableTextBox4.DataMember = null;
-            bindableTextBox4.DataSource = null;
-            bindableTextBox4.FormatString = null;
-            bindableTextBox4.IsReadOnly = false;
-            bindableTextBox4.LabelText = "레이블:";
-            bindableTextBox4.Location = new Point(809, 55);
-            bindableTextBox4.Margin = new Padding(4, 5, 4, 5);
-            bindableTextBox4.Name = "bindableTextBox4";
-            bindableTextBox4.Padding = new Padding(0, 0, 0, 3);
-            bindableTextBox4.Size = new Size(346, 33);
-            bindableTextBox4.TabIndex = 6;
-            bindableTextBox4.TextValue = "";
-            bindableTextBox4.Load += bindableTextBox4_Load_1;
-            // 
-            // bindableTextBox3
-            // 
-            bindableTextBox3.DataMember = null;
-            bindableTextBox3.DataSource = null;
-            bindableTextBox3.FormatString = null;
-            bindableTextBox3.IsReadOnly = false;
-            bindableTextBox3.LabelText = "레이블:";
-            bindableTextBox3.Location = new Point(809, 16);
-            bindableTextBox3.Margin = new Padding(4, 5, 4, 5);
-            bindableTextBox3.Name = "bindableTextBox3";
-            bindableTextBox3.Padding = new Padding(0, 0, 0, 3);
-            bindableTextBox3.Size = new Size(250, 33);
-            bindableTextBox3.TabIndex = 5;
-            bindableTextBox3.TextValue = "";
-            bindableTextBox3.Load += bindableTextBox3_Load;
-            // 
-            // bindableTextBox2
-            // 
-            bindableTextBox2.DataMember = null;
-            bindableTextBox2.DataSource = null;
-            bindableTextBox2.FormatString = null;
-            bindableTextBox2.IsReadOnly = false;
-            bindableTextBox2.LabelText = "레이블:";
-            bindableTextBox2.Location = new Point(417, 16);
-            bindableTextBox2.Margin = new Padding(4, 5, 4, 5);
-            bindableTextBox2.Name = "bindableTextBox2";
-            bindableTextBox2.Padding = new Padding(0, 0, 0, 3);
-            bindableTextBox2.Size = new Size(250, 63);
-            bindableTextBox2.TabIndex = 4;
-            bindableTextBox2.TextValue = "";
-            bindableTextBox2.Load += bindableTextBox2_Load;
-            // 
-            // bindableTextBox1
-            // 
-            bindableTextBox1.DataMember = null;
-            bindableTextBox1.DataSource = null;
-            bindableTextBox1.FormatString = null;
-            bindableTextBox1.IsReadOnly = false;
-            bindableTextBox1.LabelText = "ATM(kPa)";
-            bindableTextBox1.Location = new Point(31, 16);
-            bindableTextBox1.Margin = new Padding(4, 5, 4, 5);
-            bindableTextBox1.Name = "bindableTextBox1";
-            bindableTextBox1.Padding = new Padding(0, 0, 0, 3);
-            bindableTextBox1.Size = new Size(250, 63);
-            bindableTextBox1.TabIndex = 3;
-            bindableTextBox1.TextValue = "";
-            bindableTextBox1.Load += bindableTextBox1_Load;
-            // 
             // tabPage2
             // 
             tabPage2.Controls.Add(txtLog);
-            tabPage2.Location = new Point(4, 34);
+            tabPage2.Location = new Point(4, 24);
             tabPage2.Name = "tabPage2";
             tabPage2.Padding = new Padding(3);
-            tabPage2.Size = new Size(1172, 639);
+            tabPage2.Size = new Size(1172, 649);
             tabPage2.TabIndex = 3;
             tabPage2.Text = "Log";
             tabPage2.UseVisualStyleBackColor = true;
@@ -1877,7 +1876,7 @@ namespace VacX_OutSense
             txtLog.Dock = DockStyle.Fill;
             txtLog.Location = new Point(3, 3);
             txtLog.Name = "txtLog";
-            txtLog.Size = new Size(1166, 633);
+            txtLog.Size = new Size(1166, 643);
             txtLog.TabIndex = 0;
             txtLog.Text = "";
             // 
@@ -1887,20 +1886,20 @@ namespace VacX_OutSense
             menuStrip.Items.AddRange(new ToolStripItem[] { menuFile, menuComm, menuHelp });
             menuStrip.Location = new Point(0, 0);
             menuStrip.Name = "menuStrip";
-            menuStrip.Size = new Size(1186, 33);
+            menuStrip.Size = new Size(1186, 24);
             menuStrip.TabIndex = 1;
             // 
             // menuFile
             // 
             menuFile.DropDownItems.AddRange(new ToolStripItem[] { menuFileExit });
             menuFile.Name = "menuFile";
-            menuFile.Size = new Size(83, 29);
+            menuFile.Size = new Size(57, 20);
             menuFile.Text = "파일(&F)";
             // 
             // menuFileExit
             // 
             menuFileExit.Name = "menuFileExit";
-            menuFileExit.Size = new Size(171, 34);
+            menuFileExit.Size = new Size(113, 22);
             menuFileExit.Text = "종료(&X)";
             menuFileExit.Click += menuFileExit_Click;
             // 
@@ -1908,13 +1907,13 @@ namespace VacX_OutSense
             // 
             menuComm.DropDownItems.AddRange(new ToolStripItem[] { menuCommSettings });
             menuComm.Name = "menuComm";
-            menuComm.Size = new Size(85, 29);
+            menuComm.Size = new Size(59, 20);
             menuComm.Text = "통신(&C)";
             // 
             // menuCommSettings
             // 
             menuCommSettings.Name = "menuCommSettings";
-            menuCommSettings.Size = new Size(212, 34);
+            menuCommSettings.Size = new Size(141, 22);
             menuCommSettings.Text = "통신 설정(&S)";
             menuCommSettings.Click += MenuCommSettings_Click;
             // 
@@ -1922,13 +1921,13 @@ namespace VacX_OutSense
             // 
             menuHelp.DropDownItems.AddRange(new ToolStripItem[] { menuHelpAbout });
             menuHelp.Name = "menuHelp";
-            menuHelp.Size = new Size(105, 29);
+            menuHelp.Size = new Size(72, 20);
             menuHelp.Text = "도움말(&H)";
             // 
             // menuHelpAbout
             // 
             menuHelpAbout.Name = "menuHelpAbout";
-            menuHelpAbout.Size = new Size(172, 34);
+            menuHelpAbout.Size = new Size(114, 22);
             menuHelpAbout.Text = "정보(&A)";
             menuHelpAbout.Click += MenuHelpAbout_Click;
             // 
@@ -1936,15 +1935,15 @@ namespace VacX_OutSense
             // 
             statusStrip.ImageScalingSize = new Size(24, 24);
             statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusConnection });
-            statusStrip.Location = new Point(0, 697);
+            statusStrip.Location = new Point(0, 707);
             statusStrip.Name = "statusStrip";
-            statusStrip.Size = new Size(1186, 32);
+            statusStrip.Size = new Size(1186, 22);
             statusStrip.TabIndex = 2;
             // 
             // toolStripStatusConnection
             // 
             toolStripStatusConnection.Name = "toolStripStatusConnection";
-            toolStripStatusConnection.Size = new Size(48, 25);
+            toolStripStatusConnection.Size = new Size(31, 17);
             toolStripStatusConnection.Text = "준비";
             // 
             // gridViewMaster
@@ -2005,6 +2004,7 @@ namespace VacX_OutSense
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "VacX OutSense System Controller";
+            Load += MainForm_Load;
             tableLayoutPanelMain.ResumeLayout(false);
             tabControlMain.ResumeLayout(false);
             tabPage1.ResumeLayout(false);
@@ -2057,7 +2057,7 @@ namespace VacX_OutSense
         private ToolStripMenuItem menuHelpAbout;
         private StatusStrip statusStrip;
 
-#endregion
+        #endregion
         private TabPage tabPage1;
         private TableLayoutPanel tableLayoutPanel2;
         private TableLayoutPanel tableLayoutPanel3;
@@ -2070,8 +2070,8 @@ namespace VacX_OutSense
         private Forms.UserControls.ConnectionIndicator connectionIndicator_drypump;
         private Panel panel1;
         private Forms.UserControls.BindableTextBox bindableTextBox1;
-        private Forms.UserControls.BindableTextBox bindableTextBox3;
-        private Forms.UserControls.BindableTextBox bindableTextBox2;
+        private Forms.UserControls.BindableTextBox txtIG;
+        private Forms.UserControls.BindableTextBox txtPG;
         private Forms.UserControls.BindableTextBox bindableTextBox4;
         private Button btn_iongauge;
         private TableLayoutPanel tableLayoutPanel5;
@@ -2187,5 +2187,7 @@ namespace VacX_OutSense
         private TextBox txtCh2PresentValue;
         private TextBox txtCh2SetValue;
         private Button button2;
+        private TextBox txtCh2IsAutotune;
+        private TextBox txtCh1IsAutotune;
     }
 }

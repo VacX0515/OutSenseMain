@@ -62,10 +62,12 @@ namespace VacX_OutSense.Core.Devices.TempController
         #region 필드 및 속성
 
         private int _deviceAddress = 1;            // 장치 국번 (기본값: 1)
-        private readonly int _numChannels = 4;     // 채널 수 (TM4용)
+        private readonly int _numChannels = 2;     // 채널 수 (TM4용) - 2개만 씀
         private int _timeout = 500;                // 통신 타임아웃(ms)
         private bool _isUpdatingStatus = false;    // 상태 업데이트 진행 중 여부
         private readonly object _commandLock = new object(); // 명령 동기화를 위한 락 객체
+
+        private const int _maxTemp = 150;
 
         private TemperatureControllerStatus _status = new TemperatureControllerStatus();
         private DateTime _lastStatusUpdateTime = DateTime.MinValue;
@@ -426,6 +428,11 @@ namespace VacX_OutSense.Core.Devices.TempController
             if (channelNumber < 1 || channelNumber > _numChannels)
             {
                 throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            }
+
+            if(setValue > _maxTemp)
+            {
+                throw new ArgumentOutOfRangeException(nameof(setValue), $"설정 온도는 {_maxTemp} 이하여야 합니다.");
             }
 
             EnsureConnected();
