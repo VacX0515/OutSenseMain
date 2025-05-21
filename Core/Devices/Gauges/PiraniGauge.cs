@@ -14,6 +14,8 @@ namespace VacX_OutSense.Core.Devices.Gauges
     /// </summary>
     public class PiraniGauge
     {
+        public double PressureInTorr { get; set; }
+
         // 출력 전압 범위 (표준 출력 특성)
         private const double MIN_VOLTAGE = 1.9;    // 최소 전압값 (V)
         private const double MAX_VOLTAGE = 10.0;   // 최대 전압값 (V)
@@ -42,7 +44,7 @@ namespace VacX_OutSense.Core.Devices.Gauges
         /// </summary>
         /// <param name="voltage">측정된 전압 값 (V)</param>
         /// <returns>변환된 압력 값 (Torr)</returns>
-        public double ConvertVoltageToPressure(double voltage)
+        public double ConvertVoltageToPressureInTorr(double voltage)
         {
             // 전압이 범위를 벗어나면 제한
             if (voltage < MIN_VOLTAGE)
@@ -51,9 +53,9 @@ namespace VacX_OutSense.Core.Devices.Gauges
                 voltage = MAX_VOLTAGE;
 
             // 로그 선형 변환 공식 적용: P = 10^((V-a)/b)
-            double pressureInTorr = Math.Pow(10, (voltage - COEFFICIENT_A) / COEFFICIENT_B);
+            PressureInTorr = Math.Pow(10, (voltage - COEFFICIENT_A) / COEFFICIENT_B);
 
-            return pressureInTorr;
+            return PressureInTorr;
         }
 
         /// <summary>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using VacX_OutSense.Utils;
 
 namespace VacX_OutSense.Core.Devices.Gauges
 {
@@ -11,6 +12,9 @@ namespace VacX_OutSense.Core.Devices.Gauges
         // PTR 225 Penning Transmitter 게이지의 전압-압력 변환
         // 출력 전압 범위: 0.66V - 10.0V (로그 스케일, 1.333V/decade)
         // 측정 압력 범위: 1×10^-9 - 1×10^-2 mbar
+
+        public double PressureInTorr { get; set; }
+        public string Status { get; set; }
 
         // 기본 상태값 (게이지 점화되지 않음)
         private const double NotIgnitedVoltage = 0.4; // 점화되지 않았을 때 전압
@@ -25,7 +29,7 @@ namespace VacX_OutSense.Core.Devices.Gauges
         /// </summary>
         /// <param name="voltage">게이지 출력 전압 (V)</param>
         /// <returns>변환된 압력 (mbar)</returns>
-        public double ConvertVoltageToPressure(double voltage)
+        public double ConvertVoltageToPressureInTorr(double voltage)
         {
             // 게이지가 점화되지 않은 상태 확인
             if (Math.Abs(voltage - NotIgnitedVoltage) < 0.1)
@@ -42,9 +46,9 @@ namespace VacX_OutSense.Core.Devices.Gauges
             // 로그 스케일 변환
             // P = BasePressure * 10^((V - BaseVoltage) / VoltPerDecade)
             double exponent = (voltage - BaseVoltage) / VoltPerDecade;
-            double pressure = BasePressure * Math.Pow(10, exponent);
+            PressureInTorr = PressureConverter.ToTorr(BasePressure * Math.Pow(10, exponent), PressureConverter.PressureUnit.mbar);
 
-            return pressure;
+            return PressureInTorr;
         }
 
         /// <summary>
@@ -57,19 +61,14 @@ namespace VacX_OutSense.Core.Devices.Gauges
         {
             if (statusvoltage < 1.0) // Low 상태 (0V)
             {
-                if (Math.Abs(voltage - NotIgnitedVoltage) < 0.1)
-                {
-                    return "고전압 꺼짐";
-                }
-                else
-                {
-                    return "고전압 켜짐, 점화되지 않음 (압력 < 3×10^-9 mbar)";
-                }
+                Status = "작동 대기 중";
             }
             else // High 상태 (13.5-32V)
             {
-                return "준비됨 (점화됨, 압력 > 3×10^-9 mbar)";
+                Status= "정상 작동 중";
             }
+
+            return Status;
         }
     }
 }
