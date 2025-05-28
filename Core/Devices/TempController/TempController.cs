@@ -40,8 +40,13 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         // 보유 레지스터
         private const ushort REG_HOLD_CH1_SV = 0x0000;       // SV 설정값 - 400001
-        private const ushort REG_HOLD_CH1_RUN_STOP = 0x0032; // 제어 출력 운전/정지 - 400051
-        private const ushort REG_HOLD_CH1_AUTO_TUNING = 0x0064; // 오토튜닝 실행/정지 - 400101
+        private const ushort REG_HOLD_CH2_SV = 0x03E8;       // SV 설정값 - 401001
+
+        // 코일 주소 (매뉴얼 참조)
+        private const ushort COIL_CH1_RUN_STOP = 0x0000;     // 채널 1 RUN/STOP - 000001
+        private const ushort COIL_CH1_AUTO_TUNING = 0x0001;  // 채널 1 Auto-Tuning - 000002
+        private const ushort COIL_CH2_RUN_STOP = 0x0002;     // 채널 2 RUN/STOP - 000003
+        private const ushort COIL_CH2_AUTO_TUNING = 0x0003;  // 채널 2 Auto-Tuning - 000004
 
         // 온도 센서 타입
         private enum TemperatureSensorType : ushort
@@ -54,7 +59,7 @@ namespace VacX_OutSense.Core.Devices.TempController
             E_CR_L = 5,             // E (CR).L
             T_CC_H = 6,             // T (CC).H
             T_CC_L = 7              // T (CC).L
-            // 기타 타입은 추가 가능
+                                    // 기타 타입은 추가 가능
         }
 
         #endregion
@@ -67,7 +72,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         private bool _isUpdatingStatus = false;    // 상태 업데이트 진행 중 여부
         private readonly object _commandLock = new object(); // 명령 동기화를 위한 락 객체
 
-        private const int _maxTemp = 1500;
+        private const int _maxTemp = 1500;         // 최대 온도 제한
 
         private TemperatureControllerStatus _status = new TemperatureControllerStatus();
         private DateTime _lastStatusUpdateTime = DateTime.MinValue;
@@ -167,6 +172,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 {
                     ChannelNumber = i + 1,
                     IsRunning = false,
+                    IsAutoTuning = false,  // 오토튜닝 상태 초기화 추가
                     PresentValue = 0,
                     SetValue = 0,
                     Dot = 0,
@@ -397,9 +403,15 @@ namespace VacX_OutSense.Core.Devices.TempController
                     _status.ChannelStatus[index].HeatingMV = registers[4] / 10.0f; // 0.1% 단위
                     _status.ChannelStatus[index].CoolingMV = registers[5] / 10.0f; // 0.1% 단위
 
-                    // RUN/STOP 상태 확인
-                    bool isRunning = ReadCoil((ushort)(channelNumber - 1)) == false; // 0: RUN, 1: STOP
+                    // RUN/STOP 상태 확인 - 매뉴얼에 따른 정확한 주소 사용
+                    ushort runStopCoilAddr = (ushort)((channelNumber - 1) * 2); // 채널 1: 0x0000, 채널 2: 0x0002
+                    bool isRunning = !ReadCoil(runStopCoilAddr); // 0: RUN, 1: STOP
                     _status.ChannelStatus[index].IsRunning = isRunning;
+
+                    // 오토튜닝 상태 확인 - 매뉴얼에 따른 정확한 주소 사용
+                    ushort autoTuningCoilAddr = (ushort)((channelNumber - 1) * 2 + 1); // 채널 1: 0x0001, 채널 2: 0x0003
+                    bool isAutoTuning = ReadCoil(autoTuningCoilAddr); // 0: OFF, 1: ON
+                    _status.ChannelStatus[index].IsAutoTuning = isAutoTuning;
 
                     return true;
                 }
@@ -430,9 +442,9 @@ namespace VacX_OutSense.Core.Devices.TempController
                 throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
             }
 
-            if(setValue > _maxTemp)
+            if (setValue > _maxTemp)
             {
-                MessageBox.Show($"설정 온도는 {_maxTemp/10} 이하여야 합니다.", "Interlock", MessageBoxButtons.OK);
+                MessageBox.Show($"설정 온도는 {_maxTemp / 10} 이하여야 합니다.", "Interlock", MessageBoxButtons.OK);
                 throw new ArgumentOutOfRangeException(nameof(setValue), $"설정 온도는 {_maxTemp} 이하여야 합니다.");
             }
 
@@ -440,8 +452,16 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // 채널별 레지스터 주소 계산 (400001, 401001, 402001, 403001)
-                ushort registerAddress = (ushort)((channelNumber - 1) * 0x03E8);
+                // 채널별 레지스터 주소 계산
+                ushort registerAddress;
+
+                // 매뉴얼 참조하여 정확한 주소 계산
+                if (channelNumber == 1)
+                    registerAddress = REG_HOLD_CH1_SV;  // 400001 (0x0000)
+                else if (channelNumber == 2)
+                    registerAddress = REG_HOLD_CH2_SV;  // 401001 (0x03E8)
+                else
+                    registerAddress = (ushort)((channelNumber - 1) * 0x03E8);
 
                 // 설정 값 쓰기
                 bool result = WriteSingleRegister(registerAddress, (ushort)setValue);
@@ -479,8 +499,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // RUN/STOP 코일 주소 계산 (0: RUN, 1: STOP)
-                ushort coilAddress = (ushort)(channelNumber - 1);
+                // 매뉴얼에 따른 정확한 RUN/STOP 코일 주소 계산 (0: RUN, 1: STOP)
+                ushort coilAddress;
+                if (channelNumber == 1)
+                    coilAddress = COIL_CH1_RUN_STOP;  // 0x0000
+                else if (channelNumber == 2)
+                    coilAddress = COIL_CH2_RUN_STOP;  // 0x0002
+                else
+                    coilAddress = (ushort)((channelNumber - 1) * 2);
 
                 // RUN 상태 설정 (OFF 값으로 쓰기)
                 bool result = WriteSingleCoil(coilAddress, false);
@@ -518,8 +544,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // RUN/STOP 코일 주소 계산 (0: RUN, 1: STOP)
-                ushort coilAddress = (ushort)(channelNumber - 1);
+                // 매뉴얼에 따른 정확한 RUN/STOP 코일 주소 계산 (0: RUN, 1: STOP)
+                ushort coilAddress;
+                if (channelNumber == 1)
+                    coilAddress = COIL_CH1_RUN_STOP;  // 0x0000
+                else if (channelNumber == 2)
+                    coilAddress = COIL_CH2_RUN_STOP;  // 0x0002
+                else
+                    coilAddress = (ushort)((channelNumber - 1) * 2);
 
                 // STOP 상태 설정 (ON 값으로 쓰기)
                 bool result = WriteSingleCoil(coilAddress, true);
@@ -557,14 +589,23 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // 오토튜닝 코일 주소 계산
-                ushort coilAddress = (ushort)(channelNumber + 1);
+                // 매뉴얼에 따른 정확한 오토튜닝 코일 주소 계산
+                ushort coilAddress;
+                if (channelNumber == 1)
+                    coilAddress = COIL_CH1_AUTO_TUNING;  // 0x0001
+                else if (channelNumber == 2)
+                    coilAddress = COIL_CH2_AUTO_TUNING;  // 0x0003
+                else
+                    coilAddress = (ushort)((channelNumber - 1) * 2 + 1);
 
                 // 오토튜닝 시작 (ON 값으로 쓰기)
                 bool result = WriteSingleCoil(coilAddress, true);
 
                 if (result)
                 {
+                    // 결과가 성공이면 상태값도 업데이트
+                    _status.ChannelStatus[channelNumber - 1].IsAutoTuning = true;
+
                     OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                         $"채널 {channelNumber} 오토튜닝 시작 성공",
                         DeviceStatusCode.Running));
@@ -595,14 +636,23 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // 오토튜닝 코일 주소 계산
-                ushort coilAddress = (ushort)(channelNumber + 1);
+                // 매뉴얼에 따른 정확한 오토튜닝 코일 주소 계산
+                ushort coilAddress;
+                if (channelNumber == 1)
+                    coilAddress = COIL_CH1_AUTO_TUNING;  // 0x0001
+                else if (channelNumber == 2)
+                    coilAddress = COIL_CH2_AUTO_TUNING;  // 0x0003
+                else
+                    coilAddress = (ushort)((channelNumber - 1) * 2 + 1);
 
                 // 오토튜닝 정지 (OFF 값으로 쓰기)
                 bool result = WriteSingleCoil(coilAddress, false);
 
                 if (result)
                 {
+                    // 결과가 성공이면 상태값도 업데이트
+                    _status.ChannelStatus[channelNumber - 1].IsAutoTuning = false;
+
                     OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                         $"채널 {channelNumber} 오토튜닝 정지 성공",
                         DeviceStatusCode.Idle));
@@ -689,7 +739,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 bool success = _communicationManager.Write(request);
                 if (!success)
                 {
-                    throw new IOException("코일 읽기 요청 전송 실패");
+                    throw new IOException($"코일 읽기 요청 전송 실패 (주소: 0x{address:X4})");
                 }
 
                 // 응답 읽기
@@ -698,13 +748,13 @@ namespace VacX_OutSense.Core.Devices.TempController
                 // 응답 유효성 검사
                 if (response == null || response.Length < 6 || response[0] != (byte)_deviceAddress || response[1] != FUNC_READ_COILS)
                 {
-                    throw new IOException("코일 읽기 응답 오류");
+                    throw new IOException($"코일 읽기 응답 오류 (주소: 0x{address:X4})");
                 }
 
                 // 예외 응답 확인
                 if ((response[1] & 0x80) == 0x80)
                 {
-                    throw new IOException($"Modbus 예외 응답: {response[2]}");
+                    throw new IOException($"Modbus 예외 응답: {response[2]} (주소: 0x{address:X4})");
                 }
 
                 // 코일 상태 반환 (비트 확인)
@@ -731,7 +781,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 bool success = _communicationManager.Write(request);
                 if (!success)
                 {
-                    throw new IOException("입력 읽기 요청 전송 실패");
+                    throw new IOException($"입력 읽기 요청 전송 실패 (주소: 0x{address:X4})");
                 }
 
                 // 응답 읽기
@@ -740,13 +790,13 @@ namespace VacX_OutSense.Core.Devices.TempController
                 // 응답 유효성 검사
                 if (response == null || response.Length < 6 || response[0] != (byte)_deviceAddress || response[1] != FUNC_READ_INPUTS)
                 {
-                    throw new IOException("입력 읽기 응답 오류");
+                    throw new IOException($"입력 읽기 응답 오류 (주소: 0x{address:X4})");
                 }
 
                 // 예외 응답 확인
                 if ((response[1] & 0x80) == 0x80)
                 {
-                    throw new IOException($"Modbus 예외 응답: {response[2]}");
+                    throw new IOException($"Modbus 예외 응답: {response[2]} (주소: 0x{address:X4})");
                 }
 
                 // 입력 상태 반환 (비트 확인)
@@ -774,7 +824,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 bool success = _communicationManager.Write(request);
                 if (!success)
                 {
-                    throw new IOException("보유 레지스터 읽기 요청 전송 실패");
+                    throw new IOException($"보유 레지스터 읽기 요청 전송 실패 (주소: 0x{address:X4})");
                 }
 
                 // 응답 읽기
@@ -783,20 +833,20 @@ namespace VacX_OutSense.Core.Devices.TempController
                 // 응답 유효성 검사
                 if (response == null || response.Length < (5 + count * 2) || response[0] != (byte)_deviceAddress || response[1] != FUNC_READ_HOLDING_REGS)
                 {
-                    throw new IOException("보유 레지스터 읽기 응답 오류");
+                    throw new IOException($"보유 레지스터 읽기 응답 오류 (주소: 0x{address:X4})");
                 }
 
                 // 예외 응답 확인
                 if ((response[1] & 0x80) == 0x80)
                 {
-                    throw new IOException($"Modbus 예외 응답: {response[2]}");
+                    throw new IOException($"Modbus 예외 응답: {response[2]} (주소: 0x{address:X4})");
                 }
 
                 // 바이트 수 확인
                 int byteCount = response[2];
                 if (byteCount != count * 2)
                 {
-                    throw new IOException("보유 레지스터 읽기 응답 길이 불일치");
+                    throw new IOException($"보유 레지스터 읽기 응답 길이 불일치 (주소: 0x{address:X4})");
                 }
 
                 // 레지스터 값 추출
@@ -830,7 +880,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 bool success = _communicationManager.Write(request);
                 if (!success)
                 {
-                    throw new IOException("입력 레지스터 읽기 요청 전송 실패");
+                    throw new IOException($"입력 레지스터 읽기 요청 전송 실패 (주소: 0x{address:X4})");
                 }
 
                 // 응답 읽기
@@ -839,20 +889,20 @@ namespace VacX_OutSense.Core.Devices.TempController
                 // 응답 유효성 검사
                 if (response == null || response.Length < (5 + count * 2) || response[0] != (byte)_deviceAddress || response[1] != FUNC_READ_INPUT_REGS)
                 {
-                    throw new IOException("입력 레지스터 읽기 응답 오류");
+                    throw new IOException($"입력 레지스터 읽기 응답 오류 (주소: 0x{address:X4})");
                 }
 
                 // 예외 응답 확인
                 if ((response[1] & 0x80) == 0x80)
                 {
-                    throw new IOException($"Modbus 예외 응답: {response[2]}");
+                    throw new IOException($"Modbus 예외 응답: {response[2]} (주소: 0x{address:X4})");
                 }
 
                 // 바이트 수 확인
                 int byteCount = response[2];
                 if (byteCount != count * 2)
                 {
-                    throw new IOException("입력 레지스터 읽기 응답 길이 불일치");
+                    throw new IOException($"입력 레지스터 읽기 응답 길이 불일치 (주소: 0x{address:X4})");
                 }
 
                 // 레지스터 값 추출
@@ -876,38 +926,84 @@ namespace VacX_OutSense.Core.Devices.TempController
         {
             lock (_commandLock)
             {
-                // Modbus RTU 프레임 생성
-                ushort coilValue = value ? (ushort)0xFF00 : (ushort)0x0000;
-                byte[] request = CreateModbusRtuWriteSingleCoilRequest(address, coilValue);
-
-                // 전송 전 입력 버퍼 비우기
-                _communicationManager.DiscardInBuffer();
-
-                // 전송
-                bool success = _communicationManager.Write(request);
-                if (!success)
+                try
                 {
+                    // 디버그 로그 추가 - 요청 상세 정보
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"코일 쓰기 시작: 주소=0x{address:X4}, 값={value}",
+                        DeviceStatusCode.Ready));
+
+                    // Modbus RTU 프레임 생성
+                    ushort coilValue = value ? (ushort)0xFF00 : (ushort)0x0000;
+                    byte[] request = CreateModbusRtuWriteSingleCoilRequest(address, coilValue);
+
+                    // 디버깅용 요청 데이터 로그
+                    string requestHex = BitConverter.ToString(request).Replace("-", " ");
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"코일 쓰기 요청 데이터: {requestHex}",
+                        DeviceStatusCode.Ready));
+
+                    // 전송 전 입력 버퍼 비우기
+                    _communicationManager.DiscardInBuffer();
+
+                    // 전송
+                    bool success = _communicationManager.Write(request);
+                    if (!success)
+                    {
+                        OnErrorOccurred($"코일 쓰기 요청 전송 실패 (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 응답 읽기 전 딜레이 추가 (필요 시)
+                    Thread.Sleep(50);
+
+                    // 응답 읽기
+                    byte[] response = _communicationManager.ReadAll();
+
+                    // 디버깅용 응답 데이터 로그
+                    if (response != null && response.Length > 0)
+                    {
+                        string responseHex = BitConverter.ToString(response).Replace("-", " ");
+                        OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                            $"코일 쓰기 응답 데이터: {responseHex}",
+                            DeviceStatusCode.Ready));
+                    }
+                    else
+                    {
+                        OnErrorOccurred($"코일 쓰기 응답 없음 (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 응답 유효성 검사
+                    if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_SINGLE_COIL)
+                    {
+                        OnErrorOccurred($"코일 쓰기 응답 유효성 검사 실패 (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 예외 응답 확인
+                    if ((response[1] & 0x80) == 0x80)
+                    {
+                        OnErrorOccurred($"Modbus 예외 응답: {response[2]} (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 주소 확인
+                    ushort respAddress = (ushort)((response[2] << 8) | response[3]);
+                    bool isSuccess = respAddress == address;
+
+                    // 결과 로그
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"코일 쓰기 결과: 주소=0x{respAddress:X4}, 성공={isSuccess}",
+                        DeviceStatusCode.Ready));
+
+                    return isSuccess;
+                }
+                catch (Exception ex)
+                {
+                    OnErrorOccurred($"코일 쓰기 예외: {ex.Message} (주소: 0x{address:X4})");
                     return false;
                 }
-
-                // 응답 읽기
-                byte[] response = _communicationManager.ReadAll();
-
-                // 응답 유효성 검사
-                if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_SINGLE_COIL)
-                {
-                    return false;
-                }
-
-                // 예외 응답 확인
-                if ((response[1] & 0x80) == 0x80)
-                {
-                    return false;
-                }
-
-                // 주소 확인
-                ushort respAddress = (ushort)((response[2] << 8) | response[3]);
-                return respAddress == address;
             }
         }
 
@@ -921,37 +1017,83 @@ namespace VacX_OutSense.Core.Devices.TempController
         {
             lock (_commandLock)
             {
-                // Modbus RTU 프레임 생성
-                byte[] request = CreateModbusRtuWriteSingleRegisterRequest(address, value);
-
-                // 전송 전 입력 버퍼 비우기
-                _communicationManager.DiscardInBuffer();
-
-                // 전송
-                bool success = _communicationManager.Write(request);
-                if (!success)
+                try
                 {
+                    // 디버그 로그 추가
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"레지스터 쓰기 시작: 주소=0x{address:X4}, 값={value}",
+                        DeviceStatusCode.Ready));
+
+                    // Modbus RTU 프레임 생성
+                    byte[] request = CreateModbusRtuWriteSingleRegisterRequest(address, value);
+
+                    // 디버깅용 요청 데이터 로그
+                    string requestHex = BitConverter.ToString(request).Replace("-", " ");
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"레지스터 쓰기 요청 데이터: {requestHex}",
+                        DeviceStatusCode.Ready));
+
+                    // 전송 전 입력 버퍼 비우기
+                    _communicationManager.DiscardInBuffer();
+
+                    // 전송
+                    bool success = _communicationManager.Write(request);
+                    if (!success)
+                    {
+                        OnErrorOccurred($"레지스터 쓰기 요청 전송 실패 (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 응답 읽기 전 딜레이 추가 (필요 시)
+                    Thread.Sleep(50);
+
+                    // 응답 읽기
+                    byte[] response = _communicationManager.ReadAll();
+
+                    // 디버깅용 응답 데이터 로그
+                    if (response != null && response.Length > 0)
+                    {
+                        string responseHex = BitConverter.ToString(response).Replace("-", " ");
+                        OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                            $"레지스터 쓰기 응답 데이터: {responseHex}",
+                            DeviceStatusCode.Ready));
+                    }
+                    else
+                    {
+                        OnErrorOccurred($"레지스터 쓰기 응답 없음 (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 응답 유효성 검사
+                    if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_SINGLE_REG)
+                    {
+                        OnErrorOccurred($"레지스터 쓰기 응답 유효성 검사 실패 (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 예외 응답 확인
+                    if ((response[1] & 0x80) == 0x80)
+                    {
+                        OnErrorOccurred($"Modbus 예외 응답: {response[2]} (주소: 0x{address:X4})");
+                        return false;
+                    }
+
+                    // 주소 확인
+                    ushort respAddress = (ushort)((response[2] << 8) | response[3]);
+                    bool isSuccess = respAddress == address;
+
+                    // 결과 로그
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"레지스터 쓰기 결과: 주소=0x{respAddress:X4}, 성공={isSuccess}",
+                        DeviceStatusCode.Ready));
+
+                    return isSuccess;
+                }
+                catch (Exception ex)
+                {
+                    OnErrorOccurred($"레지스터 쓰기 예외: {ex.Message} (주소: 0x{address:X4})");
                     return false;
                 }
-
-                // 응답 읽기
-                byte[] response = _communicationManager.ReadAll();
-
-                // 응답 유효성 검사
-                if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_SINGLE_REG)
-                {
-                    return false;
-                }
-
-                // 예외 응답 확인
-                if ((response[1] & 0x80) == 0x80)
-                {
-                    return false;
-                }
-
-                // 주소 확인
-                ushort respAddress = (ushort)((response[2] << 8) | response[3]);
-                return respAddress == address;
             }
         }
 
@@ -965,40 +1107,48 @@ namespace VacX_OutSense.Core.Devices.TempController
         {
             lock (_commandLock)
             {
-                // Modbus RTU 프레임 생성
-                byte[] request = CreateModbusRtuWriteMultipleRegistersRequest(address, values);
-
-                // 전송 전 입력 버퍼 비우기
-                _communicationManager.DiscardInBuffer();
-
-                // 전송
-                bool success = _communicationManager.Write(request);
-                if (!success)
+                try
                 {
+                    // Modbus RTU 프레임 생성
+                    byte[] request = CreateModbusRtuWriteMultipleRegistersRequest(address, values);
+
+                    // 전송 전 입력 버퍼 비우기
+                    _communicationManager.DiscardInBuffer();
+
+                    // 전송
+                    bool success = _communicationManager.Write(request);
+                    if (!success)
+                    {
+                        return false;
+                    }
+
+                    // 응답 읽기
+                    byte[] response = _communicationManager.ReadAll();
+
+                    // 응답 유효성 검사
+                    if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_MULTI_REGS)
+                    {
+                        return false;
+                    }
+
+                    // 예외 응답 확인
+                    if ((response[1] & 0x80) == 0x80)
+                    {
+                        return false;
+                    }
+
+                    // 주소 확인
+                    ushort respAddress = (ushort)((response[2] << 8) | response[3]);
+                    // 레지스터 수 확인
+                    ushort respCount = (ushort)((response[4] << 8) | response[5]);
+
+                    return respAddress == address && respCount == values.Length;
+                }
+                catch (Exception ex)
+                {
+                    OnErrorOccurred($"다중 레지스터 쓰기 예외: {ex.Message}");
                     return false;
                 }
-
-                // 응답 읽기
-                byte[] response = _communicationManager.ReadAll();
-
-                // 응답 유효성 검사
-                if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_MULTI_REGS)
-                {
-                    return false;
-                }
-
-                // 예외 응답 확인
-                if ((response[1] & 0x80) == 0x80)
-                {
-                    return false;
-                }
-
-                // 주소 확인
-                ushort respAddress = (ushort)((response[2] << 8) | response[3]);
-                // 레지스터 수 확인
-                ushort respCount = (ushort)((response[4] << 8) | response[5]);
-
-                return respAddress == address && respCount == values.Length;
             }
         }
 
@@ -1239,6 +1389,12 @@ namespace VacX_OutSense.Core.Devices.TempController
             if (!string.IsNullOrEmpty(channelStatus.SensorError))
             {
                 return $"센서 오류: {GetSensorErrorMessage(channelStatus.SensorError)}";
+            }
+
+            // 오토튜닝 상태 확인
+            if (channelStatus.IsAutoTuning)
+            {
+                return "오토튜닝 진행 중";
             }
 
             if (channelStatus.IsRunning)

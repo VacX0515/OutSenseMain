@@ -353,7 +353,7 @@ namespace VacX_OutSense.Core.Devices.Base
                 throw new ObjectDisposedException(DeviceName);
 
             if (!IsConnected)
-                throw new InvalidOperationException($"{DeviceName}이(가) 연결되지 않았습니다.");
+                MessageBox.Show($"{DeviceName}이(가) 연결되지 않았습니다.", "Error", MessageBoxButtons.OK);
         }
 
         /// <summary>

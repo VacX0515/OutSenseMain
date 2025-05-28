@@ -100,12 +100,18 @@ namespace VacX_OutSense.Utils
                 }
                 catch (Exception ex)
                 {
-                    LoggerService.Instance.LogError($"데이터 로깅 시작 오류: {ex.Message}", ex);
+                    AsyncLoggingService.Instance.LogError($"데이터 로깅 시작 오류: {ex.Message}", ex);
                     return false;
                 }
             }
         }
 
+        /// <summary>
+        /// 데이터 행을 로깅합니다.
+        /// </summary>
+        /// <param name="logType">로그 타입</param>
+        /// <param name="values">로깅할 값 목록 (헤더 순서와 일치해야 함)</param>
+        /// <returns>성공 여부</returns>
         /// <summary>
         /// 데이터 행을 로깅합니다.
         /// </summary>
@@ -121,12 +127,62 @@ namespace VacX_OutSense.Utils
             {
                 try
                 {
-                    // 로거가 없으면 생성
+                    DateTime now = DateTime.Now;
+                    bool needNewFile = false;
+
+                    // 로거가 없으면 새 파일 생성
                     if (!_dataWriters.ContainsKey(logType) || _dataWriters[logType] == null)
+                    {
+                        needNewFile = true;
+                    }
+                    // 현재 시간이 다른 3시간 블록에 있는 경우 새 파일 생성
+                    else if (_currentFiles.ContainsKey(logType))
+                    {
+                        string currentFileName = Path.GetFileNameWithoutExtension(_currentFiles[logType]);
+                        string[] parts = currentFileName.Split('_');
+
+                        if (parts.Length >= 3)
+                        {
+                            // 파일명 예상 형식: logType_yyyyMMdd_HH-HH.csv
+                            string dateString = parts[1]; // yyyyMMdd
+                            string timeBlockString = parts[2]; // "00-03" 부분
+
+                            // 파일명 날짜와 현재 날짜 비교
+                            string currentDateString = now.ToString("yyyyMMdd");
+                            if (dateString != currentDateString)
+                            {
+                                needNewFile = true;
+                            }
+                            else
+                            {
+                                // 현재 시간 블록 계산
+                                int hour = now.Hour;
+                                int timeBlockStart = (hour / 3) * 3;
+                                int timeBlockEnd = timeBlockStart + 3;
+                                string newTimeBlock = $"{timeBlockStart:D2}-{timeBlockEnd:D2}";
+
+                                if (timeBlockString != newTimeBlock)
+                                {
+                                    needNewFile = true;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // 파일명 형식이 예상과 다른 경우, 새 파일 생성
+                            needNewFile = true;
+                        }
+                    }
+                    else
+                    {
+                        needNewFile = true;
+                    }
+
+                    // 필요하면 새 파일 생성
+                    if (needNewFile)
                     {
                         // 컴포넌트별 폴더 생성 확인
                         EnsureComponentDirectory(logType);
-
                         if (!CreateNewDataFile(logType))
                             return false;
                     }
@@ -139,8 +195,8 @@ namespace VacX_OutSense.Utils
                             return false;
                     }
 
-                    // 현재 시간 추가 (첫 번째 열)
-                    string timestamp = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")}";
+                    // 현재 시간 추가 (첫 번째 열) - 밀리초 포함
+                    string timestamp = now.ToString("yyyy-MM-dd HH:mm:ss.fff");
 
                     // CSV 행 생성
                     StringBuilder sb = new StringBuilder();
@@ -150,8 +206,8 @@ namespace VacX_OutSense.Utils
                     {
                         sb.Append(',');
 
-                        // 값에 쉼표가 포함되어 있는 경우 큰따옴표로 묶음
-                        if (value != null && value.Contains(","))
+                        // 값에 쉼표나 큰따옴표가 포함되어 있는 경우 큰따옴표로 묶음
+                        if (value != null && (value.Contains(",") || value.Contains("\"")))
                         {
                             sb.Append('"').Append(value.Replace("\"", "\"\"")).Append('"');
                         }
@@ -169,7 +225,7 @@ namespace VacX_OutSense.Utils
                 }
                 catch (Exception ex)
                 {
-                    LoggerService.Instance.LogError($"데이터 로깅 오류: {ex.Message}", ex);
+                    AsyncLoggingService.Instance.LogError($"데이터 로깅 오류: {ex.Message}", ex);
 
                     // 오류 발생 시 새 파일 생성 시도
                     try
@@ -255,19 +311,30 @@ namespace VacX_OutSense.Utils
                 // 컴포넌트 디렉토리 경로 가져오기
                 string componentDir = EnsureComponentDirectory(logType);
 
-                // 현재 시간을 사용한 파일명 생성
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string fileName = Path.Combine(componentDir, $"{logType}_{timestamp}.csv");
+                // 현재 시간을 사용한 파일명 생성 (3시간 단위 시간 블록 포함)
+                DateTime now = DateTime.Now;
+                int hour = now.Hour;
+                int timeBlockStart = (hour / 3) * 3;  // 0, 3, 6, 9, 12, 15, 18, 21 중 하나
+                int timeBlockEnd = timeBlockStart + 3; // 3, 6, 9, 12, 15, 18, 21, 24 중 하나
+
+                // 시간 블록 문자열 (예: "00-03", "03-06", ...)
+                string timeBlock = $"{timeBlockStart:D2}-{timeBlockEnd:D2}";
+
+                // 날짜_시간블록 형식의 파일명
+                string fileName = Path.Combine(componentDir, $"{logType}_{now.ToString("yyyyMMdd")}_{timeBlock}.csv");
                 _currentFiles[logType] = fileName;
 
-                // 새 StreamWriter 생성
-                _dataWriters[logType] = new StreamWriter(fileName, false, Encoding.UTF8)
+                // 파일이 존재하는지 확인
+                bool fileExists = File.Exists(fileName);
+
+                // 새 StreamWriter 생성 (파일이 이미 존재하면 추가 모드)
+                _dataWriters[logType] = new StreamWriter(fileName, fileExists, Encoding.UTF8)
                 {
                     AutoFlush = true
                 };
 
-                // 헤더 쓰기
-                if (_headers.ContainsKey(logType) && _headers[logType] != null)
+                // 새 파일이면 헤더 쓰기
+                if (!fileExists && _headers.ContainsKey(logType) && _headers[logType] != null)
                 {
                     // 시간 헤더 추가
                     StringBuilder headerLine = new StringBuilder("Timestamp");
@@ -295,7 +362,7 @@ namespace VacX_OutSense.Utils
             }
             catch (Exception ex)
             {
-                LoggerService.Instance.LogError($"데이터 파일 생성 오류: {ex.Message}", ex);
+                AsyncLoggingService.Instance.LogError($"데이터 파일 생성 오류: {ex.Message}", ex);
                 return false;
             }
         }

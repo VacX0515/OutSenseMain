@@ -25,6 +25,9 @@ namespace VacX_OutSense.Core.Communication
 
         #region 필드 및 속성
 
+        // 포트별 세마포어 추가
+        private Dictionary<string, SemaphoreSlim> _portSemaphores = new Dictionary<string, SemaphoreSlim>();
+
         // 각 포트별 정보를 저장하는 클래스
         private class PortInfo
         {
@@ -33,6 +36,8 @@ namespace VacX_OutSense.Core.Communication
             public bool IsConnected { get; set; }
             public string PortName { get; set; }
             public readonly object LockObject = new object();
+            public SemaphoreSlim Semaphore { get; } = new SemaphoreSlim(1, 1);
+
         }
 
         // 포트 이름으로 PortInfo를 관리하는 딕셔너리
