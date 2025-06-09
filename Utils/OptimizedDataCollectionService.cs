@@ -301,12 +301,26 @@ namespace VacX_OutSense.Utils
             {
                 IncrementErrorCount(deviceName);
                 LoggerService.Instance.LogDebug($"{deviceName} 수집 오류: {ex.Message}");
+
+                // 추가: 연속 오류 시 연결 끊김으로 판단
+                if (_errorCounts.TryGetValue(deviceName, out int errorCount) && errorCount >= MAX_ERROR_COUNT)
+                {
+                    LoggerService.Instance.LogWarning($"{deviceName} 통신 오류 다수 발생 - 연결 상태 확인 필요");
+
+                    // 메인폼에 통신 오류 알림
+                    _mainForm.BeginInvoke(new Action(() =>
+                    {
+                        _mainForm.HandleDeviceCommunicationError(deviceName);
+                    }));
+                }
             }
             finally
             {
                 semaphore.Release();
             }
-        }
+        }        // 통신 오류 처리 메서드
+
+
 
         private async Task CollectDryPumpData()
         {
@@ -649,7 +663,7 @@ namespace VacX_OutSense.Utils
                     snapshot.ButtonStates.TurboPumpResetEnabled = snapshot.Connections.TurboPump && status.HasError;
 
                     // 터보펌프 속도에 따른 밸브 버튼 상태
-                    bool turboPumpStopped = status.CurrentSpeed < 100;
+                    bool turboPumpStopped = status.CurrentSpeed <= 1;
                     snapshot.ButtonStates.VentValveEnabled = turboPumpStopped;
                     snapshot.ButtonStates.ExhaustValveEnabled = turboPumpStopped;
                 }

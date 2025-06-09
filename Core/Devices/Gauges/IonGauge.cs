@@ -39,7 +39,7 @@ namespace VacX_OutSense.Core.Devices.Gauges
 
             // 전압값이 측정 범위를 벗어나면 제한
             if (voltage < BaseVoltage)
-                voltage = BaseVoltage;
+                return 0.0;
             else if (voltage > 10.0)
                 voltage = 10.0;
 
@@ -65,7 +65,7 @@ namespace VacX_OutSense.Core.Devices.Gauges
             }
             else // High 상태 (13.5-32V)
             {
-                Status= "정상 작동 중";
+                Status = "정상 작동 중";
             }
 
             return Status;

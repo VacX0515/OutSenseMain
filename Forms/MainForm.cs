@@ -25,6 +25,22 @@ namespace VacX_OutSense
     {
         #region 필드 및 속성
 
+        #region 타이머 관련 필드 (클래스 필드 영역에 추가)
+
+        // CH1 타이머 관련
+        private System.Windows.Forms.Timer _ch1AutoStopTimer;
+        private DateTime _ch1StartTime;
+        private TimeSpan _ch1Duration;
+        private bool _ch1TimerActive = false;
+        private bool _ch1WaitingForTargetTemp = false;  // SV 도달 대기 상태
+        private double _ch1TargetTolerance = 0.1;       // 목표 온도 허용 오차 (0.1)
+
+        #endregion
+
+
+        private System.Windows.Forms.Timer _connectionCheckTimer;
+        private Dictionary<string, bool> _previousConnectionStates = new Dictionary<string, bool>();
+
         // 최적화된 서비스들
         private OptimizedDataCollectionService _dataCollectionService;
         private SimplifiedUIUpdateService _uiUpdateService;
@@ -115,12 +131,32 @@ namespace VacX_OutSense
         {
             InitializeComponent();
             this.FormClosing += MainForm_FormClosing;
+
+            InitializeTimers();
         }
+
+        #region 타이머 초기화 (MainForm_Load 또는 생성자에 추가)
+
+        private void InitializeTimers()
+        {
+            // CH1 자동 정지 타이머 초기화
+            _ch1AutoStopTimer = new System.Windows.Forms.Timer();
+            _ch1AutoStopTimer.Interval = 1000; // 1초마다 업데이트
+            _ch1AutoStopTimer.Tick += Ch1AutoStopTimer_Tick;
+
+            // 초기 상태 설정
+            UpdateCh1TimerControls();
+        }
+
+        #endregion
 
         private async void MainForm_Load(object sender, EventArgs e)
         {
             try
             {
+                // 메인폼 비활성화
+                this.Enabled = false;
+
                 // 로딩 화면 표시
                 using (var loadingForm = new LoadingForm())
                 {
@@ -144,7 +180,7 @@ namespace VacX_OutSense
                     StartServices();
 
                     loadingForm.UpdateStatus("초기화 완료!");
-                    await Task.Delay(500);
+                    await Task.Delay(200);
                 }
 
                 LogInfo("시스템 초기화 완료");
@@ -154,7 +190,55 @@ namespace VacX_OutSense
                 MessageBox.Show($"초기화 오류: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 LogError("초기화 실패", ex);
             }
+            finally
+            {
+                // 메인폼 활성화
+                this.Enabled = true;
+                this.Focus();
+            }
         }
+
+        private void InitializeConnectionChecker()
+        {
+            _connectionCheckTimer = new System.Windows.Forms.Timer();
+            _connectionCheckTimer.Interval = 5000; // 5초마다 확인
+            _connectionCheckTimer.Tick += ConnectionCheckTimer_Tick;
+            _connectionCheckTimer.Start();
+        }
+
+        private void ConnectionCheckTimer_Tick(object sender, EventArgs e)
+        {
+            CheckDeviceConnections();
+        }
+
+        private void CheckDeviceConnections()
+        {
+            foreach (var device in _deviceList)
+            {
+                string deviceName = device.DeviceName;
+                bool currentState = device.IsConnected;
+
+                if (_previousConnectionStates.ContainsKey(deviceName))
+                {
+                    bool previousState = _previousConnectionStates[deviceName];
+
+                    if (previousState && !currentState)
+                    {
+                        // 연결이 끊어짐
+                        LogWarning($"{deviceName} 연결 끊김 감지");
+                        StopDeviceDataLogging(deviceName);
+                    }
+                    else if (!previousState && currentState)
+                    {
+                        // 연결이 복구됨
+                        LogInfo($"{deviceName} 연결 복구됨");
+                    }
+                }
+
+                _previousConnectionStates[deviceName] = currentState;
+            }
+        }
+
 
         private async Task InitializeLoggingAsync()
         {
@@ -207,10 +291,12 @@ namespace VacX_OutSense
 
                 // 펌프들
                 _dryPump = new DryPump(_deviceAdapters["COM3"], "ECODRY 25 plus", 1);
+
                 _turboPump = new TurboPump(_deviceAdapters["COM1"], "MAG W 1300", 1);
 
                 // 온도 장치들
                 _bathCirculator = new BathCirculator(_deviceAdapters["COM5"], "LK-1000", 1);
+
                 _tempController = new TempController(_deviceAdapters["COM6"], 1);
 
                 // 게이지들
@@ -224,6 +310,88 @@ namespace VacX_OutSense
 
             // UI 스레드에서 데이터바인딩
             SetupDataBindings();
+        }
+        // 통신 오류 처리 메서드
+        public void HandleDeviceCommunicationError(string deviceName)
+        {
+            try
+            {
+                // 장치별 로그 타입 매핑
+                string logType = deviceName switch
+                {
+                    "IOModule" => "Pressure",
+                    "DryPump" => "DryPump",
+                    "TurboPump" => "TurboPump",
+                    "BathCirculator" => "BathCirculator",
+                    "TempController" => "TempController",
+                    _ => null
+                };
+
+                if (!string.IsNullOrEmpty(logType))
+                {
+                    DataLoggerService.Instance.StopLogging(logType);
+                    LogWarning($"{deviceName} 통신 오류로 인한 데이터 로깅 중단");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"{deviceName} 통신 오류 처리 실패", ex);
+            }
+        }
+
+
+        /// <summary>
+        /// 장치 연결 상태 변경 이벤트 핸들러
+        /// </summary>
+        private void OnDeviceConnectionStateChanged(object sender, bool isConnected)
+        {
+            if (sender is IDevice device)
+            {
+                string deviceName = device.DeviceName;
+
+                if (isConnected)
+                {
+                    LogInfo($"{deviceName} 연결됨");
+                }
+                else
+                {
+                    LogWarning($"{deviceName} 연결 끊김");
+
+                    // 연결이 끊긴 장치의 데이터 로그 중단
+                    StopDeviceDataLogging(deviceName);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 특정 장치의 데이터 로깅 중단
+        /// </summary>
+        private void StopDeviceDataLogging(string deviceName)
+        {
+            try
+            {
+                // 장치별 로그 타입 매핑
+                string logType = deviceName switch
+                {
+                    "ECODRY 25 plus" => "DryPump",
+                    "MAG W 1300" => "TurboPump",
+                    "LK-1000" => "BathCirculator",
+                    "TempController" => "TempController",
+                    "IO Module" => "Pressure",
+                    _ => null
+                };
+
+                if (!string.IsNullOrEmpty(logType))
+                {
+                    // 해당 장치의 데이터 로깅 중단
+                    DataLoggerService.Instance.StopLogging(logType);
+                    LogInfo($"{deviceName} 데이터 로깅 중단됨");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"{deviceName} 데이터 로깅 중단 오류", ex);
+            }
         }
 
         private void SetupDataBindings()
@@ -244,10 +412,35 @@ namespace VacX_OutSense
 
                 connectionIndicator_tempcontroller.DataSource = _tempController;
                 connectionIndicator_tempcontroller.DataMember = "IsConnected";
+
+                // PropertyChanged 이벤트 추가
+                _ioModule.PropertyChanged += Device_PropertyChanged;
+                _dryPump.PropertyChanged += Device_PropertyChanged;
+                _turboPump.PropertyChanged += Device_PropertyChanged;
+                _bathCirculator.PropertyChanged += Device_PropertyChanged;
+                _tempController.PropertyChanged += Device_PropertyChanged;
+
             }
             catch (Exception ex)
             {
                 LogError("데이터바인딩 오류", ex);
+            }
+        }
+
+        // 새로운 이벤트 핸들러 추가
+        private void Device_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == "IsConnected" && sender is IDevice device)
+            {
+                if (!device.IsConnected)
+                {
+                    LogWarning($"{device.DeviceName} 연결 끊김");
+                    StopDeviceDataLogging(device.DeviceName);
+                }
+                else
+                {
+                    LogInfo($"{device.DeviceName} 연결됨");
+                }
             }
         }
 
@@ -282,6 +475,9 @@ namespace VacX_OutSense
             _dataCollectionService = new OptimizedDataCollectionService(this);
             _dataCollectionService.DataUpdated += OnDataUpdated;
             _dataCollectionService.Start();
+
+            // 연결 상태 체크 타이머 시작
+            InitializeConnectionChecker();
 
             LogInfo("서비스 시작 완료");
         }
@@ -851,12 +1047,12 @@ namespace VacX_OutSense
 
         private async void btn_iongauge_Click(object sender, EventArgs e)
         {
-            // 압력 체크
-            if (_dataCollectionService?.GetLatestPressure() > 1E-3 && btn_iongauge.Text != "HV on")
-            {
-                MessageBox.Show("압력이 너무 높습니다 (> 1E-3 Torr)", "인터락", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+            //// 압력 체크
+            //if (_dataCollectionService?.GetLatestPressure() > 1E-2 && btn_iongauge.Text != "HV on")
+            //{
+            //    MessageBox.Show("압력이 너무 높습니다 (> 1E-2 Torr)", "인터락", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            //    return;
+            //}
 
             btn_iongauge.Enabled = false;
             try
@@ -982,9 +1178,12 @@ namespace VacX_OutSense
                 await Task.Run(() => _turboPump.Start());
                 LogInfo("터보펌프 시작");
 
-                // 벤트/배기 밸브 비활성화
-                btn_VV.Enabled = false;
-                btn_EV.Enabled = false;
+
+
+                
+
+                btn_iongauge_Click(null, null);
+                LogInfo("이온게이지 HV ON - 터보 펌프 시작 후 10초 후");
             }
             finally
             {
@@ -1216,6 +1415,12 @@ namespace VacX_OutSense
             {
                 await Task.Run(() => _tempController.Start(1));
                 LogInfo("온도컨트롤러 CH1 시작");
+
+                // 타이머가 활성화되어 있으면 타이머 시작
+                if (chkCh1TimerEnabled.Checked)
+                {
+                    StartCh1Timer();
+                }
             }
             finally
             {
@@ -1230,6 +1435,12 @@ namespace VacX_OutSense
             {
                 await Task.Run(() => _tempController.Stop(1));
                 LogInfo("온도컨트롤러 CH1 정지");
+
+                // 타이머가 실행 중이면 정지
+                if (_ch1TimerActive)
+                {
+                    StopCh1Timer();
+                }
             }
             finally
             {
@@ -1547,28 +1758,52 @@ namespace VacX_OutSense
         {
             LogInfo("시스템 종료 시작");
 
-            // 서비스 중지
-            _dataCollectionService?.Stop();
-            _uiUpdateService?.Stop();
-
-            // 장치 연결 해제
-            foreach (var device in _deviceList)
+            // 로딩 화면 표시
+            using (var loadingForm = new LoadingForm())
             {
-                try
+                loadingForm.Show();
+                Application.DoEvents();
+
+                // 단계별 초기화
+                loadingForm.UpdateStatus("서비스 종료 중...");
+                _dataCollectionService?.Stop();
+                _uiUpdateService?.Stop();
+
+                loadingForm.UpdateStatus("연결 종료 중...");
+                // 장치 연결 해제
+                foreach (var device in _deviceList)
                 {
-                    if (device.IsConnected)
-                        device.Disconnect();
-                }
-                catch { }
+                    try
+                    {
+                        if (device.IsConnected)
+                            device.Disconnect();
+                    }
+                    catch { }
+                };
+
+                loadingForm.UpdateStatus("로깅 종료 중...");
+                DataLoggerService.Instance.StopAllLogging();
+                AsyncLoggingService.Instance.Stop(); ;
+
+                loadingForm.UpdateStatus("리소스 정리 중...");
+                // 리소스 정리
+                _dataCollectionService?.Dispose();
+                _uiUpdateService?.Dispose(); ;
+
+                loadingForm.UpdateStatus("시스템 종료");
+                Task.Delay(200);
             }
+                // 타이머 정지 및 해제
+                if (_ch1AutoStopTimer != null)
+                {
+                    _ch1AutoStopTimer.Stop();
+                    _ch1AutoStopTimer.Dispose();
+                }
 
-            // 로깅 종료
-            DataLoggerService.Instance.StopAllLogging();
-            AsyncLoggingService.Instance.Stop();
 
-            // 리소스 정리
-            _dataCollectionService?.Dispose();
-            _uiUpdateService?.Dispose();
+
+            LogInfo("시스템 종료 완료");
+
         }
 
         #endregion
@@ -1589,6 +1824,259 @@ namespace VacX_OutSense
         }
 
         #endregion
+
+        #region 타이머 이벤트 핸들러
+
+        /// <summary>
+        /// CH1 타이머 활성화 체크박스 변경 이벤트
+        /// </summary>
+        private void chkCh1TimerEnabled_CheckedChanged(object sender, EventArgs e)
+        {
+            UpdateCh1TimerControls();
+        }
+
+        /// <summary>
+        /// CH1 타이머 컨트롤 상태 업데이트
+        /// </summary>
+        private void UpdateCh1TimerControls()
+        {
+            bool enabled = chkCh1TimerEnabled.Checked;
+            bool timerRunning = _ch1TimerActive || _ch1WaitingForTargetTemp;
+
+            numCh1Hours.Enabled = enabled && !timerRunning;
+            numCh1Minutes.Enabled = enabled && !timerRunning;
+            numCh1Seconds.Enabled = enabled && !timerRunning;
+
+            if (!enabled && timerRunning)
+            {
+                StopCh1Timer();
+            }
+        }
+
+        /// <summary>
+        /// CH1 자동 정지 타이머 틱 이벤트
+        /// </summary>
+        private void Ch1AutoStopTimer_Tick(object sender, EventArgs e)
+        {
+            if (!_ch1TimerActive && !_ch1WaitingForTargetTemp)
+            {
+                _ch1AutoStopTimer.Stop();
+                return;
+            }
+
+            // 목표 온도 도달 대기 중
+            if (_ch1WaitingForTargetTemp)
+            {
+                // PV와 SV 값 확인
+                if (_tempController?.Status?.ChannelStatus != null && _tempController.Status.ChannelStatus.Length > 0)
+                {
+                    var ch1Status = _tempController.Status.ChannelStatus[0];
+                    double pv = ch1Status.PresentValue;
+                    double sv = ch1Status.SetValue;
+
+                    // 소수점 처리
+                    if (ch1Status.Dot > 0)
+                    {
+                        pv = pv / Math.Pow(10, ch1Status.Dot);
+                        sv = sv / Math.Pow(10, ch1Status.Dot);
+                    }
+
+                    // 목표 온도 도달 확인 (허용 오차 내)
+                    if (Math.Abs(pv - sv) <= _ch1TargetTolerance)
+                    {
+                        // 목표 온도 도달 - 실제 타이머 시작
+                        _ch1WaitingForTargetTemp = false;
+                        _ch1TimerActive = true;
+                        _ch1StartTime = DateTime.Now;
+
+                        lblCh1TimeRemainingValue.ForeColor = Color.Blue;
+                        LogInfo($"CH1 목표 온도 도달 (PV: {pv:F1}°C, SV: {sv:F1}°C) - 타이머 시작");
+                    }
+                    else
+                    {
+                        // 대기 중 표시
+                        lblCh1TimeRemainingValue.Text = $"대기중 ({pv:F1}/{sv:F1}°C)";
+                        lblCh1TimeRemainingValue.ForeColor = Color.Orange;
+                    }
+                }
+                return;
+            }
+
+            // 타이머 실행 중
+            if (_ch1TimerActive)
+            {
+                // 남은 시간 계산
+                TimeSpan elapsed = DateTime.Now - _ch1StartTime;
+                TimeSpan remaining = _ch1Duration - elapsed;
+
+                if (remaining.TotalSeconds <= 0)
+                {
+                    // 시간이 만료되면 CH1 정지 및 종료 시퀀스 실행
+                    StopCh1WithTimer();
+                    lblCh1TimeRemainingValue.Text = "00:00:00";
+                    lblCh1TimeRemainingValue.ForeColor = Color.Red;
+                }
+                else
+                {
+                    // 남은 시간 표시 업데이트
+                    lblCh1TimeRemainingValue.Text = $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
+
+                    // 남은 시간에 따라 색상 변경
+                    if (remaining.TotalSeconds <= 60)
+                    {
+                        lblCh1TimeRemainingValue.ForeColor = Color.Red;
+                    }
+                    else if (remaining.TotalMinutes <= 5)
+                    {
+                        lblCh1TimeRemainingValue.ForeColor = Color.Orange;
+                    }
+                    else
+                    {
+                        lblCh1TimeRemainingValue.ForeColor = Color.Blue;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// CH1 타이머 시작 (목표 온도 도달 대기)
+        /// </summary>
+        private void StartCh1Timer()
+        {
+            if (!chkCh1TimerEnabled.Checked)
+                return;
+
+            // 설정된 시간 가져오기
+            int hours = (int)numCh1Hours.Value;
+            int minutes = (int)numCh1Minutes.Value;
+            int seconds = (int)numCh1Seconds.Value;
+
+            // 시간이 0이면 시작하지 않음
+            if (hours == 0 && minutes == 0 && seconds == 0)
+            {
+                MessageBox.Show("타이머 시간을 설정해주세요.", "알림",
+                              MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            _ch1Duration = new TimeSpan(hours, minutes, seconds);
+            _ch1WaitingForTargetTemp = true;  // 목표 온도 도달 대기 상태로 설정
+            _ch1TimerActive = false;
+
+            // 타이머 시작 (온도 체크용)
+            _ch1AutoStopTimer.Start();
+
+            // UI 업데이트
+            UpdateCh1TimerControls();
+            lblCh1TimeRemainingValue.Text = "대기중...";
+            lblCh1TimeRemainingValue.ForeColor = Color.Orange;
+
+            LogInfo($"CH1 타이머 설정: {hours}시간 {minutes}분 {seconds}초 (목표 온도 도달 후 시작)");
+        }
+
+
+        /// <summary>
+        /// CH1 타이머 정지
+        /// </summary>
+        private void StopCh1Timer()
+        {
+            _ch1TimerActive = false;
+            _ch1WaitingForTargetTemp = false;
+            _ch1AutoStopTimer.Stop();
+            lblCh1TimeRemainingValue.Text = "00:00:00";
+            lblCh1TimeRemainingValue.ForeColor = Color.Blue;
+            UpdateCh1TimerControls();
+
+            LogInfo("CH1 타이머 정지");
+        }
+
+        /// <summary>
+        /// 타이머에 의한 CH1 정지 및 종료 시퀀스
+        /// </summary>
+        private async void StopCh1WithTimer()
+        {
+            try
+            {
+                // 타이머 정지
+                StopCh1Timer();
+
+                LogInfo("CH1 타이머 만료 - 종료 시퀀스 시작");
+
+                // 1. CH1 정지
+                if (_tempController?.IsConnected == true)
+                {
+                    btnCh1Stop.Enabled = false;
+                    await Task.Run(() => _tempController.Stop(1));
+                    LogInfo("CH1 자동 정지됨");
+                    btnCh1Stop.Enabled = true;
+                }
+
+                // 2. 이온게이지 HV OFF
+                if (_ioModule?.IsConnected == true && btn_iongauge.Text == "HV on")
+                {
+                    LogInfo("이온게이지 HV OFF 시작");
+                    btn_iongauge.Enabled = false;
+                    try
+                    {
+                        bool result = await _ioModule.ControlIonGaugeHVAsync(false);
+                        if (result)
+                        {
+                            LogInfo("이온게이지 HV OFF 완료");
+                        }
+                        else
+                        {
+                            LogWarning("이온게이지 HV OFF 실패");
+                        }
+                    }
+                    finally
+                    {
+                        btn_iongauge.Enabled = true;
+                    }
+                }
+
+                // 3. 터보펌프 정지
+                if (_turboPump?.IsConnected == true && _turboPump.Status?.IsRunning == true)
+                {
+                    LogInfo("터보펌프 정지 시작");
+                    btnTurboPumpStop.Enabled = false;
+                    try
+                    {
+                        await Task.Run(() => _turboPump.Stop());
+                        LogInfo("터보펌프 정지 명령 전송 완료");
+                    }
+                    finally
+                    {
+                        btnTurboPumpStop.Enabled = true;
+                    }
+                }
+
+                LogInfo("CH1 타이머 종료 시퀀스 완료");
+
+                // 사용자에게 알림
+                MessageBox.Show(
+                    "CH1 타이머가 만료되어 다음 작업이 수행되었습니다:\n" +
+                    "1. CH1 온도 제어 정지\n" +
+                    "2. 이온게이지 HV OFF\n" +
+                    "3. 터보펌프 정지",
+                    "타이머 종료",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                LogError($"CH1 타이머 종료 시퀀스 오류: {ex.Message}", ex);
+                MessageBox.Show(
+                    $"종료 시퀀스 중 오류가 발생했습니다:\n{ex.Message}",
+                    "오류",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+
+        #endregion
+
+
 
         #region UI 성능 최적화
 

@@ -42,6 +42,17 @@ namespace VacX_OutSense
             connectionIndicator_drypump = new Forms.UserControls.ConnectionIndicator();
             connectionIndicator_turbopump = new Forms.UserControls.ConnectionIndicator();
             panel1 = new Panel();
+            checkBox1 = new CheckBox();
+            grpCh1Timer = new GroupBox();
+            lblCh1TimeRemainingValue = new Label();
+            lblCh1TimeRemaining = new Label();
+            chkCh1TimerEnabled = new CheckBox();
+            lblCh1Seconds = new Label();
+            lblCh1Minutes = new Label();
+            lblCh1Hours = new Label();
+            numCh1Seconds = new NumericUpDown();
+            numCh1Minutes = new NumericUpDown();
+            numCh1Hours = new NumericUpDown();
             txtIGStatus = new Forms.UserControls.BindableTextBox();
             txtIG = new Forms.UserControls.BindableTextBox();
             txtPG = new Forms.UserControls.BindableTextBox();
@@ -178,6 +189,10 @@ namespace VacX_OutSense
             tableLayoutPanel3.SuspendLayout();
             tableLayoutPanel4.SuspendLayout();
             panel1.SuspendLayout();
+            grpCh1Timer.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numCh1Seconds).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numCh1Minutes).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numCh1Hours).BeginInit();
             panel5.SuspendLayout();
             tableLayoutPanel8.SuspendLayout();
             panel4.SuspendLayout();
@@ -355,6 +370,8 @@ namespace VacX_OutSense
             // panel1
             // 
             panel1.BorderStyle = BorderStyle.FixedSingle;
+            panel1.Controls.Add(checkBox1);
+            panel1.Controls.Add(grpCh1Timer);
             panel1.Controls.Add(txtIGStatus);
             panel1.Controls.Add(txtIG);
             panel1.Controls.Add(txtPG);
@@ -370,6 +387,120 @@ namespace VacX_OutSense
             panel1.Name = "panel1";
             panel1.Size = new Size(1160, 573);
             panel1.TabIndex = 1;
+            // 
+            // checkBox1
+            // 
+            checkBox1.Appearance = Appearance.Button;
+            checkBox1.Location = new Point(462, 109);
+            checkBox1.Name = "checkBox1";
+            checkBox1.Size = new Size(104, 24);
+            checkBox1.TabIndex = 51;
+            checkBox1.Text = "checkBox1";
+            checkBox1.UseVisualStyleBackColor = true;
+            // 
+            // grpCh1Timer
+            // 
+            grpCh1Timer.Controls.Add(lblCh1TimeRemainingValue);
+            grpCh1Timer.Controls.Add(lblCh1TimeRemaining);
+            grpCh1Timer.Controls.Add(chkCh1TimerEnabled);
+            grpCh1Timer.Controls.Add(lblCh1Seconds);
+            grpCh1Timer.Controls.Add(lblCh1Minutes);
+            grpCh1Timer.Controls.Add(lblCh1Hours);
+            grpCh1Timer.Controls.Add(numCh1Seconds);
+            grpCh1Timer.Controls.Add(numCh1Minutes);
+            grpCh1Timer.Controls.Add(numCh1Hours);
+            grpCh1Timer.Location = new Point(659, 100);
+            grpCh1Timer.Name = "grpCh1Timer";
+            grpCh1Timer.Size = new Size(465, 90);
+            grpCh1Timer.TabIndex = 50;
+            grpCh1Timer.TabStop = false;
+            grpCh1Timer.Text = "CH1 자동 정지 타이머";
+            // 
+            // lblCh1TimeRemainingValue
+            // 
+            lblCh1TimeRemainingValue.AutoSize = true;
+            lblCh1TimeRemainingValue.Font = new Font("굴림", 9F, FontStyle.Bold);
+            lblCh1TimeRemainingValue.ForeColor = Color.Blue;
+            lblCh1TimeRemainingValue.Location = new Point(190, 22);
+            lblCh1TimeRemainingValue.Name = "lblCh1TimeRemainingValue";
+            lblCh1TimeRemainingValue.Size = new Size(57, 12);
+            lblCh1TimeRemainingValue.TabIndex = 8;
+            lblCh1TimeRemainingValue.Text = "00:00:00";
+            // 
+            // lblCh1TimeRemaining
+            // 
+            lblCh1TimeRemaining.AutoSize = true;
+            lblCh1TimeRemaining.Location = new Point(120, 22);
+            lblCh1TimeRemaining.Name = "lblCh1TimeRemaining";
+            lblCh1TimeRemaining.Size = new Size(62, 15);
+            lblCh1TimeRemaining.TabIndex = 7;
+            lblCh1TimeRemaining.Text = "남은 시간:";
+            // 
+            // chkCh1TimerEnabled
+            // 
+            chkCh1TimerEnabled.AutoSize = true;
+            chkCh1TimerEnabled.Location = new Point(15, 22);
+            chkCh1TimerEnabled.Name = "chkCh1TimerEnabled";
+            chkCh1TimerEnabled.Size = new Size(90, 19);
+            chkCh1TimerEnabled.TabIndex = 0;
+            chkCh1TimerEnabled.Text = "타이머 사용";
+            chkCh1TimerEnabled.UseVisualStyleBackColor = true;
+            chkCh1TimerEnabled.CheckedChanged += chkCh1TimerEnabled_CheckedChanged;
+            // 
+            // lblCh1Seconds
+            // 
+            lblCh1Seconds.AutoSize = true;
+            lblCh1Seconds.Location = new Point(240, 49);
+            lblCh1Seconds.Name = "lblCh1Seconds";
+            lblCh1Seconds.Size = new Size(19, 15);
+            lblCh1Seconds.TabIndex = 6;
+            lblCh1Seconds.Text = "초";
+            // 
+            // lblCh1Minutes
+            // 
+            lblCh1Minutes.AutoSize = true;
+            lblCh1Minutes.Location = new Point(160, 49);
+            lblCh1Minutes.Name = "lblCh1Minutes";
+            lblCh1Minutes.Size = new Size(19, 15);
+            lblCh1Minutes.TabIndex = 4;
+            lblCh1Minutes.Text = "분";
+            // 
+            // lblCh1Hours
+            // 
+            lblCh1Hours.AutoSize = true;
+            lblCh1Hours.Location = new Point(70, 49);
+            lblCh1Hours.Name = "lblCh1Hours";
+            lblCh1Hours.Size = new Size(31, 15);
+            lblCh1Hours.TabIndex = 2;
+            lblCh1Hours.Text = "시간";
+            // 
+            // numCh1Seconds
+            // 
+            numCh1Seconds.Location = new Point(185, 45);
+            numCh1Seconds.Maximum = new decimal(new int[] { 59, 0, 0, 0 });
+            numCh1Seconds.Name = "numCh1Seconds";
+            numCh1Seconds.Size = new Size(50, 23);
+            numCh1Seconds.TabIndex = 5;
+            numCh1Seconds.TextAlign = HorizontalAlignment.Center;
+            // 
+            // numCh1Minutes
+            // 
+            numCh1Minutes.Location = new Point(105, 45);
+            numCh1Minutes.Maximum = new decimal(new int[] { 59, 0, 0, 0 });
+            numCh1Minutes.Name = "numCh1Minutes";
+            numCh1Minutes.Size = new Size(50, 23);
+            numCh1Minutes.TabIndex = 3;
+            numCh1Minutes.TextAlign = HorizontalAlignment.Center;
+            numCh1Minutes.Value = new decimal(new int[] { 30, 0, 0, 0 });
+            // 
+            // numCh1Hours
+            // 
+            numCh1Hours.Location = new Point(15, 45);
+            numCh1Hours.Maximum = new decimal(new int[] { 99, 0, 0, 0 });
+            numCh1Hours.Name = "numCh1Hours";
+            numCh1Hours.Size = new Size(50, 23);
+            numCh1Hours.TabIndex = 1;
+            numCh1Hours.TextAlign = HorizontalAlignment.Center;
             // 
             // txtIGStatus
             // 
@@ -498,6 +629,7 @@ namespace VacX_OutSense
             btnCh2Start.TabIndex = 26;
             btnCh2Start.Text = "Start";
             btnCh2Start.UseVisualStyleBackColor = true;
+            btnCh2Start.Visible = false;
             btnCh2Start.Click += btnCh2Start_Click;
             // 
             // btnCh1Stop
@@ -633,6 +765,7 @@ namespace VacX_OutSense
             btnCh2Stop.TabIndex = 3;
             btnCh2Stop.Text = "Stop";
             btnCh2Stop.UseVisualStyleBackColor = true;
+            btnCh2Stop.Visible = false;
             btnCh2Stop.Click += btnCh2Stop_Click;
             // 
             // label39
@@ -786,6 +919,7 @@ namespace VacX_OutSense
             btnCh2AutoTuning.TabIndex = 38;
             btnCh2AutoTuning.Text = "AutoTune";
             btnCh2AutoTuning.UseVisualStyleBackColor = true;
+            btnCh2AutoTuning.Visible = false;
             btnCh2AutoTuning.Click += btnCh2AutoTuning_Click;
             // 
             // button4
@@ -797,6 +931,7 @@ namespace VacX_OutSense
             button4.TabIndex = 39;
             button4.Text = "SetTemp";
             button4.UseVisualStyleBackColor = true;
+            button4.Visible = false;
             button4.Click += btnCh2SetTemp_Click;
             // 
             // txtCh2IsAutotune
@@ -808,6 +943,7 @@ namespace VacX_OutSense
             txtCh2IsAutotune.Size = new Size(67, 23);
             txtCh2IsAutotune.TabIndex = 41;
             txtCh2IsAutotune.TextAlign = HorizontalAlignment.Center;
+            txtCh2IsAutotune.Visible = false;
             // 
             // txtCh1IsAutotune
             // 
@@ -1426,7 +1562,7 @@ namespace VacX_OutSense
             label6.Name = "label6";
             label6.Size = new Size(83, 66);
             label6.TabIndex = 4;
-            label6.Text = "Tutbo\r\nPump";
+            label6.Text = "Turbo\r\nPump";
             label6.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // txtTurboPumpStatus
@@ -1979,6 +2115,11 @@ namespace VacX_OutSense
             tableLayoutPanel3.ResumeLayout(false);
             tableLayoutPanel4.ResumeLayout(false);
             panel1.ResumeLayout(false);
+            grpCh1Timer.ResumeLayout(false);
+            grpCh1Timer.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numCh1Seconds).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numCh1Minutes).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numCh1Hours).EndInit();
             panel5.ResumeLayout(false);
             tableLayoutPanel8.ResumeLayout(false);
             tableLayoutPanel8.PerformLayout();
@@ -2025,6 +2166,20 @@ namespace VacX_OutSense
         private StatusStrip statusStrip;
 
         #endregion
+
+        #region CH1 타이머 컨트롤
+        private System.Windows.Forms.GroupBox grpCh1Timer;
+        private System.Windows.Forms.NumericUpDown numCh1Hours;
+        private System.Windows.Forms.NumericUpDown numCh1Minutes;
+        private System.Windows.Forms.NumericUpDown numCh1Seconds;
+        private System.Windows.Forms.Label lblCh1Hours;
+        private System.Windows.Forms.Label lblCh1Minutes;
+        private System.Windows.Forms.Label lblCh1Seconds;
+        private System.Windows.Forms.CheckBox chkCh1TimerEnabled;
+        private System.Windows.Forms.Label lblCh1TimeRemaining;
+        private System.Windows.Forms.Label lblCh1TimeRemainingValue;
+        #endregion
+
         private TabPage tabPage1;
         private TableLayoutPanel tableLayoutPanel2;
         private TableLayoutPanel tableLayoutPanel3;
@@ -2110,7 +2265,6 @@ namespace VacX_OutSense
         private TextBox txtBathCirculatorMode;
         private TextBox txtBathCirculatorTime;
         private Button btnBathCirculatorStart;
-        private Button btnCh2AutoTuning;
         private Button button4;
         private Button btnBathCirculatorSetTime;
         private Label label34;
@@ -2126,7 +2280,6 @@ namespace VacX_OutSense
         private RichTextBox txtLog;
         private Panel panel5;
         private TableLayoutPanel tableLayoutPanel8;
-        private Button btnCh2Start;
         private Button btnCh1Stop;
         private TextBox txtCh2HeatingMV;
         private TextBox txtCh2Status;
@@ -2138,7 +2291,6 @@ namespace VacX_OutSense
         private TextBox txtCh1HeatingMV;
         private TextBox txtCh1Status;
         private Button btnCh1Start;
-        private Button btnCh2Stop;
         private Label label39;
         private Label label41;
         private Label label42;
@@ -2150,8 +2302,12 @@ namespace VacX_OutSense
         private TextBox txtCh2PresentValue;
         private TextBox txtCh2SetValue;
         private Button button2;
-        private TextBox txtCh2IsAutotune;
         private TextBox txtCh1IsAutotune;
         private TextBox txtTurboPumpingRate;
+        private Button btnCh2Start;
+        private Button btnCh2Stop;
+        private Button btnCh2AutoTuning;
+        private TextBox txtCh2IsAutotune;
+        private CheckBox checkBox1;
     }
 }
