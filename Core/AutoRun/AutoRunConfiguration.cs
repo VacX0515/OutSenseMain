@@ -147,6 +147,11 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         public bool EnableSafeShutdownOnFailure { get; set; } = true;
 
+        /// <summary>
+        /// 오류 발생 시 알람 활성화
+        /// </summary>
+        public bool EnableAlarmOnError { get; set; } = false;
+
         #endregion
 
         #region 메서드

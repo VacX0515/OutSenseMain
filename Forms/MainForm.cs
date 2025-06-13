@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using VacX_OutSense.Core.AutoRun;
 using VacX_OutSense.Core.Communication;
 using VacX_OutSense.Core.Devices.Base;
 using VacX_OutSense.Core.Devices.BathCirculator;
@@ -18,12 +19,40 @@ using VacX_OutSense.Core.Devices.TempController;
 using VacX_OutSense.Core.Devices.TurboPump;
 using VacX_OutSense.Models;
 using VacX_OutSense.Utils;
+using VacX_OutSense.Core.AutoRun;
+using System.Xml.Serialization;
+using VacX_OutSense.Forms;
 
 namespace VacX_OutSense
 {
     public partial class MainForm : Form
     {
         #region 필드 및 속성
+
+        #region AutoRun 관련 필드 및 속성
+
+        private AutoRunService _autoRunService;
+        private AutoRunConfiguration _autoRunConfig;
+        private System.Windows.Forms.Timer _autoRunTimer;
+        private int _autoRunElapsedSeconds = 0;
+
+        // UI 컨트롤들
+        private GroupBox groupBoxAutoRun;
+        private Button btnAutoRunStart;
+        private Button btnAutoRunStop;
+        private Button btnAutoRunPause;
+        private Button btnAutoRunResume;
+        private Button btnAutoRunConfig;
+        private Label lblAutoRunStatus;
+        private Label lblAutoRunStep;
+        private Label lblAutoRunProgress;
+        private ProgressBar progressBarAutoRun;
+        private ListView listViewAutoRunLog;
+        private Label lblAutoRunElapsedTime;
+        private Label lblAutoRunRemainingTime;
+
+        #endregion
+
 
         #region 타이머 관련 필드 (클래스 필드 영역에 추가)
 
@@ -179,6 +208,9 @@ namespace VacX_OutSense
                     loadingForm.UpdateStatus("UI 서비스 시작 중...");
                     StartServices();
 
+                    loadingForm.UpdateStatus("AutoRun 초기화 중...");
+                    InitializeAutoRun();  // 이 줄 추가
+
                     loadingForm.UpdateStatus("초기화 완료!");
                     await Task.Delay(200);
                 }
@@ -197,6 +229,560 @@ namespace VacX_OutSense
                 this.Focus();
             }
         }
+
+        #region AutoRun 초기화
+
+        private void InitializeAutoRun()
+        {
+            try
+            {
+                // AutoRun 설정 로드 또는 기본값 생성
+                _autoRunConfig = LoadAutoRunConfiguration() ?? new AutoRunConfiguration();
+
+                // AutoRun 서비스 생성
+                _autoRunService = new AutoRunService(this, _autoRunConfig);
+
+                // 이벤트 핸들러 연결
+                _autoRunService.StateChanged += OnAutoRunStateChanged;
+                _autoRunService.ProgressUpdated += OnAutoRunProgressUpdated;
+                _autoRunService.ErrorOccurred += OnAutoRunErrorOccurred;
+                _autoRunService.Completed += OnAutoRunCompleted;
+
+                // 타이머 초기화
+                _autoRunTimer = new System.Windows.Forms.Timer();
+                _autoRunTimer.Interval = 1000;
+                _autoRunTimer.Tick += AutoRunTimer_Tick;
+
+                // UI 초기화
+                InitializeAutoRunUI();
+                UpdateAutoRunUI();
+
+                LogInfo("AutoRun 기능 초기화 완료");
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 초기화 실패: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// AutoRun UI 컨트롤 초기화
+        /// </summary>
+        private void InitializeAutoRunUI()
+        {
+            // 메인 패널 생성 (탭 내부를 구성하기 위한 패널)
+            Panel panelAutoRun = new Panel();
+            panelAutoRun.Dock = DockStyle.Fill;
+            tabPageAutoRun.Controls.Add(panelAutoRun);
+
+            // 상태 표시 영역 (상단)
+            GroupBox groupBoxStatus = new GroupBox();
+            groupBoxStatus.Text = "AutoRun 상태";
+            groupBoxStatus.Location = new Point(10, 10);
+            groupBoxStatus.Size = new Size(760, 200);
+            panelAutoRun.Controls.Add(groupBoxStatus);
+
+            // 상태 라벨
+            lblAutoRunStatus = new Label();
+            lblAutoRunStatus.Location = new Point(10, 25);
+            lblAutoRunStatus.Size = new Size(200, 20);
+            lblAutoRunStatus.Text = "상태: 대기 중";
+            lblAutoRunStatus.Font = new Font("맑은 고딕", 10F, FontStyle.Bold);
+            groupBoxStatus.Controls.Add(lblAutoRunStatus);
+
+            // 단계 라벨
+            lblAutoRunStep = new Label();
+            lblAutoRunStep.Location = new Point(10, 50);
+            lblAutoRunStep.Size = new Size(400, 20);
+            lblAutoRunStep.Text = "단계: -";
+            groupBoxStatus.Controls.Add(lblAutoRunStep);
+
+            // 진행률 라벨
+            lblAutoRunProgress = new Label();
+            lblAutoRunProgress.Location = new Point(10, 75);
+            lblAutoRunProgress.Size = new Size(200, 20);
+            lblAutoRunProgress.Text = "진행률: 0%";
+            groupBoxStatus.Controls.Add(lblAutoRunProgress);
+
+            // 진행 바
+            progressBarAutoRun = new ProgressBar();
+            progressBarAutoRun.Location = new Point(10, 100);
+            progressBarAutoRun.Size = new Size(500, 25);
+            progressBarAutoRun.Style = ProgressBarStyle.Continuous;
+            groupBoxStatus.Controls.Add(progressBarAutoRun);
+
+            // 경과 시간
+            lblAutoRunElapsedTime = new Label();
+            lblAutoRunElapsedTime.Location = new Point(10, 135);
+            lblAutoRunElapsedTime.Size = new Size(200, 20);
+            lblAutoRunElapsedTime.Text = "경과 시간: 00:00:00";
+            groupBoxStatus.Controls.Add(lblAutoRunElapsedTime);
+
+            // 남은 시간
+            lblAutoRunRemainingTime = new Label();
+            lblAutoRunRemainingTime.Location = new Point(220, 135);
+            lblAutoRunRemainingTime.Size = new Size(200, 20);
+            lblAutoRunRemainingTime.Text = "남은 시간: --:--:--";
+            groupBoxStatus.Controls.Add(lblAutoRunRemainingTime);
+
+            // 제어 버튼 영역 (우측)
+            GroupBox groupBoxControl = new GroupBox();
+            groupBoxControl.Text = "제어";
+            groupBoxControl.Location = new Point(520, 25);
+            groupBoxControl.Size = new Size(230, 160);
+            groupBoxStatus.Controls.Add(groupBoxControl);
+
+            // 버튼들
+            btnAutoRunStart = new Button();
+            btnAutoRunStart.Location = new Point(10, 25);
+            btnAutoRunStart.Size = new Size(100, 30);
+            btnAutoRunStart.Text = "시작";
+            btnAutoRunStart.Click += BtnAutoRunStart_Click;
+            groupBoxControl.Controls.Add(btnAutoRunStart);
+
+            btnAutoRunStop = new Button();
+            btnAutoRunStop.Location = new Point(120, 25);
+            btnAutoRunStop.Size = new Size(100, 30);
+            btnAutoRunStop.Text = "중지";
+            btnAutoRunStop.Enabled = false;
+            btnAutoRunStop.Click += BtnAutoRunStop_Click;
+            groupBoxControl.Controls.Add(btnAutoRunStop);
+
+            btnAutoRunPause = new Button();
+            btnAutoRunPause.Location = new Point(10, 65);
+            btnAutoRunPause.Size = new Size(100, 30);
+            btnAutoRunPause.Text = "일시정지";
+            btnAutoRunPause.Enabled = false;
+            btnAutoRunPause.Click += BtnAutoRunPause_Click;
+            groupBoxControl.Controls.Add(btnAutoRunPause);
+
+            btnAutoRunResume = new Button();
+            btnAutoRunResume.Location = new Point(120, 65);
+            btnAutoRunResume.Size = new Size(100, 30);
+            btnAutoRunResume.Text = "재개";
+            btnAutoRunResume.Enabled = false;
+            btnAutoRunResume.Click += BtnAutoRunResume_Click;
+            groupBoxControl.Controls.Add(btnAutoRunResume);
+
+            btnAutoRunConfig = new Button();
+            btnAutoRunConfig.Location = new Point(65, 105);
+            btnAutoRunConfig.Size = new Size(100, 30);
+            btnAutoRunConfig.Text = "설정";
+            btnAutoRunConfig.Click += BtnAutoRunConfig_Click;
+            groupBoxControl.Controls.Add(btnAutoRunConfig);
+
+            // 로그 영역 (하단)
+            GroupBox groupBoxLog = new GroupBox();
+            groupBoxLog.Text = "실행 로그";
+            groupBoxLog.Location = new Point(10, 220);
+            groupBoxLog.Size = new Size(760, 320);
+            panelAutoRun.Controls.Add(groupBoxLog);
+
+            // 로그 리스트뷰
+            listViewAutoRunLog = new ListView();
+            listViewAutoRunLog.Location = new Point(10, 25);
+            listViewAutoRunLog.Size = new Size(740, 285);
+            listViewAutoRunLog.View = View.Details;
+            listViewAutoRunLog.FullRowSelect = true;
+            listViewAutoRunLog.GridLines = true;
+            groupBoxLog.Controls.Add(listViewAutoRunLog);
+
+            // 리스트뷰 컬럼 추가
+            listViewAutoRunLog.Columns.Add("시간", 120);
+            listViewAutoRunLog.Columns.Add("상태", 100);
+            listViewAutoRunLog.Columns.Add("메시지", 500);
+        }
+        #endregion
+
+        #region AutoRun 이벤트 핸들러
+
+        /// <summary>
+        /// AutoRun 시작 버튼 클릭
+        /// </summary>
+        private async void BtnAutoRunStart_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // 시작 전 확인
+                var result = MessageBox.Show(
+                    "AutoRun을 시작하시겠습니까?\n\n" +
+                    "시작 전 확인사항:\n" +
+                    "- 모든 장치가 연결되어 있는지\n" +
+                    "- 진공 챔버가 닫혀있는지\n" +
+                    "- 냉각수가 순환되고 있는지\n\n" +
+                    "계속하시겠습니까?",
+                    "AutoRun 시작 확인",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result != DialogResult.Yes)
+                    return;
+
+                // UI 업데이트
+                btnAutoRunStart.Enabled = false;
+                btnAutoRunStop.Enabled = true;
+                btnAutoRunPause.Enabled = true;
+                btnAutoRunConfig.Enabled = false;
+
+                // 로그 초기화
+                listViewAutoRunLog.Items.Clear();
+                _autoRunElapsedSeconds = 0;
+
+                // AutoRun 시작
+                _autoRunTimer.Start();
+                bool success = await _autoRunService.StartAsync();
+
+                if (!success)
+                {
+                    MessageBox.Show("AutoRun 시작에 실패했습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    UpdateAutoRunUI();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 시작 오류: {ex.Message}", ex);
+                MessageBox.Show($"AutoRun 시작 중 오류가 발생했습니다:\n{ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                UpdateAutoRunUI();
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 중지 버튼 클릭
+        /// </summary>
+        private void BtnAutoRunStop_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var result = MessageBox.Show(
+                    "AutoRun을 중지하시겠습니까?",
+                    "AutoRun 중지 확인",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (result != DialogResult.Yes)
+                    return;
+
+                _autoRunService.Stop();
+                _autoRunTimer.Stop();
+                UpdateAutoRunUI();
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 중지 오류: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 일시정지 버튼 클릭
+        /// </summary>
+        private void BtnAutoRunPause_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                _autoRunService.Pause();
+                UpdateAutoRunUI();
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 일시정지 오류: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 재개 버튼 클릭
+        /// </summary>
+        private void BtnAutoRunResume_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                _autoRunService.Resume();
+                UpdateAutoRunUI();
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 재개 오류: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 설정 버튼 클릭
+        /// </summary>
+        private void BtnAutoRunConfig_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                using (var configForm = new AutoRunConfigForm(_autoRunConfig))
+                {
+                    if (configForm.ShowDialog() == DialogResult.OK)
+                    {
+                        _autoRunConfig = configForm.Configuration;
+                        SaveAutoRunConfiguration(_autoRunConfig);
+
+                        // 서비스 재생성
+                        _autoRunService.Dispose();
+                        _autoRunService = new AutoRunService(this, _autoRunConfig);
+                        _autoRunService.StateChanged += OnAutoRunStateChanged;
+                        _autoRunService.ProgressUpdated += OnAutoRunProgressUpdated;
+                        _autoRunService.ErrorOccurred += OnAutoRunErrorOccurred;
+                        _autoRunService.Completed += OnAutoRunCompleted;
+
+                        MessageBox.Show("AutoRun 설정이 저장되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 설정 오류: {ex.Message}", ex);
+                MessageBox.Show($"설정 중 오류가 발생했습니다:\n{ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 타이머 틱
+        /// </summary>
+        private void AutoRunTimer_Tick(object sender, EventArgs e)
+        {
+            if (_autoRunService.IsRunning)
+            {
+                _autoRunElapsedSeconds++;
+
+                var elapsed = TimeSpan.FromSeconds(_autoRunElapsedSeconds);
+                lblAutoRunElapsedTime.Text = $"경과 시간: {elapsed:hh\\:mm\\:ss}";
+
+                // 남은 시간 계산 (실험 진행 중일 때만)
+                if (_autoRunService.CurrentState == AutoRunState.RunningExperiment)
+                {
+                    var totalExperimentSeconds = _autoRunConfig.ExperimentDurationHours * 3600;
+                    var remainingSeconds = Math.Max(0, totalExperimentSeconds - _autoRunElapsedSeconds);
+                    var remaining = TimeSpan.FromSeconds(remainingSeconds);
+                    lblAutoRunRemainingTime.Text = $"남은 시간: {remaining:hh\\:mm\\:ss}";
+                }
+            }
+        }
+
+        #endregion
+
+        #region AutoRun 서비스 이벤트 핸들러
+
+        /// <summary>
+        /// AutoRun 상태 변경 이벤트
+        /// </summary>
+        private void OnAutoRunStateChanged(object sender, AutoRunStateChangedEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new EventHandler<AutoRunStateChangedEventArgs>(OnAutoRunStateChanged), sender, e);
+                return;
+            }
+
+            // 상태 업데이트
+            lblAutoRunStatus.Text = $"상태: {GetAutoRunStateText(e.CurrentState)}";
+
+            // 로그 추가
+            AddAutoRunLog(e.CurrentState.ToString(), e.Message ?? GetAutoRunStateText(e.CurrentState));
+
+            // UI 업데이트
+            UpdateAutoRunUI();
+        }
+
+        /// <summary>
+        /// AutoRun 진행 상황 업데이트 이벤트
+        /// </summary>
+        private void OnAutoRunProgressUpdated(object sender, AutoRunProgressEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new EventHandler<AutoRunProgressEventArgs>(OnAutoRunProgressUpdated), sender, e);
+                return;
+            }
+
+            // 진행률 업데이트
+            progressBarAutoRun.Value = (int)Math.Min(100, e.OverallProgress);
+            lblAutoRunProgress.Text = $"진행률: {e.OverallProgress:F1}%";
+            lblAutoRunStep.Text = $"단계: {e.Message}";
+
+            // 현재 측정값 표시 (선택적)
+            if (e.CurrentValues != null)
+            {
+                // 메인 화면의 값들이 이미 업데이트되고 있으므로 여기서는 생략
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 오류 발생 이벤트
+        /// </summary>
+        private void OnAutoRunErrorOccurred(object sender, AutoRunErrorEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new EventHandler<AutoRunErrorEventArgs>(OnAutoRunErrorOccurred), sender, e);
+                return;
+            }
+
+            // 오류 로그
+            AddAutoRunLog("ERROR", e.ErrorMessage, Color.Red);
+
+            // 오류 메시지 표시
+            MessageBox.Show(
+                $"AutoRun 실행 중 오류가 발생했습니다:\n\n{e.ErrorMessage}",
+                "AutoRun 오류",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+
+        /// <summary>
+        /// AutoRun 완료 이벤트
+        /// </summary>
+        private void OnAutoRunCompleted(object sender, AutoRunCompletedEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new EventHandler<AutoRunCompletedEventArgs>(OnAutoRunCompleted), sender, e);
+                return;
+            }
+
+            _autoRunTimer.Stop();
+
+            // 완료 로그
+            AddAutoRunLog("COMPLETE", e.IsSuccess ? "AutoRun 정상 완료" : "AutoRun 중단됨",
+                e.IsSuccess ? Color.Green : Color.Orange);
+
+            // 요약 표시
+            if (!string.IsNullOrEmpty(e.Summary))
+            {
+                MessageBox.Show(e.Summary, "AutoRun 완료", MessageBoxButtons.OK,
+                    e.IsSuccess ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
+
+            // UI 업데이트
+            UpdateAutoRunUI();
+        }
+
+        #endregion
+
+        #region AutoRun Helper 메서드
+
+        /// <summary>
+        /// AutoRun UI 상태 업데이트
+        /// </summary>
+        private void UpdateAutoRunUI()
+        {
+            bool isRunning = _autoRunService?.IsRunning ?? false;
+            bool isPaused = _autoRunService?.IsPaused ?? false;
+
+            btnAutoRunStart.Enabled = !isRunning;
+            btnAutoRunStop.Enabled = isRunning;
+            btnAutoRunPause.Enabled = isRunning && !isPaused;
+            btnAutoRunResume.Enabled = isRunning && isPaused;
+            btnAutoRunConfig.Enabled = !isRunning;
+
+            if (!isRunning)
+            {
+                progressBarAutoRun.Value = 0;
+                lblAutoRunProgress.Text = "진행률: 0%";
+                lblAutoRunStep.Text = "단계: -";
+                lblAutoRunRemainingTime.Text = "남은 시간: --:--:--";
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 로그 추가
+        /// </summary>
+        private void AddAutoRunLog(string state, string message, Color? color = null)
+        {
+            var item = new ListViewItem(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            item.SubItems.Add(state);
+            item.SubItems.Add(message);
+
+            if (color.HasValue)
+                item.ForeColor = color.Value;
+
+            listViewAutoRunLog.Items.Insert(0, item);
+
+            // 최대 100개 항목 유지
+            while (listViewAutoRunLog.Items.Count > 100)
+                listViewAutoRunLog.Items.RemoveAt(listViewAutoRunLog.Items.Count - 1);
+        }
+
+        /// <summary>
+        /// AutoRun 상태 텍스트 변환
+        /// </summary>
+        private string GetAutoRunStateText(AutoRunState state)
+        {
+            switch (state)
+            {
+                case AutoRunState.Idle: return "대기 중";
+                case AutoRunState.Initializing: return "초기화";
+                case AutoRunState.PreparingVacuum: return "진공 준비";
+                case AutoRunState.StartingDryPump: return "드라이펌프 시작";
+                case AutoRunState.StartingTurboPump: return "터보펌프 시작";
+                case AutoRunState.ActivatingIonGauge: return "이온게이지 활성화";
+                case AutoRunState.WaitingHighVacuum: return "고진공 대기";
+                case AutoRunState.StartingHeater: return "히터 시작";
+                case AutoRunState.RunningExperiment: return "실험 진행";
+                case AutoRunState.ShuttingDown: return "종료 중";
+                case AutoRunState.Completed: return "완료";
+                case AutoRunState.Aborted: return "중단됨";
+                case AutoRunState.Error: return "오류";
+                case AutoRunState.Paused: return "일시정지";
+                default: return state.ToString();
+            }
+        }
+
+        /// <summary>
+        /// AutoRun 설정 로드
+        /// </summary>
+        private AutoRunConfiguration LoadAutoRunConfiguration()
+        {
+            try
+            {
+                string configPath = Path.Combine(Application.StartupPath, "Config", "AutoRunConfig.xml");
+                if (File.Exists(configPath))
+                {
+                    using (var reader = new StreamReader(configPath))
+                    {
+                        var serializer = new XmlSerializer(typeof(AutoRunConfiguration));
+                        return (AutoRunConfiguration)serializer.Deserialize(reader);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 설정 로드 실패: {ex.Message}", ex);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// AutoRun 설정 저장
+        /// </summary>
+        private void SaveAutoRunConfiguration(AutoRunConfiguration config)
+        {
+            try
+            {
+                string configDir = Path.Combine(Application.StartupPath, "Config");
+                if (!Directory.Exists(configDir))
+                    Directory.CreateDirectory(configDir);
+
+                string configPath = Path.Combine(configDir, "AutoRunConfig.xml");
+
+                using (var writer = new StreamWriter(configPath))
+                {
+                    var serializer = new XmlSerializer(typeof(AutoRunConfiguration));
+                    serializer.Serialize(writer, config);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"AutoRun 설정 저장 실패: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
+
+        #endregion
+
 
         private void InitializeConnectionChecker()
         {
@@ -482,7 +1068,6 @@ namespace VacX_OutSense
             LogInfo("서비스 시작 완료");
         }
 
-        #endregion
 
         #region 이벤트 핸들러
 
@@ -982,7 +1567,7 @@ namespace VacX_OutSense
                 bool isOpen = btn_GV.Text == "Opened";
                 bool result = await _ioModule.ControlGateValveAsync(!isOpen);
 
-                if (result) 
+                if (result)
                 {
                     LogInfo($"게이트 밸브 {(!isOpen ? "열기" : "닫기")} 성공");
                 }
@@ -1180,7 +1765,7 @@ namespace VacX_OutSense
 
 
 
-                
+
 
                 btn_iongauge_Click(null, null);
                 LogInfo("이온게이지 HV ON - 터보 펌프 시작 후 10초 후");
@@ -1756,6 +2341,25 @@ namespace VacX_OutSense
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
+            // AutoRun 실행 중 확인 (맨 앞에 추가)
+            if (_autoRunService?.IsRunning == true)
+            {
+                var result = MessageBox.Show(
+                    "AutoRun이 실행 중입니다.\n종료하시겠습니까?",
+                    "종료 확인",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (result != DialogResult.Yes)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                _autoRunService.Stop();
+            }
+
+
             LogInfo("시스템 종료 시작");
 
             // 로딩 화면 표시
@@ -1793,12 +2397,17 @@ namespace VacX_OutSense
                 loadingForm.UpdateStatus("시스템 종료");
                 Task.Delay(200);
             }
-                // 타이머 정지 및 해제
-                if (_ch1AutoStopTimer != null)
-                {
-                    _ch1AutoStopTimer.Stop();
-                    _ch1AutoStopTimer.Dispose();
-                }
+            // 타이머 정지 및 해제
+            if (_ch1AutoStopTimer != null)
+            {
+                _ch1AutoStopTimer.Stop();
+                _ch1AutoStopTimer.Dispose();
+            }
+
+            // AutoRun 정리 (종료 처리 부분에 추가)
+            _autoRunTimer?.Stop();
+            _autoRunTimer?.Dispose();
+            _autoRunService?.Dispose();
 
 
 

@@ -670,7 +670,7 @@ namespace VacX_OutSense.Core.AutoRun
 
             // 터보펌프가 정격 속도에 도달할 때까지 대기
             int speedWaitCount = 0;
-            int targetSpeed = 24000; // RPM
+            int targetSpeed = 620; // RPM
 
             while (speedWaitCount < 600) // 최대 10분
             {

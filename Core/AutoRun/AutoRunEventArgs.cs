@@ -202,8 +202,10 @@ namespace VacX_OutSense.Core.AutoRun
     /// </summary>
     public class AutoRunMeasurements
     {
+        #region 압력 데이터
+
         /// <summary>
-        /// 현재 압력 (Torr)
+        /// 현재 압력 (Torr) - 피라니/이온게이지 중 활성화된 값
         /// </summary>
         public double CurrentPressure { get; set; }
 
@@ -213,9 +215,33 @@ namespace VacX_OutSense.Core.AutoRun
         public double AtmPressure { get; set; }
 
         /// <summary>
+        /// 피라니 게이지 압력 (Torr)
+        /// </summary>
+        public double PiraniPressure { get; set; }
+
+        /// <summary>
+        /// 이온 게이지 압력 (Torr)
+        /// </summary>
+        public double IonPressure { get; set; }
+
+        /// <summary>
+        /// 이온게이지 상태
+        /// </summary>
+        public string IonGaugeStatus { get; set; }
+
+        #endregion
+
+        #region 온도 데이터
+
+        /// <summary>
         /// 칠러 현재 온도 (°C)
         /// </summary>
         public double ChillerTemperature { get; set; }
+
+        /// <summary>
+        /// 칠러 설정 온도 (°C)
+        /// </summary>
+        public double ChillerSetTemperature { get; set; }
 
         /// <summary>
         /// 히터 CH1 현재 온도 (°C)
@@ -223,14 +249,38 @@ namespace VacX_OutSense.Core.AutoRun
         public double HeaterCh1Temperature { get; set; }
 
         /// <summary>
+        /// 히터 CH1 설정 온도 (°C)
+        /// </summary>
+        public double HeaterCh1SetTemperature { get; set; }
+
+        /// <summary>
         /// 히터 CH2 현재 온도 (°C)
         /// </summary>
         public double HeaterCh2Temperature { get; set; }
 
         /// <summary>
+        /// 히터 CH2 설정 온도 (°C)
+        /// </summary>
+        public double HeaterCh2SetTemperature { get; set; }
+
+        #endregion
+
+        #region 펌프 상태
+
+        /// <summary>
+        /// 드라이펌프 작동 여부
+        /// </summary>
+        public bool IsDryPumpRunning { get; set; }
+
+        /// <summary>
         /// 드라이펌프 상태
         /// </summary>
         public string DryPumpStatus { get; set; }
+
+        /// <summary>
+        /// 터보펌프 작동 여부
+        /// </summary>
+        public bool IsTurboPumpRunning { get; set; }
 
         /// <summary>
         /// 터보펌프 속도 (RPM)
@@ -241,6 +291,10 @@ namespace VacX_OutSense.Core.AutoRun
         /// 터보펌프 상태
         /// </summary>
         public string TurboPumpStatus { get; set; }
+
+        #endregion
+
+        #region 밸브 상태
 
         /// <summary>
         /// 게이트 밸브 상태
@@ -257,10 +311,26 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         public string ExhaustValveStatus { get; set; }
 
+        #endregion
+
+        #region 기타
+
         /// <summary>
         /// 측정 시간
         /// </summary>
         public DateTime Timestamp { get; set; }
+
+        /// <summary>
+        /// 전체 시스템 상태 정상 여부
+        /// </summary>
+        public bool IsSystemNormal { get; set; }
+
+        /// <summary>
+        /// 경고 메시지 목록
+        /// </summary>
+        public List<string> Warnings { get; set; }
+
+        #endregion
 
         /// <summary>
         /// 생성자
@@ -273,6 +343,66 @@ namespace VacX_OutSense.Core.AutoRun
             GateValveStatus = "Unknown";
             VentValveStatus = "Unknown";
             ExhaustValveStatus = "Unknown";
+            IonGaugeStatus = "Unknown";
+            Warnings = new List<string>();
+            IsSystemNormal = true;
         }
+
+        #region CSV 출력 메서드
+
+        /// <summary>
+        /// CSV 헤더 생성
+        /// </summary>
+        public static string GetCsvHeader()
+        {
+            return "Timestamp,AtmPressure_kPa,CurrentPressure_Torr,PiraniPressure_Torr,IonPressure_Torr," +
+                   "IonGaugeStatus,ChillerTemp_C,ChillerSetTemp_C,HeaterCh1Temp_C,HeaterCh1SetTemp_C," +
+                   "HeaterCh2Temp_C,HeaterCh2SetTemp_C,GateValve,VentValve,ExhaustValve," +
+                   "DryPumpRunning,DryPumpStatus,TurboPumpRunning,TurboPumpSpeed_RPM,TurboPumpStatus," +
+                   "SystemNormal,Warnings";
+        }
+
+        /// <summary>
+        /// CSV 데이터 행 생성
+        /// </summary>
+        public string ToCsvRow()
+        {
+            return $"{Timestamp:yyyy-MM-dd HH:mm:ss}," +
+                   $"{AtmPressure:F2}," +
+                   $"{CurrentPressure:E2}," +
+                   $"{PiraniPressure:E2}," +
+                   $"{IonPressure:E2}," +
+                   $"{IonGaugeStatus}," +
+                   $"{ChillerTemperature:F1}," +
+                   $"{ChillerSetTemperature:F1}," +
+                   $"{HeaterCh1Temperature:F1}," +
+                   $"{HeaterCh1SetTemperature:F1}," +
+                   $"{HeaterCh2Temperature:F1}," +
+                   $"{HeaterCh2SetTemperature:F1}," +
+                   $"{GateValveStatus}," +
+                   $"{VentValveStatus}," +
+                   $"{ExhaustValveStatus}," +
+                   $"{IsDryPumpRunning}," +
+                   $"{DryPumpStatus}," +
+                   $"{IsTurboPumpRunning}," +
+                   $"{TurboPumpSpeed}," +
+                   $"{TurboPumpStatus}," +
+                   $"{IsSystemNormal}," +
+                   $"\"{string.Join(";", Warnings)}\"";
+        }
+
+        /// <summary>
+        /// 요약 문자열 생성
+        /// </summary>
+        public override string ToString()
+        {
+            return $"[{Timestamp:HH:mm:ss}] " +
+                   $"압력: {CurrentPressure:E2} Torr, " +
+                   $"CH1: {HeaterCh1Temperature:F1}°C, " +
+                   $"CH2: {HeaterCh2Temperature:F1}°C, " +
+                   $"터보: {TurboPumpSpeed} RPM";
+        }
+
+        #endregion
     }
 }

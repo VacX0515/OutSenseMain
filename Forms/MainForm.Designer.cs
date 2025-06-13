@@ -42,7 +42,6 @@ namespace VacX_OutSense
             connectionIndicator_drypump = new Forms.UserControls.ConnectionIndicator();
             connectionIndicator_turbopump = new Forms.UserControls.ConnectionIndicator();
             panel1 = new Panel();
-            checkBox1 = new CheckBox();
             grpCh1Timer = new GroupBox();
             lblCh1TimeRemainingValue = new Label();
             lblCh1TimeRemaining = new Label();
@@ -171,6 +170,7 @@ namespace VacX_OutSense
             btn_iongauge = new Button();
             tabPage2 = new TabPage();
             txtLog = new RichTextBox();
+            tabPageAutoRun = new TabPage();
             menuStrip = new MenuStrip();
             menuFile = new ToolStripMenuItem();
             menuFileExit = new ToolStripMenuItem();
@@ -227,6 +227,7 @@ namespace VacX_OutSense
             // 
             tabControlMain.Controls.Add(tabPage1);
             tabControlMain.Controls.Add(tabPage2);
+            tabControlMain.Controls.Add(tabPageAutoRun);
             tabControlMain.Dock = DockStyle.Fill;
             tabControlMain.Location = new Point(3, 3);
             tabControlMain.Name = "tabControlMain";
@@ -370,7 +371,6 @@ namespace VacX_OutSense
             // panel1
             // 
             panel1.BorderStyle = BorderStyle.FixedSingle;
-            panel1.Controls.Add(checkBox1);
             panel1.Controls.Add(grpCh1Timer);
             panel1.Controls.Add(txtIGStatus);
             panel1.Controls.Add(txtIG);
@@ -387,16 +387,6 @@ namespace VacX_OutSense
             panel1.Name = "panel1";
             panel1.Size = new Size(1160, 573);
             panel1.TabIndex = 1;
-            // 
-            // checkBox1
-            // 
-            checkBox1.Appearance = Appearance.Button;
-            checkBox1.Location = new Point(462, 109);
-            checkBox1.Name = "checkBox1";
-            checkBox1.Size = new Size(104, 24);
-            checkBox1.TabIndex = 51;
-            checkBox1.Text = "checkBox1";
-            checkBox1.UseVisualStyleBackColor = true;
             // 
             // grpCh1Timer
             // 
@@ -1998,6 +1988,16 @@ namespace VacX_OutSense
             txtLog.TabIndex = 0;
             txtLog.Text = "";
             // 
+            // tabPageAutoRun
+            // 
+            tabPageAutoRun.Location = new Point(4, 24);
+            tabPageAutoRun.Name = "tabPageAutoRun";
+            tabPageAutoRun.Padding = new Padding(3);
+            tabPageAutoRun.Size = new Size(1172, 649);
+            tabPageAutoRun.TabIndex = 4;
+            tabPageAutoRun.Text = "AutoRun";
+            tabPageAutoRun.UseVisualStyleBackColor = true;
+            // 
             // menuStrip
             // 
             menuStrip.ImageScalingSize = new Size(24, 24);
@@ -2308,6 +2308,6 @@ namespace VacX_OutSense
         private Button btnCh2Stop;
         private Button btnCh2AutoTuning;
         private TextBox txtCh2IsAutotune;
-        private CheckBox checkBox1;
+        private TabPage tabPageAutoRun;
     }
 }
