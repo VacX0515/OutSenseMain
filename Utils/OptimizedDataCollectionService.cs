@@ -663,7 +663,7 @@ namespace VacX_OutSense.Utils
                     snapshot.ButtonStates.TurboPumpResetEnabled = snapshot.Connections.TurboPump && status.HasError;
 
                     // 터보펌프 속도에 따른 밸브 버튼 상태
-                    bool turboPumpStopped = status.CurrentSpeed <= 1;
+                    bool turboPumpStopped = !status.IsRunning;
                     snapshot.ButtonStates.VentValveEnabled = turboPumpStopped;
                     snapshot.ButtonStates.ExhaustValveEnabled = turboPumpStopped;
                 }

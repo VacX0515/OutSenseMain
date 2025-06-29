@@ -118,6 +118,9 @@ namespace VacX_OutSense.Utils
 
                 // 버튼 상태
                 UpdateButtonStates(snapshot);
+
+                // PID 상태 업데이트
+                _mainForm.UpdatePIDStatus();
             }
             finally
             {

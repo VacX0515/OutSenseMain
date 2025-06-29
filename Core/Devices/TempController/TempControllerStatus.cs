@@ -255,11 +255,11 @@ namespace VacX_OutSense.Core.Devices.TempController
         {
             if (dot == 0)
             {
-                return $"{value}{unit}";
+                return $"{value}";
             }
             else
             {
-                return $"{value / 10.0:F1}{unit}";
+                return $"{value / 10.0:F1}";
             }
         }
     }
