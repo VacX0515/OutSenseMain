@@ -212,7 +212,7 @@ namespace VacX_OutSense
                     await ConnectDevicesAsync();
 
                     loadingForm.UpdateStatus("UI 서비스 시작 중...");
-                    
+
                     StartServices();
 
                     loadingForm.UpdateStatus("AutoRun 초기화 중...");
@@ -2620,7 +2620,8 @@ namespace VacX_OutSense
         }
 
         /// <summary>
-        /// 타이머에 의한 CH1 정지 및 종료 시퀀스
+        /// 타이머에 의한 CH1 정지 및 종료 시퀀스 (최종 간소화 버전)
+        /// _dataCollectionService의 실시간 데이터 사용, IO 읽기 없음
         /// </summary>
         private async void StopCh1WithTimer()
         {
@@ -2631,41 +2632,31 @@ namespace VacX_OutSense
                 // 타이머 정지
                 StopCh1Timer();
 
-                // 현재 상태 파악
-                bool needCh1Stop = false;
+                // 현재 상태 파악 - 데이터 수집 서비스에서 캐시된 데이터 사용
+                bool needCh1Stop = _tempController?.Status?.ChannelStatus[0].IsRunning == true;
                 bool needIonGaugeOff = false;
-                bool needTurboPumpStop = false;
-                bool needDryPumpStop = false;
+                bool needTurboPumpStop = _turboPump?.Status?.IsRunning == true ||
+                                       _turboPump?.Status?.CurrentSpeed > 0;
+                bool needDryPumpStop = _dryPump?.Status?.IsRunning == true;
                 bool needGateValveClose = false;
                 bool needVentValvesOpen = false;
-                bool needTemperatureWait = false;
                 bool needVentValvesClose = false;
 
-                // 상태 확인
-                if (_tempController?.IsConnected == true)
+                // 밸브 상태는 데이터 수집 서비스에서 가져오기
+                if (_dataCollectionService != null)
                 {
-                    needCh1Stop = _tempController.Status?.ChannelStatus[0].IsRunning == true;
+                    // 밸브 상태 가져오기
+                    var (ventOpen, exhaustOpen, ionGaugeHV) = _dataCollectionService.GetValveStates();
+                    needIonGaugeOff = ionGaugeHV;
+                    needVentValvesOpen = !ventOpen || !exhaustOpen;
+                    needVentValvesClose = ventOpen || exhaustOpen;
+
+                    // 게이트 밸브 상태
+                    string gateStatus = _dataCollectionService.GetGateValveStatus();
+                    needGateValveClose = gateStatus != "Closed";
                 }
 
-                if (_ioModule?.IsConnected == true)
-                {
-                    needIonGaugeOff = btn_iongauge.Text == "HV on";
-                    needGateValveClose = btn_GV.Text != "Closed";
-                    needVentValvesOpen = btn_VV.Text != "Opened" || btn_EV.Text != "Opened";
-                    needVentValvesClose = btn_VV.Text == "Opened" || btn_EV.Text == "Opened";
-                }
-
-                if (_turboPump?.IsConnected == true)
-                {
-                    needTurboPumpStop = _turboPump.Status?.IsRunning == true || _turboPump.Status?.CurrentSpeed > 0;
-                }
-
-                if (_dryPump?.IsConnected == true)
-                {
-                    needDryPumpStop = _dryPump.Status?.IsRunning == true;
-                }
-
-                // 시퀀스 상태 판단
+                // 시퀀스 상태 로깅
                 LogInfo("현재 시스템 상태 분석 중...");
                 LogDebug($"CH1 정지 필요: {needCh1Stop}");
                 LogDebug($"이온게이지 OFF 필요: {needIonGaugeOff}");
@@ -2677,283 +2668,252 @@ namespace VacX_OutSense
                 // 1. CH1 정지
                 if (needCh1Stop)
                 {
-                    try
+                    bool success = await ExecuteWithRetry(
+                        "CH1 정지",
+                        async () =>
+                        {
+                            await Task.Run(() => _tempController.Stop(1));
+                            await Task.Delay(1000);
+                            return _tempController.Status?.ChannelStatus[0].IsRunning == false;
+                        },
+                        btnCh1Stop,
+                        3, 2000
+                    );
+
+                    if (!success)
                     {
-                        btnCh1Stop.Enabled = false;
-                        await Task.Run(() => _tempController.Stop(1));
-                        LogInfo("CH1 자동 정지 완료");
-                        btnCh1Stop.Enabled = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError($"CH1 정지 중 오류: {ex.Message}");
-                        btnCh1Stop.Enabled = true;
+                        LogError("CH1 정지 실패 - 수동 확인 필요");
                     }
                 }
 
                 // 2. 이온게이지 HV OFF
                 if (needIonGaugeOff)
                 {
-                    try
-                    {
-                        LogInfo("이온게이지 HV OFF 시작");
-                        btn_iongauge.Enabled = false;
-                        bool result = await _ioModule.ControlIonGaugeHVAsync(false);
-                        if (result)
+                    bool success = await ExecuteWithRetry(
+                        "이온게이지 HV OFF",
+                        async () =>
                         {
-                            LogInfo("이온게이지 HV OFF 완료");
-                        }
-                        else
-                        {
-                            LogWarning("이온게이지 HV OFF 실패");
-                        }
-                        btn_iongauge.Enabled = true;
-                    }
-                    catch (Exception ex)
+                            bool result = await _ioModule.ControlIonGaugeHVAsync(false);
+                            if (!result) return false;
+
+                            // 잠시 대기 후 데이터 수집 서비스에서 상태 확인
+                            await Task.Delay(1000);
+                            var (_, _, ionHV) = _dataCollectionService.GetValveStates();
+                            return !ionHV;
+                        },
+                        btn_iongauge,
+                        3, 1000
+                    );
+
+                    if (!success)
                     {
-                        LogError($"이온게이지 제어 중 오류: {ex.Message}");
-                        btn_iongauge.Enabled = true;
+                        LogWarning("이온게이지 HV OFF 실패 - 수동 확인 필요");
                     }
                 }
 
                 // 3. 터보펌프 정지 및 대기
                 if (needTurboPumpStop)
                 {
-                    try
-                    {
-                        LogInfo("터보펌프 정지 시작");
-                        btnTurboPumpStop.Enabled = false;
-                        await Task.Run(() => _turboPump.Stop());
-                        LogInfo("터보펌프 정지 명령 전송 완료");
-                        btnTurboPumpStop.Enabled = true;
+                    bool commandSuccess = await ExecuteWithRetry(
+                        "터보펌프 정지 명령",
+                        async () =>
+                        {
+                            await Task.Run(() => _turboPump.Stop());
+                            return true;
+                        },
+                        btnTurboPumpStop,
+                        3, 2000
+                    );
 
+                    if (commandSuccess)
+                    {
                         // 터보펌프 완전 정지 대기
                         LogInfo("터보펌프 완전 정지 대기 중...");
-                        int waitCount = 0;
-                        while (waitCount < 1800) // 최대 30분
-                        {
-                            await Task.Delay(1000);
-                            int currentSpeed = _turboPump.Status?.CurrentSpeed ?? 0;
+                        bool stopped = await WaitForCondition(
+                            () => !_turboPump.IsRunning || (_turboPump.Status?.CurrentSpeed ?? 0) == 0,
+                            1800, // 최대 30분
+                            30,   // 30초마다 로그
+                            () => LogDebug($"터보펌프 속도: {_turboPump.Status?.CurrentSpeed ?? 0} RPM")
+                        );
 
-                            if (!_turboPump.IsRunning)
-                            {
-                                LogInfo("터보펌프 완전 정지 확인");
-                                break;
-                            }
-
-                            if (waitCount % 10 == 0)
-                            {
-                                LogDebug($"터보펌프 속도: {currentSpeed} RPM");
-                            }
-                            waitCount++;
-                        }
-
-                        if (_turboPump.IsRunning)
+                        if (!stopped)
                         {
                             LogError("터보펌프 정지 시간 초과 - 시퀀스 중단");
-                            MessageBox.Show("터보펌프가 정지되지 않았습니다.\n수동으로 확인해주세요.",
-                                          "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            ShowMessageBox(
+                                "터보펌프가 정지되지 않았습니다.\n수동으로 확인해주세요.",
+                                "경고",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning
+                            );
                             return;
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError($"터보펌프 제어 중 오류: {ex.Message}");
-                        MessageBox.Show($"터보펌프 제어 오류: {ex.Message}",
-                                      "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
+
+                        LogInfo("터보펌프 완전 정지 확인");
                     }
                 }
 
-                // 4. 드라이펌프 정지 (사전조건: 터보펌프가 정지되어 있어야 함)
+                // 4. 드라이펌프 정지
                 if (needDryPumpStop)
                 {
-                    // 사전조건 확인
-                    if (_turboPump.Status?.CurrentSpeed > 0)
-                    {
-                        LogError("드라이펌프 정지 불가: 터보펌프가 아직 작동 중");
-                        MessageBox.Show("터보펌프가 작동 중입니다.\n터보펌프를 먼저 정지해주세요.",
-                                      "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
+                    bool success = await ExecuteWithRetry(
+                        "드라이펌프 정지",
+                        async () =>
+                        {
+                            await Task.Run(() => _dryPump.Stop());
+                            await Task.Delay(2000);
+                            return _dryPump.Status?.IsRunning == false;
+                        },
+                        btnDryPumpStop,
+                        3, 2000
+                    );
 
-                    try
+                    if (!success)
                     {
-                        LogInfo("드라이펌프 정지 시작");
-                        btnDryPumpStop.Enabled = false;
-                        await Task.Run(() => _dryPump.Stop());
-                        LogInfo("드라이펌프 정지 완료");
-                        btnDryPumpStop.Enabled = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError($"드라이펌프 제어 중 오류: {ex.Message}");
-                        btnDryPumpStop.Enabled = true;
+                        LogWarning("드라이펌프 정지 실패 - 수동 확인 필요");
                     }
                 }
 
                 // 5. 게이트 밸브 닫기
                 if (needGateValveClose)
                 {
+                    bool success = await ExecuteWithRetry(
+                        "게이트 밸브 닫기",
+                        async () =>
+                        {
+                            bool result = await _ioModule.ControlGateValveAsync(false);
+                            if (!result) return false;
+
+                            // 물리적 동작 시간 대기
+                            await Task.Delay(3000);
+
+                            // 데이터 수집 서비스에서 상태 확인
+                            string status = _dataCollectionService.GetGateValveStatus();
+                            return status == "Closed";
+                        },
+                        btn_GV,
+                        3, 2000
+                    );
+
+                    if (!success)
+                    {
+                        LogWarning("게이트 밸브 닫기 실패");
+                    }
+                }
+
+                // 6. 벤트 밸브 열기
+                if (needVentValvesOpen)
+                {
+                    // 현재 밸브 상태 다시 확인
+                    var (currentVentOpen, currentExhaustOpen, _) = _dataCollectionService.GetValveStates();
+
+                    // VV 열기
+                    if (!currentVentOpen)
+                    {
+                        await ExecuteWithRetry(
+                            "VV 밸브 열기",
+                            async () =>
+                            {
+                                bool result = await _ioModule.ControlVentValveAsync(true);
+                                if (!result) return false;
+
+                                await Task.Delay(1000);
+                                var (ventOpen, _, _) = _dataCollectionService.GetValveStates();
+                                return ventOpen;
+                            },
+                            btn_VV,
+                            3, 1000
+                        );
+                    }
+
+                    // EV 열기
+                    if (!currentExhaustOpen)
+                    {
+                        await ExecuteWithRetry(
+                            "EV 밸브 열기",
+                            async () =>
+                            {
+                                bool result = await _ioModule.ControlExhaustValveAsync(true);
+                                if (!result) return false;
+
+                                await Task.Delay(1000);
+                                var (_, exhaustOpen, _) = _dataCollectionService.GetValveStates();
+                                return exhaustOpen;
+                            },
+                            btn_EV,
+                            3, 1000
+                        );
+                    }
+                }
+
+                // 7. Ch1 온도 확인 후 VV, EV 닫기
+                if (needVentValvesClose || _tempController.Status.ChannelStatus[0].PresentValue > _ch1VentTargetTemp)
+                {
                     try
                     {
-                        LogInfo("게이트 밸브 닫기 시작");
-                        btn_GV.Enabled = false;
-                        bool result = await _ioModule.ControlGateValveAsync(false);
-                        if (result)
+                        LogInfo($"Ch1 온도 {_ch1VentTargetTemp}도 도달 대기 중...");
+
+                        // 온도 대기
+                        bool tempReached = await WaitForCondition(
+                            () => (_tempController?.Status?.ChannelStatus[0].PresentValue / 10.0 ?? 999) <= _ch1VentTargetTemp,
+                            7200, // 최대 30분
+                            10,   // 10초마다 로그
+                            () =>
+                            {
+                                double pv = _tempController?.Status?.ChannelStatus[0].PresentValue / 10.0 ?? 999;
+                                LogDebug($"Ch1 현재 온도: {pv:F1}°C (타겟: {_ch1VentTargetTemp}°C)");
+                            }
+                        );
+
+                        if (tempReached)
                         {
-                            LogInfo("게이트 밸브 닫기 명령 전송 완료");
-
-                            // 게이트 밸브 완전히 닫힐 때까지 대기
-                            int waitCount = 0;
-                            while (waitCount < 300 && btn_GV.Text != "Closed")
-                            {
-                                await Task.Delay(1000);
-                                waitCount++;
-                            }
-
-                            if (btn_GV.Text == "Closed")
-                            {
-                                LogInfo("게이트 밸브 완전히 닫힘 확인");
-                            }
-                            else
-                            {
-                                LogWarning("게이트 밸브 닫기 시간 초과");
-                            }
+                            LogInfo($"Ch1 온도 {_ch1VentTargetTemp}도 도달");
                         }
                         else
                         {
-                            LogError("게이트 밸브 닫기 실패");
-                        }
-                        btn_GV.Enabled = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError($"게이트 밸브 제어 중 오류: {ex.Message}");
-                        btn_GV.Enabled = true;
-                    }
-                }
-
-                // 6. VV, EV 열기 (사전조건: 게이트 밸브가 닫혀있어야 함)
-                if (needVentValvesOpen)
-                {
-                    // 사전조건 확인
-                    if (btn_GV.Text != "Closed")
-                    {
-                        LogError("벤트 밸브 열기 불가: 게이트 밸브가 열려있음");
-                        MessageBox.Show("게이트 밸브가 열려있습니다.\n게이트 밸브를 먼저 닫아주세요.",
-                                      "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-
-                    try
-                    {
-                        LogInfo("VV, EV 밸브 열기 시작");
-
-                        // VV 열기
-                        if (btn_VV.Text != "Opened")
-                        {
-                            btn_VV.Enabled = false;
-                            bool vvResult = await _ioModule.ControlVentValveAsync(true);
-                            if (vvResult)
-                            {
-                                LogInfo("VV 밸브 열기 완료");
-                            }
-                            btn_VV.Enabled = true;
+                            LogWarning("Ch1 온도 대기 시간 초과 - VV, EV 닫기 진행");
                         }
 
-                        // EV 열기
-                        if (btn_EV.Text != "Opened")
+                        LogInfo("VV, EV 밸브 닫기 시작");
+
+                        // 최종 밸브 상태 확인
+                        var (finalVentOpen, finalExhaustOpen, _) = _dataCollectionService.GetValveStates();
+
+                        // VV 닫기
+                        if (finalVentOpen)
                         {
-                            btn_EV.Enabled = false;
-                            bool evResult = await _ioModule.ControlExhaustValveAsync(true);
-                            if (evResult)
-                            {
-                                LogInfo("EV 밸브 열기 완료");
-                            }
-                            btn_EV.Enabled = true;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError($"벤트 밸브 제어 중 오류: {ex.Message}");
-                    }
-                }
-
-                // 7. Ch1 온도가 벤트 타겟 온도가 될 때까지 대기 및 VV, EV 닫기
-                if ((btn_VV.Text == "Opened" || btn_EV.Text == "Opened") && _tempController?.IsConnected == true)
-                {
-                    try
-                    {
-                        // 벤트 타겟 온도 가져오기
-                        _ch1VentTargetTemp = (double)numVentTargetTemp.Value;
-
-                        LogInfo($"Ch1 온도 {_ch1VentTargetTemp}도 대기 중...");
-                        int tempWaitCount = 0;
-                        bool tempReached = false;
-
-                        while (tempWaitCount < 7200) // 최대 30분
-                        {
-                            await Task.Delay(1000);
-                            await _tempController.UpdateStatusAsync();
-
-                            var ch1Status = _tempController.Status?.ChannelStatus[0];
-                            if (ch1Status != null)
-                            {
-                                double pv = ch1Status.PresentValue;
-                                if (ch1Status.Dot > 0)
+                            await ExecuteWithRetry(
+                                "VV 밸브 닫기",
+                                async () =>
                                 {
-                                    pv = pv / Math.Pow(10, ch1Status.Dot);
-                                }
+                                    bool result = await _ioModule.ControlVentValveAsync(false);
+                                    if (!result) return false;
 
-                                if (tempWaitCount % 30 == 0)
-                                {
-                                    LogDebug($"Ch1 현재 온도: {pv:F1}°C (타겟: {_ch1VentTargetTemp}°C)");
-                                }
-
-                                if (pv <= _ch1VentTargetTemp)
-                                {
-                                    LogInfo($"Ch1 온도 {_ch1VentTargetTemp}도 도달 (현재: {pv:F1}°C)");
-                                    tempReached = true;
-                                    break;
-                                }
-                            }
-                            tempWaitCount++;
+                                    await Task.Delay(1000);
+                                    var (ventOpen, _, _) = _dataCollectionService.GetValveStates();
+                                    return !ventOpen;
+                                },
+                                btn_VV,
+                                3, 1000
+                            );
                         }
 
-                        // VV, EV 닫기
-                        if (tempReached || tempWaitCount >= 1800)
+                        // EV 닫기
+                        if (finalExhaustOpen)
                         {
-                            if (!tempReached)
-                            {
-                                LogWarning("Ch1 온도 대기 시간 초과 - VV, EV 닫기 진행");
-                            }
-
-                            LogInfo("VV, EV 밸브 닫기 시작");
-
-                            // VV 닫기
-                            if (btn_VV.Text == "Opened")
-                            {
-                                btn_VV.Enabled = false;
-                                bool vvResult = await _ioModule.ControlVentValveAsync(false);
-                                if (vvResult)
+                            await ExecuteWithRetry(
+                                "EV 밸브 닫기",
+                                async () =>
                                 {
-                                    LogInfo("VV 밸브 닫기 완료");
-                                }
-                                btn_VV.Enabled = true;
-                            }
+                                    bool result = await _ioModule.ControlExhaustValveAsync(false);
+                                    if (!result) return false;
 
-                            // EV 닫기
-                            if (btn_EV.Text == "Opened")
-                            {
-                                btn_EV.Enabled = false;
-                                bool evResult = await _ioModule.ControlExhaustValveAsync(false);
-                                if (evResult)
-                                {
-                                    LogInfo("EV 밸브 닫기 완료");
-                                }
-                                btn_EV.Enabled = true;
-                            }
+                                    await Task.Delay(1000);
+                                    var (_, exhaustOpen, _) = _dataCollectionService.GetValveStates();
+                                    return !exhaustOpen;
+                                },
+                                btn_EV,
+                                3, 1000
+                            );
                         }
                     }
                     catch (Exception ex)
@@ -2965,23 +2925,99 @@ namespace VacX_OutSense
                 LogInfo("CH1 타이머 종료 시퀀스 완료");
 
                 // 사용자에게 알림
-                MessageBox.Show(
+                ShowMessageBox(
                     "CH1 타이머 종료 시퀀스가 완료되었습니다.\n" +
                     "자세한 내용은 로그를 확인해주세요.",
-                    "타이머 종료",
+                    "시퀀스 완료",
                     MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    MessageBoxIcon.Information
+                );
             }
             catch (Exception ex)
             {
-                LogError($"CH1 타이머 종료 시퀀스 전체 오류: {ex.Message}", ex);
-                MessageBox.Show(
-                    $"종료 시퀀스 중 오류가 발생했습니다:\n{ex.Message}",
+                LogError($"CH1 타이머 종료 시퀀스 오류: {ex.Message}");
+
+                ShowMessageBox(
+                    $"종료 시퀀스 중 오류가 발생했습니다.\n{ex.Message}",
                     "오류",
                     MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    MessageBoxIcon.Error
+                );
             }
         }
+
+        #region 헬퍼 메서드
+        // 수정된 ExecuteWithRetry 메서드 (간소화)
+        private async Task<bool> ExecuteWithRetry(string operationName, Func<Task<bool>> operation,
+            Button controlButton, int maxRetries, int retryDelayMs)
+        {
+            for (int retry = 0; retry < maxRetries; retry++)
+            {
+                try
+                {
+                    LogInfo($"{operationName} 시도 {retry + 1}/{maxRetries}");
+
+                    // UI 헬퍼 메서드 사용
+                    SetButtonEnabled(controlButton, false);
+
+                    bool result = await operation();
+
+                    if (result)
+                    {
+                        LogInfo($"{operationName} 완료");
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogError($"{operationName} 오류: {ex.Message}");
+                }
+                finally
+                {
+                    // UI 헬퍼 메서드 사용
+                    SetButtonEnabled(controlButton, true);
+                }
+
+                if (retry < maxRetries - 1)
+                {
+                    await Task.Delay(retryDelayMs);
+                }
+            }
+
+            LogWarning($"{operationName} 실패 (재시도 {maxRetries}회 초과)");
+            return false;
+        }
+
+
+        /// <summary>
+        /// 특정 조건이 충족될 때까지 대기
+        /// </summary>
+        private async Task<bool> WaitForCondition(Func<bool> condition, int maxSeconds,
+            int logIntervalSeconds, Action logAction)
+        {
+            int waitCount = 0;
+
+            while (waitCount < maxSeconds)
+            {
+                if (condition())
+                {
+                    return true;
+                }
+
+                await Task.Delay(1000);
+
+                if (waitCount % logIntervalSeconds == 0 && logAction != null)
+                {
+                    logAction();
+                }
+
+                waitCount++;
+            }
+
+            return false;
+        }
+
+        #endregion
 
         #endregion
 
@@ -3081,6 +3117,114 @@ namespace VacX_OutSense
                                          $"(Ch2: {_chillerPIDService.LastCh2Temperature:F1}°C, " +
                                          $"칠러: {_chillerPIDService.LastChillerSetpoint:F1}°C)";
             }
+        }
+
+        #endregion
+
+        // MainForm.cs에 추가할 UI 헬퍼 메서드들
+
+        #region UI 크로스 스레드 헬퍼 메서드
+
+        /// <summary>
+        /// UI 스레드에서 안전하게 버튼 활성화/비활성화
+        /// </summary>
+        private void SetButtonEnabled(Button button, bool enabled)
+        {
+            if (button == null) return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => button.Enabled = enabled));
+            }
+            else
+            {
+                button.Enabled = enabled;
+            }
+        }
+
+        /// <summary>
+        /// UI 스레드에서 안전하게 메시지 박스 표시
+        /// </summary>
+        private void ShowMessageBox(string message, string title, MessageBoxButtons buttons, MessageBoxIcon icon)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() =>
+                    MessageBox.Show(this, message, title, buttons, icon)));
+            }
+            else
+            {
+                MessageBox.Show(this, message, title, buttons, icon);
+            }
+        }
+
+        /// <summary>
+        /// UI 스레드에서 안전하게 컨트롤 텍스트 설정
+        /// </summary>
+        private void SetControlText(Control control, string text)
+        {
+            if (control == null) return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => control.Text = text));
+            }
+            else
+            {
+                control.Text = text;
+            }
+        }
+
+        /// <summary>
+        /// UI 스레드에서 안전하게 컨트롤 색상 설정
+        /// </summary>
+        private void SetControlBackColor(Control control, Color color)
+        {
+            if (control == null) return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => control.BackColor = color));
+            }
+            else
+            {
+                control.BackColor = color;
+            }
+        }
+
+        /// <summary>
+        /// UI 스레드에서 안전하게 Action 실행
+        /// </summary>
+        private void RunOnUIThread(Action action)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(action);
+            }
+            else
+            {
+                action();
+            }
+        }
+
+        /// <summary>
+        /// UI 스레드에서 안전하게 Action을 동기적으로 실행
+        /// </summary>
+        private void RunOnUIThreadSync(Action action)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(action);
+            }
+            else
+            {
+                action();
+            }
+        }
+
+        private void numVentTargetTemp_ValueChanged(object sender, EventArgs e)
+        {
+            _ch1VentTargetTemp = Convert.ToDouble(numVentTargetTemp.Value);
         }
 
         #endregion

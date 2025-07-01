@@ -693,6 +693,61 @@ namespace VacX_OutSense.Utils
             }
         }
 
+        // OptimizedDataCollectionService.cs에 추가할 메서드들
+
+        /// <summary>
+        /// 최신 AI 데이터 가져오기
+        /// </summary>
+        public AnalogInputValues GetLatestAIData()
+        {
+            if (_latestData.TryGetValue("AI_Data", out var aiObj) && aiObj is AnalogInputValues aiData)
+            {
+                return aiData;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 최신 AO 데이터 가져오기
+        /// </summary>
+        public AnalogOutputValues GetLatestAOData()
+        {
+            if (_latestData.TryGetValue("AO_Data", out var aoObj) && aoObj is AnalogOutputValues aoData)
+            {
+                return aoData;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 게이트 밸브 상태 가져오기
+        /// </summary>
+        public string GetGateValveStatus()
+        {
+            var aiData = GetLatestAIData();
+            if (aiData != null)
+            {
+                if (aiData.MasterCurrentValues[3] > 1) return "Opened";
+                else if (aiData.MasterCurrentValues[0] > 1) return "Closed";
+                else return "Moving";
+            }
+            return "Unknown";
+        }
+
+        /// <summary>
+        /// 모든 밸브 상태 가져오기
+        /// </summary>
+        public (bool ventOpen, bool exhaustOpen, bool ionGaugeHV) GetValveStates()
+        {
+            var aoData = GetLatestAOData();
+            if (aoData != null)
+            {
+                return (aoData.IsVentValveOpen, aoData.IsExhaustValveOpen, aoData.IsIonGaugeHVOn);
+            }
+            return (false, false, false);
+        }
+
+
         public void Dispose()
         {
             Stop();
