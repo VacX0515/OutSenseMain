@@ -258,7 +258,7 @@ namespace VacX_OutSense.Utils
             // 3. 칠러 설정 온도 계산
             // 칠러 온도 = 기준 온도 - PID 출력
             // (PID 출력이 양수이면 Ch2가 목표보다 낮으므로 칠러 온도를 낮춰야 함)
-            double chillerSetpoint = _chillerBaseTemperature - pidOutput;
+            double chillerSetpoint = _chillerBaseTemperature + pidOutput;
 
             // 칠러 온도 제한
             chillerSetpoint = Math.Max(CHILLER_MIN_TEMP, Math.Min(CHILLER_MAX_TEMP, chillerSetpoint));

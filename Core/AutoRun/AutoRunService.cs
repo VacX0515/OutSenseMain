@@ -1044,8 +1044,8 @@ namespace VacX_OutSense.Core.AutoRun
                 // IO Module 데이터 읽기
                 if (_mainForm._ioModule?.IsConnected == true)
                 {
-                    var aiData = await _mainForm._ioModule.ReadAnalogInputsAsync();
-                    var aoData = await _mainForm._ioModule.ReadAnalogOutputsAsync();
+                    var aiData = _mainForm._ioModule.LastValidAIValues;
+                    var aoData =  _mainForm._ioModule.LastValidAOValues;
 
                     if (aiData != null)
                     {
@@ -1081,13 +1081,11 @@ namespace VacX_OutSense.Core.AutoRun
                 // 펌프 상태
                 if (_mainForm._dryPump?.IsConnected == true)
                 {
-                    await _mainForm._dryPump.UpdateStatusAsync();
                     measurements.DryPumpStatus = _mainForm._dryPump.GetStatusText();
                 }
 
                 if (_mainForm._turboPump?.IsConnected == true)
                 {
-                    await _mainForm._turboPump.UpdateStatusAsync();
                     measurements.TurboPumpStatus = _mainForm._turboPump.GetStatusText();
                     measurements.TurboPumpSpeed = _mainForm._turboPump.Status?.CurrentSpeed ?? 0;
                 }
@@ -1095,13 +1093,11 @@ namespace VacX_OutSense.Core.AutoRun
                 // 온도 데이터
                 if (_mainForm._bathCirculator?.IsConnected == true)
                 {
-                    await _mainForm._bathCirculator.UpdateStatusAsync();
                     measurements.ChillerTemperature = _mainForm._bathCirculator.Status.CurrentTemperature;
                 }
 
                 if (_mainForm._tempController?.IsConnected == true)
                 {
-                    await _mainForm._tempController.UpdateStatusAsync();
                     var status = _mainForm._tempController.Status;
 
                     // 온도값 변환 (소수점 위치에 따라)

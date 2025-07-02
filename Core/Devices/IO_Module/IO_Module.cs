@@ -41,6 +41,10 @@ namespace VacX_OutSense.Core.Devices.IO_Module
         private AnalogInputValues _lastValidAIValues;
         private AnalogOutputValues _lastValidAOValues;
 
+        public AnalogInputValues LastValidAIValues => _lastValidAIValues;
+        public AnalogOutputValues LastValidAOValues => _lastValidAOValues;
+
+
         public override string DeviceName => "IO Module";
         public override string Model => "M31-XAXA0404G-L";
         public byte SlaveId { get => _slaveId; set => _slaveId = value; }
