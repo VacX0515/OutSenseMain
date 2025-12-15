@@ -3227,6 +3227,21 @@ namespace VacX_OutSense
             _ch1VentTargetTemp = Convert.ToDouble(numVentTargetTemp.Value);
         }
 
+        private void tableLayoutPanel3_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+
+        private void rampSettingControl1_Load(object sender, EventArgs e)
+        {
+
+        }
+
+        private void chkChillerPIDEnabled_CheckedChanged_1(object sender, EventArgs e)
+        {
+
+        }
+
         #endregion
 
 

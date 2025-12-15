@@ -20,6 +20,12 @@ namespace VacX_OutSense.Core.Devices.TempController
         private string _sensorError;
         private bool _isAutoTuning;
 
+        // Ramp 관련 필드 추가
+        private ushort _rampUpRate;
+        private ushort _rampDownRate;
+        private ushort _rampTimeUnit;
+        private bool _isRampActive;
+
         /// <summary>
         /// 속성 변경 이벤트
         /// </summary>
@@ -37,6 +43,10 @@ namespace VacX_OutSense.Core.Devices.TempController
             _isAutoTuning = false;
             _heatingMV = 0.0f;
             _coolingMV = 0.0f;
+            _rampUpRate = 0;
+            _rampDownRate = 0;
+            _rampTimeUnit = 1; // 기본값: 분
+            _isRampActive = false;
         }
 
         /// <summary>
@@ -54,7 +64,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public int ChannelNumber
         {
             get => _channelNumber;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_channelNumber != value)
                 {
@@ -70,7 +80,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public bool IsRunning
         {
             get => _isRunning;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_isRunning != value)
                 {
@@ -86,7 +96,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public short PresentValue
         {
             get => _presentValue;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_presentValue != value)
                 {
@@ -103,7 +113,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public short SetValue
         {
             get => _setValue;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_setValue != value)
                 {
@@ -120,7 +130,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public int Dot
         {
             get => _dot;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_dot != value)
                 {
@@ -138,7 +148,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public string TemperatureUnit
         {
             get => _temperatureUnit;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_temperatureUnit != value)
                 {
@@ -146,6 +156,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                     OnPropertyChanged(nameof(TemperatureUnit));
                     OnPropertyChanged(nameof(FormattedPresentValue));
                     OnPropertyChanged(nameof(FormattedSetValue));
+                    OnPropertyChanged(nameof(RampStatusText));
                 }
             }
         }
@@ -156,7 +167,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public float HeatingMV
         {
             get => _heatingMV;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_heatingMV != value)
                 {
@@ -172,7 +183,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public float CoolingMV
         {
             get => _coolingMV;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_coolingMV != value)
                 {
@@ -188,13 +199,13 @@ namespace VacX_OutSense.Core.Devices.TempController
         public string SensorError
         {
             get => _sensorError;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_sensorError != value)
                 {
                     _sensorError = value;
                     OnPropertyChanged(nameof(SensorError));
-                    OnPropertyChanged(nameof(FormattedPresentValue));  // 에러 표시를 위해 추가
+                    OnPropertyChanged(nameof(FormattedPresentValue));
                 }
             }
         }
@@ -205,13 +216,136 @@ namespace VacX_OutSense.Core.Devices.TempController
         public bool IsAutoTuning
         {
             get => _isAutoTuning;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_isAutoTuning != value)
                 {
                     _isAutoTuning = value;
                     OnPropertyChanged(nameof(IsAutoTuning));
                 }
+            }
+        }
+
+        /// <summary>
+        /// 램프 상승 변화율 (0: OFF, 1-9999)
+        /// </summary>
+        public ushort RampUpRate
+        {
+            get => _rampUpRate;
+            internal set
+            {
+                if (_rampUpRate != value)
+                {
+                    _rampUpRate = value;
+                    OnPropertyChanged(nameof(RampUpRate));
+                    OnPropertyChanged(nameof(IsRampEnabled));
+                    OnPropertyChanged(nameof(RampStatusText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 램프 하강 변화율 (0: OFF, 1-9999)
+        /// </summary>
+        public ushort RampDownRate
+        {
+            get => _rampDownRate;
+            internal set
+            {
+                if (_rampDownRate != value)
+                {
+                    _rampDownRate = value;
+                    OnPropertyChanged(nameof(RampDownRate));
+                    OnPropertyChanged(nameof(IsRampEnabled));
+                    OnPropertyChanged(nameof(RampStatusText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 램프 시간 단위 (0: 초, 1: 분, 2: 시간)
+        /// </summary>
+        public ushort RampTimeUnit
+        {
+            get => _rampTimeUnit;
+            internal set
+            {
+                if (_rampTimeUnit != value)
+                {
+                    _rampTimeUnit = value;
+                    OnPropertyChanged(nameof(RampTimeUnit));
+                    OnPropertyChanged(nameof(RampTimeUnitText));
+                    OnPropertyChanged(nameof(RampStatusText));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ramp 기능 활성화 여부
+        /// </summary>
+        public bool IsRampEnabled => _rampUpRate > 0 || _rampDownRate > 0;
+
+        /// <summary>
+        /// Ramp 진행 중인지 여부
+        /// </summary>
+        public bool IsRampActive
+        {
+            get => _isRampActive;
+            internal set
+            {
+                if (_isRampActive != value)
+                {
+                    _isRampActive = value;
+                    OnPropertyChanged(nameof(IsRampActive));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 램프 시간 단위 텍스트
+        /// </summary>
+        public string RampTimeUnitText
+        {
+            get
+            {
+                return _rampTimeUnit switch
+                {
+                    0 => "초",
+                    1 => "분",
+                    2 => "시간",
+                    _ => "알 수 없음"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Ramp 상태 텍스트
+        /// </summary>
+        public string RampStatusText
+        {
+            get
+            {
+                if (!IsRampEnabled)
+                    return "Ramp OFF";
+
+                string unit = _rampTimeUnit switch
+                {
+                    0 => "/초",
+                    1 => "/분",
+                    2 => "/시간",
+                    _ => ""
+                };
+
+                string status = "";
+                if (_rampUpRate > 0)
+                    status += $"상승: {_rampUpRate}{_temperatureUnit}{unit}";
+                if (_rampDownRate > 0)
+                {
+                    if (status.Length > 0) status += ", ";
+                    status += $"하강: {_rampDownRate}{_temperatureUnit}{unit}";
+                }
+
+                return status;
             }
         }
 
@@ -227,7 +361,6 @@ namespace VacX_OutSense.Core.Devices.TempController
                     return _sensorError;
                 }
 
-                // 순환 참조를 피하기 위해 직접 구현
                 return FormatTemperature(_presentValue, _dot, _temperatureUnit);
             }
         }
@@ -239,7 +372,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         {
             get
             {
-                // 순환 참조를 피하기 위해 직접 구현
                 return FormatTemperature(_setValue, _dot, _temperatureUnit);
             }
         }
@@ -247,10 +379,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// 온도 값을 표시용 문자열로 변환합니다.
         /// </summary>
-        /// <param name="value">온도 값</param>
-        /// <param name="dot">소수점 위치 (0: 정수, 1: 소수점 한자리)</param>
-        /// <param name="unit">온도 단위 ("°C" 또는 "°F")</param>
-        /// <returns>표시용 온도 문자열</returns>
         private static string FormatTemperature(short value, int dot, string unit)
         {
             if (dot == 0)
@@ -291,7 +419,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// 속성 변경 이벤트를 발생시킵니다.
         /// </summary>
-        /// <param name="propertyName">속성 이름</param>
         protected virtual void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
@@ -304,7 +431,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         {
             _channelCount = 4;
             _channelStatus = new ChannelStatus[_channelCount];
-            _modelName = "";  // 기본값 설정
+            _modelName = "";
 
             for (int i = 0; i < _channelCount; i++)
             {
@@ -321,7 +448,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public int ChannelCount
         {
             get => _channelCount;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_channelCount != value)
                 {
@@ -373,7 +500,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort ProductNumberH
         {
             get => _productNumberH;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_productNumberH != value)
                 {
@@ -389,7 +516,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort ProductNumberL
         {
             get => _productNumberL;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_productNumberL != value)
                 {
@@ -405,7 +532,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort HardwareVersion
         {
             get => _hardwareVersion;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_hardwareVersion != value)
                 {
@@ -421,7 +548,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort SoftwareVersion
         {
             get => _softwareVersion;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_softwareVersion != value)
                 {
@@ -437,7 +564,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public string ModelName
         {
             get => _modelName;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_modelName != value)
                 {
@@ -453,13 +580,13 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort BaudRate
         {
             get => _baudRate;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_baudRate != value)
                 {
                     _baudRate = value;
                     OnPropertyChanged(nameof(BaudRate));
-                    OnPropertyChanged(nameof(BaudRateString));  // 연관 속성 업데이트
+                    OnPropertyChanged(nameof(BaudRateString));
                 }
             }
         }
@@ -470,13 +597,13 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort ParityBit
         {
             get => _parityBit;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_parityBit != value)
                 {
                     _parityBit = value;
                     OnPropertyChanged(nameof(ParityBit));
-                    OnPropertyChanged(nameof(ParityBitString));  // 연관 속성 업데이트
+                    OnPropertyChanged(nameof(ParityBitString));
                 }
             }
         }
@@ -487,13 +614,13 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort StopBit
         {
             get => _stopBit;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_stopBit != value)
                 {
                     _stopBit = value;
                     OnPropertyChanged(nameof(StopBit));
-                    OnPropertyChanged(nameof(StopBitString));  // 연관 속성 업데이트
+                    OnPropertyChanged(nameof(StopBitString));
                 }
             }
         }
@@ -504,7 +631,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort ResponseWaitingTime
         {
             get => _responseWaitingTime;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_responseWaitingTime != value)
                 {
@@ -520,7 +647,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort CommunicationWrite
         {
             get => _communicationWrite;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_communicationWrite != value)
                 {
@@ -536,7 +663,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         public ushort CommunicationProtocol
         {
             get => _communicationProtocol;
-            internal set  // internal로 변경
+            internal set
             {
                 if (_communicationProtocol != value)
                 {
@@ -547,7 +674,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// 포맷된 통신 속도 문자열 반환 (2: 9600 bps)
+        /// 포맷된 통신 속도 문자열 반환
         /// </summary>
         public string BaudRateString
         {
@@ -568,7 +695,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// 포맷된 패리티 비트 문자열 반환 (0: NONE)
+        /// 포맷된 패리티 비트 문자열 반환
         /// </summary>
         public string ParityBitString
         {
@@ -585,7 +712,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// 포맷된 정지 비트 문자열 반환 (0: 1 Bit, 1: 2 Bit)
+        /// 포맷된 정지 비트 문자열 반환
         /// </summary>
         public string StopBitString
         {

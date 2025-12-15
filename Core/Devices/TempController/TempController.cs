@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.ComponentModel;
+using System.IO;
+using System.Windows.Forms;
 using VacX_OutSense.Core.Communication;
 using VacX_OutSense.Core.Communication.Interfaces;
 using VacX_OutSense.Core.Devices.Base;
@@ -42,11 +44,30 @@ namespace VacX_OutSense.Core.Devices.TempController
         private const ushort REG_HOLD_CH1_SV = 0x0000;       // SV 설정값 - 400001
         private const ushort REG_HOLD_CH2_SV = 0x03E8;       // SV 설정값 - 401001
 
+        // Ramp 관련 레지스터 주소 (TM4 기준)
+        private const ushort REG_HOLD_CH1_RAMP_UP = 0x0073;    // 400116
+        private const ushort REG_HOLD_CH1_RAMP_DOWN = 0x0074;  // 400117
+        private const ushort REG_HOLD_CH1_RAMP_UNIT = 0x0075;  // 400118
+
+        private const ushort REG_HOLD_CH2_RAMP_UP = 0x044C + (0x0073 - 0x0064);  // 401116
+        private const ushort REG_HOLD_CH2_RAMP_DOWN = 0x044C + (0x0074 - 0x0064); // 401117
+        private const ushort REG_HOLD_CH2_RAMP_UNIT = 0x044C + (0x0075 - 0x0064); // 401118
+
         // 코일 주소 (매뉴얼 참조)
         private const ushort COIL_CH1_RUN_STOP = 0x0000;     // 채널 1 RUN/STOP - 000001
         private const ushort COIL_CH1_AUTO_TUNING = 0x0001;  // 채널 1 Auto-Tuning - 000002
         private const ushort COIL_CH2_RUN_STOP = 0x0002;     // 채널 2 RUN/STOP - 000003
         private const ushort COIL_CH2_AUTO_TUNING = 0x0003;  // 채널 2 Auto-Tuning - 000004
+
+        /// <summary>
+        /// 램프 시간 단위 열거형
+        /// </summary>
+        public enum RampTimeUnit : ushort
+        {
+            Second = 0,     // 초
+            Minute = 1,     // 분
+            Hour = 2        // 시간
+        }
 
         // 온도 센서 타입
         private enum TemperatureSensorType : ushort
@@ -59,7 +80,6 @@ namespace VacX_OutSense.Core.Devices.TempController
             E_CR_L = 5,             // E (CR).L
             T_CC_H = 6,             // T (CC).H
             T_CC_L = 7              // T (CC).L
-                                    // 기타 타입은 추가 가능
         }
 
         #endregion
@@ -172,13 +192,17 @@ namespace VacX_OutSense.Core.Devices.TempController
                 {
                     ChannelNumber = i + 1,
                     IsRunning = false,
-                    IsAutoTuning = false,  // 오토튜닝 상태 초기화 추가
+                    IsAutoTuning = false,
                     PresentValue = 0,
                     SetValue = 0,
                     Dot = 0,
                     TemperatureUnit = "°C",
                     HeatingMV = 0,
-                    CoolingMV = 0
+                    CoolingMV = 0,
+                    RampUpRate = 0,
+                    RampDownRate = 0,
+                    RampTimeUnit = 1,
+                    IsRampActive = false
                 };
             }
         }
@@ -268,7 +292,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 registers = ReadInputRegisters(0x0068, 6); // 300105 ~ 300110
                 if (registers != null && registers.Length >= 6)
                 {
-                    char[] modelChars = new char[12]; // 6개 레지스터에 각 2글자씩 (ASCII)
+                    char[] modelChars = new char[12];
                     for (int i = 0; i < 6; i++)
                     {
                         modelChars[i * 2] = (char)((registers[i] >> 8) & 0xFF);
@@ -280,8 +304,8 @@ namespace VacX_OutSense.Core.Devices.TempController
                 }
 
                 // 통신 설정 정보 읽기
-                registers = ReadHoldingRegisters(0x012C, 6); // 400301 ~ 400306
-                if (registers != null && registers.Length >= 6)
+                registers = ReadHoldingRegisters(0x012C, 7); // 400301 ~ 400307
+                if (registers != null && registers.Length >= 7)
                 {
                     _status.BaudRate = registers[0];
                     _status.ParityBit = registers[1];
@@ -403,15 +427,18 @@ namespace VacX_OutSense.Core.Devices.TempController
                     _status.ChannelStatus[index].HeatingMV = registers[4] / 10.0f; // 0.1% 단위
                     _status.ChannelStatus[index].CoolingMV = registers[5] / 10.0f; // 0.1% 단위
 
-                    // RUN/STOP 상태 확인 - 매뉴얼에 따른 정확한 주소 사용
-                    ushort runStopCoilAddr = (ushort)((channelNumber - 1) * 2); // 채널 1: 0x0000, 채널 2: 0x0002
+                    // RUN/STOP 상태 확인
+                    ushort runStopCoilAddr = (ushort)((channelNumber - 1) * 2);
                     bool isRunning = !ReadCoil(runStopCoilAddr); // 0: RUN, 1: STOP
                     _status.ChannelStatus[index].IsRunning = isRunning;
 
-                    // 오토튜닝 상태 확인 - 매뉴얼에 따른 정확한 주소 사용
-                    ushort autoTuningCoilAddr = (ushort)((channelNumber - 1) * 2 + 1); // 채널 1: 0x0001, 채널 2: 0x0003
+                    // 오토튜닝 상태 확인
+                    ushort autoTuningCoilAddr = (ushort)((channelNumber - 1) * 2 + 1);
                     bool isAutoTuning = ReadCoil(autoTuningCoilAddr); // 0: OFF, 1: ON
                     _status.ChannelStatus[index].IsAutoTuning = isAutoTuning;
+
+                    // Ramp 설정도 함께 읽기
+                    GetRampConfiguration(channelNumber);
 
                     return true;
                 }
@@ -455,7 +482,6 @@ namespace VacX_OutSense.Core.Devices.TempController
                 // 채널별 레지스터 주소 계산
                 ushort registerAddress;
 
-                // 매뉴얼 참조하여 정확한 주소 계산
                 if (channelNumber == 1)
                     registerAddress = REG_HOLD_CH1_SV;  // 400001 (0x0000)
                 else if (channelNumber == 2)
@@ -544,12 +570,11 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // 매뉴얼에 따른 정확한 RUN/STOP 코일 주소 계산 (0: RUN, 1: STOP)
                 ushort coilAddress;
                 if (channelNumber == 1)
-                    coilAddress = COIL_CH1_RUN_STOP;  // 0x0000
+                    coilAddress = COIL_CH1_RUN_STOP;
                 else if (channelNumber == 2)
-                    coilAddress = COIL_CH2_RUN_STOP;  // 0x0002
+                    coilAddress = COIL_CH2_RUN_STOP;
                 else
                     coilAddress = (ushort)((channelNumber - 1) * 2);
 
@@ -589,12 +614,11 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // 매뉴얼에 따른 정확한 오토튜닝 코일 주소 계산
                 ushort coilAddress;
                 if (channelNumber == 1)
-                    coilAddress = COIL_CH1_AUTO_TUNING;  // 0x0001
+                    coilAddress = COIL_CH1_AUTO_TUNING;
                 else if (channelNumber == 2)
-                    coilAddress = COIL_CH2_AUTO_TUNING;  // 0x0003
+                    coilAddress = COIL_CH2_AUTO_TUNING;
                 else
                     coilAddress = (ushort)((channelNumber - 1) * 2 + 1);
 
@@ -603,9 +627,7 @@ namespace VacX_OutSense.Core.Devices.TempController
 
                 if (result)
                 {
-                    // 결과가 성공이면 상태값도 업데이트
                     _status.ChannelStatus[channelNumber - 1].IsAutoTuning = true;
-
                     OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                         $"채널 {channelNumber} 오토튜닝 시작 성공",
                         DeviceStatusCode.Running));
@@ -636,12 +658,11 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // 매뉴얼에 따른 정확한 오토튜닝 코일 주소 계산
                 ushort coilAddress;
                 if (channelNumber == 1)
-                    coilAddress = COIL_CH1_AUTO_TUNING;  // 0x0001
+                    coilAddress = COIL_CH1_AUTO_TUNING;
                 else if (channelNumber == 2)
-                    coilAddress = COIL_CH2_AUTO_TUNING;  // 0x0003
+                    coilAddress = COIL_CH2_AUTO_TUNING;
                 else
                     coilAddress = (ushort)((channelNumber - 1) * 2 + 1);
 
@@ -650,9 +671,7 @@ namespace VacX_OutSense.Core.Devices.TempController
 
                 if (result)
                 {
-                    // 결과가 성공이면 상태값도 업데이트
                     _status.ChannelStatus[channelNumber - 1].IsAutoTuning = false;
-
                     OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                         $"채널 {channelNumber} 오토튜닝 정지 성공",
                         DeviceStatusCode.Idle));
@@ -687,7 +706,6 @@ namespace VacX_OutSense.Core.Devices.TempController
             try
             {
                 // PID 파라미터 레지스터 주소 계산
-                // 400102, 400104, 400106 (CH1) / 401102, 401104, 401106 (CH2) / ...
                 ushort baseAddress = (ushort)(0x0065 + (channelNumber - 1) * 0x03E8);
 
                 // 비례대 값 변환 (0.1 단위로 저장)
@@ -714,6 +732,163 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} PID 파라미터 설정 실패: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 지정된 채널의 Ramp 설정을 변경합니다.
+        /// </summary>
+        /// <param name="channelNumber">채널 번호 (1-2)</param>
+        /// <param name="rampUpRate">램프 상승 변화율 (0:OFF, 1-9999)</param>
+        /// <param name="rampDownRate">램프 하강 변화율 (0:OFF, 1-9999)</param>
+        /// <param name="timeUnit">시간 단위</param>
+        /// <returns>명령 성공 여부</returns>
+        public bool SetRampConfiguration(int channelNumber, ushort rampUpRate, ushort rampDownRate, RampTimeUnit timeUnit)
+        {
+            if (channelNumber < 1 || channelNumber > _numChannels)
+            {
+                throw new ArgumentOutOfRangeException(nameof(channelNumber),
+                    $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            }
+
+            if (rampUpRate > 9999 || rampDownRate > 9999)
+            {
+                throw new ArgumentOutOfRangeException("램프 변화율은 0-9999 사이여야 합니다.");
+            }
+
+            EnsureConnected();
+
+            lock (_commandLock)
+            {
+                try
+                {
+                    // 채널별 레지스터 주소 계산
+                    ushort baseAddress;
+                    if (channelNumber == 1)
+                    {
+                        baseAddress = REG_HOLD_CH1_RAMP_UP;
+                    }
+                    else // channelNumber == 2
+                    {
+                        baseAddress = REG_HOLD_CH2_RAMP_UP;
+                    }
+
+                    // 3개의 연속된 레지스터에 쓰기
+                    ushort[] values = new ushort[] { rampUpRate, rampDownRate, (ushort)timeUnit };
+                    bool result = WriteMultipleRegisters(baseAddress, values);
+
+                    if (result)
+                    {
+                        // 상태 업데이트
+                        int index = channelNumber - 1;
+                        _status.ChannelStatus[index].RampUpRate = rampUpRate;
+                        _status.ChannelStatus[index].RampDownRate = rampDownRate;
+                        _status.ChannelStatus[index].RampTimeUnit = (ushort)timeUnit;
+
+                        OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                            $"채널 {channelNumber} Ramp 설정 성공: {_status.ChannelStatus[index].RampStatusText}",
+                            DeviceStatusCode.Ready));
+                    }
+
+                    return result;
+                }
+                catch (Exception ex)
+                {
+                    OnErrorOccurred($"채널 {channelNumber} Ramp 설정 실패: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 지정된 채널의 Ramp 설정을 읽습니다.
+        /// </summary>
+        /// <param name="channelNumber">채널 번호 (1-2)</param>
+        /// <returns>Ramp 설정 읽기 성공 여부</returns>
+        public bool GetRampConfiguration(int channelNumber)
+        {
+            if (channelNumber < 1 || channelNumber > _numChannels)
+            {
+                throw new ArgumentOutOfRangeException(nameof(channelNumber));
+            }
+
+            EnsureConnected();
+
+            try
+            {
+                // 채널별 레지스터 주소 계산
+                ushort baseAddress;
+                if (channelNumber == 1)
+                {
+                    baseAddress = REG_HOLD_CH1_RAMP_UP;
+                }
+                else // channelNumber == 2
+                {
+                    baseAddress = REG_HOLD_CH2_RAMP_UP;
+                }
+
+                // 3개의 연속된 레지스터 읽기
+                ushort[] registers = ReadHoldingRegisters(baseAddress, 3);
+
+                if (registers != null && registers.Length >= 3)
+                {
+                    int index = channelNumber - 1;
+                    _status.ChannelStatus[index].RampUpRate = registers[0];
+                    _status.ChannelStatus[index].RampDownRate = registers[1];
+                    _status.ChannelStatus[index].RampTimeUnit = registers[2];
+
+                    // Ramp 진행 상태 확인
+                    CheckRampProgress(channelNumber);
+
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"채널 {channelNumber} Ramp 설정 읽기 실패: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Ramp 진행 상태를 확인합니다.
+        /// </summary>
+        /// <param name="channelNumber">채널 번호</param>
+        private void CheckRampProgress(int channelNumber)
+        {
+            var status = _status.ChannelStatus[channelNumber - 1];
+
+            // Ramp가 활성화되어 있고 운전 중이면
+            if (status.IsRampEnabled && status.IsRunning)
+            {
+                float diff = Math.Abs(status.SetValue - status.PresentValue);
+
+                // 설정값과 현재값의 차이가 있으면 Ramp 진행 중
+                float tolerance = status.Dot == 0 ? 2.0f : 0.2f;
+                status.IsRampActive = diff > tolerance;
+            }
+            else
+            {
+                status.IsRampActive = false;
+            }
+        }
+
+        /// <summary>
+        /// 비동기로 Ramp 설정을 변경합니다.
+        /// </summary>
+        public async Task<bool> SetRampConfigurationAsync(int channelNumber, ushort rampUpRate,
+            ushort rampDownRate, RampTimeUnit timeUnit)
+        {
+            return await Task.Run(() => SetRampConfiguration(channelNumber, rampUpRate, rampDownRate, timeUnit));
+        }
+
+        /// <summary>
+        /// 비동기로 Ramp 설정을 읽습니다.
+        /// </summary>
+        public async Task<bool> GetRampConfigurationAsync(int channelNumber)
+        {
+            return await Task.Run(() => GetRampConfiguration(channelNumber));
         }
 
         #endregion
@@ -928,20 +1103,9 @@ namespace VacX_OutSense.Core.Devices.TempController
             {
                 try
                 {
-                    // 디버그 로그 추가 - 요청 상세 정보
-                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                        $"코일 쓰기 시작: 주소=0x{address:X4}, 값={value}",
-                        DeviceStatusCode.Ready));
-
                     // Modbus RTU 프레임 생성
                     ushort coilValue = value ? (ushort)0xFF00 : (ushort)0x0000;
                     byte[] request = CreateModbusRtuWriteSingleCoilRequest(address, coilValue);
-
-                    // 디버깅용 요청 데이터 로그
-                    string requestHex = BitConverter.ToString(request).Replace("-", " ");
-                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                        $"코일 쓰기 요청 데이터: {requestHex}",
-                        DeviceStatusCode.Ready));
 
                     // 전송 전 입력 버퍼 비우기
                     _communicationManager.DiscardInBuffer();
@@ -954,25 +1118,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                         return false;
                     }
 
-                    // 응답 읽기 전 딜레이 추가 (필요 시)
+                    // 응답 읽기 전 딜레이
                     Thread.Sleep(50);
 
                     // 응답 읽기
                     byte[] response = _communicationManager.ReadAll();
-
-                    // 디버깅용 응답 데이터 로그
-                    if (response != null && response.Length > 0)
-                    {
-                        string responseHex = BitConverter.ToString(response).Replace("-", " ");
-                        OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                            $"코일 쓰기 응답 데이터: {responseHex}",
-                            DeviceStatusCode.Ready));
-                    }
-                    else
-                    {
-                        OnErrorOccurred($"코일 쓰기 응답 없음 (주소: 0x{address:X4})");
-                        return false;
-                    }
 
                     // 응답 유효성 검사
                     if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_SINGLE_COIL)
@@ -990,14 +1140,7 @@ namespace VacX_OutSense.Core.Devices.TempController
 
                     // 주소 확인
                     ushort respAddress = (ushort)((response[2] << 8) | response[3]);
-                    bool isSuccess = respAddress == address;
-
-                    // 결과 로그
-                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                        $"코일 쓰기 결과: 주소=0x{respAddress:X4}, 성공={isSuccess}",
-                        DeviceStatusCode.Ready));
-
-                    return isSuccess;
+                    return respAddress == address;
                 }
                 catch (Exception ex)
                 {
@@ -1019,19 +1162,8 @@ namespace VacX_OutSense.Core.Devices.TempController
             {
                 try
                 {
-                    // 디버그 로그 추가
-                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                        $"레지스터 쓰기 시작: 주소=0x{address:X4}, 값={value}",
-                        DeviceStatusCode.Ready));
-
                     // Modbus RTU 프레임 생성
                     byte[] request = CreateModbusRtuWriteSingleRegisterRequest(address, value);
-
-                    // 디버깅용 요청 데이터 로그
-                    string requestHex = BitConverter.ToString(request).Replace("-", " ");
-                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                        $"레지스터 쓰기 요청 데이터: {requestHex}",
-                        DeviceStatusCode.Ready));
 
                     // 전송 전 입력 버퍼 비우기
                     _communicationManager.DiscardInBuffer();
@@ -1044,25 +1176,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                         return false;
                     }
 
-                    // 응답 읽기 전 딜레이 추가 (필요 시)
+                    // 응답 읽기 전 딜레이
                     Thread.Sleep(50);
 
                     // 응답 읽기
                     byte[] response = _communicationManager.ReadAll();
-
-                    // 디버깅용 응답 데이터 로그
-                    if (response != null && response.Length > 0)
-                    {
-                        string responseHex = BitConverter.ToString(response).Replace("-", " ");
-                        OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                            $"레지스터 쓰기 응답 데이터: {responseHex}",
-                            DeviceStatusCode.Ready));
-                    }
-                    else
-                    {
-                        OnErrorOccurred($"레지스터 쓰기 응답 없음 (주소: 0x{address:X4})");
-                        return false;
-                    }
 
                     // 응답 유효성 검사
                     if (response == null || response.Length < 8 || response[0] != (byte)_deviceAddress || response[1] != FUNC_WRITE_SINGLE_REG)
@@ -1080,14 +1198,7 @@ namespace VacX_OutSense.Core.Devices.TempController
 
                     // 주소 확인
                     ushort respAddress = (ushort)((response[2] << 8) | response[3]);
-                    bool isSuccess = respAddress == address;
-
-                    // 결과 로그
-                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                        $"레지스터 쓰기 결과: 주소=0x{respAddress:X4}, 성공={isSuccess}",
-                        DeviceStatusCode.Ready));
-
-                    return isSuccess;
+                    return respAddress == address;
                 }
                 catch (Exception ex)
                 {
@@ -1155,32 +1266,20 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// Modbus RTU 요청 프레임을 생성합니다.
         /// </summary>
-        /// <param name="functionCode">기능 코드</param>
-        /// <param name="address">시작 주소</param>
-        /// <param name="count">레지스터/코일 개수</param>
-        /// <returns>요청 프레임 바이트 배열</returns>
         private byte[] CreateModbusRtuRequest(byte functionCode, ushort address, ushort count)
         {
             byte[] frame = new byte[8];
 
-            // 장치 주소
             frame[0] = (byte)_deviceAddress;
-
-            // 기능 코드
             frame[1] = functionCode;
-
-            // 시작 주소 (상위 바이트, 하위 바이트)
             frame[2] = (byte)(address >> 8);
             frame[3] = (byte)(address & 0xFF);
-
-            // 개수 (상위 바이트, 하위 바이트)
             frame[4] = (byte)(count >> 8);
             frame[5] = (byte)(count & 0xFF);
 
-            // CRC 계산 및 추가
             ushort crc = CalculateCRC(frame, 0, 6);
-            frame[6] = (byte)(crc & 0xFF);         // 하위 바이트
-            frame[7] = (byte)(crc >> 8);           // 상위 바이트
+            frame[6] = (byte)(crc & 0xFF);
+            frame[7] = (byte)(crc >> 8);
 
             return frame;
         }
@@ -1188,31 +1287,20 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// Modbus RTU 단일 코일 쓰기 요청 프레임을 생성합니다.
         /// </summary>
-        /// <param name="address">코일 주소</param>
-        /// <param name="value">코일 값 (0xFF00: ON, 0x0000: OFF)</param>
-        /// <returns>요청 프레임 바이트 배열</returns>
         private byte[] CreateModbusRtuWriteSingleCoilRequest(ushort address, ushort value)
         {
             byte[] frame = new byte[8];
 
-            // 장치 주소
             frame[0] = (byte)_deviceAddress;
-
-            // 기능 코드
             frame[1] = FUNC_WRITE_SINGLE_COIL;
-
-            // 코일 주소 (상위 바이트, 하위 바이트)
             frame[2] = (byte)(address >> 8);
             frame[3] = (byte)(address & 0xFF);
-
-            // 값 (0xFF00: ON, 0x0000: OFF)
             frame[4] = (byte)(value >> 8);
             frame[5] = (byte)(value & 0xFF);
 
-            // CRC 계산 및 추가
             ushort crc = CalculateCRC(frame, 0, 6);
-            frame[6] = (byte)(crc & 0xFF);         // 하위 바이트
-            frame[7] = (byte)(crc >> 8);           // 상위 바이트
+            frame[6] = (byte)(crc & 0xFF);
+            frame[7] = (byte)(crc >> 8);
 
             return frame;
         }
@@ -1220,31 +1308,20 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// Modbus RTU 단일 레지스터 쓰기 요청 프레임을 생성합니다.
         /// </summary>
-        /// <param name="address">레지스터 주소</param>
-        /// <param name="value">레지스터 값</param>
-        /// <returns>요청 프레임 바이트 배열</returns>
         private byte[] CreateModbusRtuWriteSingleRegisterRequest(ushort address, ushort value)
         {
             byte[] frame = new byte[8];
 
-            // 장치 주소
             frame[0] = (byte)_deviceAddress;
-
-            // 기능 코드
             frame[1] = FUNC_WRITE_SINGLE_REG;
-
-            // 레지스터 주소 (상위 바이트, 하위 바이트)
             frame[2] = (byte)(address >> 8);
             frame[3] = (byte)(address & 0xFF);
-
-            // 값 (상위 바이트, 하위 바이트)
             frame[4] = (byte)(value >> 8);
             frame[5] = (byte)(value & 0xFF);
 
-            // CRC 계산 및 추가
             ushort crc = CalculateCRC(frame, 0, 6);
-            frame[6] = (byte)(crc & 0xFF);         // 하위 바이트
-            frame[7] = (byte)(crc >> 8);           // 상위 바이트
+            frame[6] = (byte)(crc & 0xFF);
+            frame[7] = (byte)(crc >> 8);
 
             return frame;
         }
@@ -1252,9 +1329,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// Modbus RTU 다중 레지스터 쓰기 요청 프레임을 생성합니다.
         /// </summary>
-        /// <param name="address">시작 레지스터 주소</param>
-        /// <param name="values">레지스터 값 배열</param>
-        /// <returns>요청 프레임 바이트 배열</returns>
         private byte[] CreateModbusRtuWriteMultipleRegistersRequest(ushort address, ushort[] values)
         {
             int count = values.Length;
@@ -1262,34 +1336,23 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             byte[] frame = new byte[9 + byteCount];
 
-            // 장치 주소
             frame[0] = (byte)_deviceAddress;
-
-            // 기능 코드
             frame[1] = FUNC_WRITE_MULTI_REGS;
-
-            // 시작 주소 (상위 바이트, 하위 바이트)
             frame[2] = (byte)(address >> 8);
             frame[3] = (byte)(address & 0xFF);
-
-            // 레지스터 개수 (상위 바이트, 하위 바이트)
             frame[4] = (byte)(count >> 8);
             frame[5] = (byte)(count & 0xFF);
-
-            // 바이트 수
             frame[6] = (byte)byteCount;
 
-            // 레지스터 값들
             for (int i = 0; i < count; i++)
             {
-                frame[7 + i * 2] = (byte)(values[i] >> 8);       // 상위 바이트
-                frame[8 + i * 2] = (byte)(values[i] & 0xFF);     // 하위 바이트
+                frame[7 + i * 2] = (byte)(values[i] >> 8);
+                frame[8 + i * 2] = (byte)(values[i] & 0xFF);
             }
 
-            // CRC 계산 및 추가
             ushort crc = CalculateCRC(frame, 0, 7 + byteCount);
-            frame[7 + byteCount] = (byte)(crc & 0xFF);           // 하위 바이트
-            frame[8 + byteCount] = (byte)(crc >> 8);             // 상위 바이트
+            frame[7 + byteCount] = (byte)(crc & 0xFF);
+            frame[8 + byteCount] = (byte)(crc >> 8);
 
             return frame;
         }
@@ -1297,10 +1360,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// Modbus RTU CRC-16을 계산합니다.
         /// </summary>
-        /// <param name="buffer">데이터 버퍼</param>
-        /// <param name="offset">시작 오프셋</param>
-        /// <param name="count">바이트 수</param>
-        /// <returns>CRC-16 값</returns>
         private ushort CalculateCRC(byte[] buffer, int offset, int count)
         {
             ushort crc = 0xFFFF;
@@ -1333,10 +1392,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// 온도 값을 표시용 문자열로 변환합니다.
         /// </summary>
-        /// <param name="value">온도 값</param>
-        /// <param name="dot">소수점 위치 (0: 정수, 1: 소수점 한자리)</param>
-        /// <param name="unit">온도 단위 ("°C" 또는 "°F")</param>
-        /// <returns>표시용 온도 문자열</returns>
         public static string FormatTemperature(short value, int dot, string unit)
         {
             if (dot == 0)
@@ -1352,8 +1407,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// 센서 에러 메시지를 가져옵니다.
         /// </summary>
-        /// <param name="errorCode">에러 코드</param>
-        /// <returns>에러 메시지</returns>
         public static string GetSensorErrorMessage(string errorCode)
         {
             if (string.IsNullOrEmpty(errorCode))
@@ -1375,8 +1428,6 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <summary>
         /// 채널 상태 텍스트를 반환합니다.
         /// </summary>
-        /// <param name="channelNumber">채널 번호</param>
-        /// <returns>상태 텍스트</returns>
         public string GetChannelStatusText(int channelNumber)
         {
             if (channelNumber < 1 || channelNumber > _numChannels)
@@ -1397,20 +1448,27 @@ namespace VacX_OutSense.Core.Devices.TempController
                 return "오토튜닝 진행 중";
             }
 
+            // Ramp 상태 확인
+            if (channelStatus.IsRampActive)
+            {
+                return $"Ramp 진행 중 ({channelStatus.RampStatusText})";
+            }
+
             if (channelStatus.IsRunning)
             {
                 // 측정값과 설정값 비교
-                if (Math.Abs(channelStatus.PresentValue - channelStatus.SetValue) <= 3)
+                float tolerance = channelStatus.Dot == 0 ? 3.0f : 0.3f;
+                if (Math.Abs(channelStatus.PresentValue - channelStatus.SetValue) <= tolerance)
                 {
                     return "안정 상태";
                 }
                 else if (channelStatus.PresentValue < channelStatus.SetValue)
                 {
-                    return "승온 중";
+                    return channelStatus.IsRampEnabled ? "승온 중 (Ramp)" : "승온 중";
                 }
                 else
                 {
-                    return "냉각 중";
+                    return channelStatus.IsRampEnabled ? "냉각 중 (Ramp)" : "냉각 중";
                 }
             }
             else

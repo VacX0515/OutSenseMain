@@ -124,8 +124,8 @@ namespace VacX_OutSense.Utils
 
             // PID 제어기 초기화 (기본값)
             _pidController = new PIDController(
-                kp: 2.0,     // 비례 게인
-                ki: 0.1,     // 적분 게인
+                kp: 1.0,     // 비례 게인
+                ki: 0.01,     // 적분 게인
                 kd: 0.5,     // 미분 게인
                 outputMin: PID_OUTPUT_MIN,
                 outputMax: PID_OUTPUT_MAX
@@ -133,8 +133,8 @@ namespace VacX_OutSense.Utils
 
             // 기본값 설정
             _ch2TargetTemperature = 25.0;
-            _chillerBaseTemperature = 25.0;
-            _updateInterval = 5.0; // 5초마다 업데이트
+            _chillerBaseTemperature = 22.5;
+            _updateInterval = 10.0; // 5초마다 업데이트
 
             // 타이머 초기화
             _controlTimer = new System.Timers.Timer(_updateInterval * 1000);
