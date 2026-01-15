@@ -170,6 +170,9 @@ namespace VacX_OutSense.Utils
             );
         }
 
+        /// <summary>
+        /// 온도 데이터 업데이트 (5채널 지원)
+        /// </summary>
         private void UpdateTemperatureData(UIDataSnapshot snapshot)
         {
             // 칠러
@@ -183,19 +186,21 @@ namespace VacX_OutSense.Utils
                 snapshot.BathCirculator.HasWarning
             );
 
-            // 온도 컨트롤러
-            if (snapshot.TempController.Channels.Length > 0)
+            // 온도 컨트롤러 (5채널: 메인 2 + 확장 3)
+            for (int i = 0; i < 5; i++)
             {
-                var ch1 = snapshot.TempController.Channels[0];
-                _mainForm.SetTempControllerChannelStatus(1, ch1.PresentValue, ch1.SetValue,
-                    ch1.Status, ch1.HeatingMV, ch1.IsAutoTuning);
-            }
-
-            if (snapshot.TempController.Channels.Length > 1)
-            {
-                var ch2 = snapshot.TempController.Channels[1];
-                _mainForm.SetTempControllerChannelStatus(2, ch2.PresentValue, ch2.SetValue,
-                    ch2.Status, ch2.HeatingMV, ch2.IsAutoTuning);
+                if (i < snapshot.TempController.Channels.Length)
+                {
+                    var ch = snapshot.TempController.Channels[i];
+                    _mainForm.SetTempControllerChannelStatus(
+                        i + 1,
+                        ch.PresentValue,
+                        ch.SetValue,
+                        ch.Status,
+                        ch.HeatingMV,
+                        ch.IsAutoTuning
+                    );
+                }
             }
         }
 
@@ -208,6 +213,9 @@ namespace VacX_OutSense.Utils
             _mainForm.SetConnectionStatus("tempcontroller", snapshot.Connections.TempController);
         }
 
+        /// <summary>
+        /// 버튼 상태 업데이트 (5채널 지원)
+        /// </summary>
         private void UpdateButtonStates(UIDataSnapshot snapshot)
         {
             var states = snapshot.ButtonStates;
@@ -229,10 +237,20 @@ namespace VacX_OutSense.Utils
             _mainForm.SetButtonEnabled("bathcirculatorstart", states.BathCirculatorStartEnabled);
             _mainForm.SetButtonEnabled("bathcirculatorstop", states.BathCirculatorStopEnabled);
 
+            // 온도컨트롤러 버튼 (5채널)
             _mainForm.SetButtonEnabled("ch1start", states.TempControllerStartEnabled[0]);
             _mainForm.SetButtonEnabled("ch1stop", states.TempControllerStopEnabled[0]);
             _mainForm.SetButtonEnabled("ch2start", states.TempControllerStartEnabled[1]);
             _mainForm.SetButtonEnabled("ch2stop", states.TempControllerStopEnabled[1]);
+
+            // 확장 채널은 버튼이 없으므로 (입력 전용) 별도 처리 불필요
+            // 필요시 아래 주석 해제
+            // _mainForm.SetButtonEnabled("ch3start", states.TempControllerStartEnabled[2]);
+            // _mainForm.SetButtonEnabled("ch3stop", states.TempControllerStopEnabled[2]);
+            // _mainForm.SetButtonEnabled("ch4start", states.TempControllerStartEnabled[3]);
+            // _mainForm.SetButtonEnabled("ch4stop", states.TempControllerStopEnabled[3]);
+            // _mainForm.SetButtonEnabled("ch5start", states.TempControllerStartEnabled[4]);
+            // _mainForm.SetButtonEnabled("ch5stop", states.TempControllerStopEnabled[4]);
         }
 
         public void Dispose()

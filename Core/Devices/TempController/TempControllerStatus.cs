@@ -20,11 +20,14 @@ namespace VacX_OutSense.Core.Devices.TempController
         private string _sensorError;
         private bool _isAutoTuning;
 
-        // Ramp 관련 필드 추가
+        // Ramp 관련 필드
         private ushort _rampUpRate;
         private ushort _rampDownRate;
         private ushort _rampTimeUnit;
         private bool _isRampActive;
+
+        // 확장 모듈 관련 필드
+        private bool _isExpansionChannel;
 
         /// <summary>
         /// 속성 변경 이벤트
@@ -47,6 +50,7 @@ namespace VacX_OutSense.Core.Devices.TempController
             _rampDownRate = 0;
             _rampTimeUnit = 1; // 기본값: 분
             _isRampActive = false;
+            _isExpansionChannel = false;
         }
 
         /// <summary>
@@ -302,6 +306,22 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
+        /// 확장 모듈 채널 여부 (true: 입력 전용 채널)
+        /// </summary>
+        public bool IsExpansionChannel
+        {
+            get => _isExpansionChannel;
+            internal set
+            {
+                if (_isExpansionChannel != value)
+                {
+                    _isExpansionChannel = value;
+                    OnPropertyChanged(nameof(IsExpansionChannel));
+                }
+            }
+        }
+
+        /// <summary>
         /// 램프 시간 단위 텍스트
         /// </summary>
         public string RampTimeUnitText
@@ -425,11 +445,11 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// 기본 생성자
+        /// 기본 생성자 (5채널 지원: 메인 2 + 확장 3)
         /// </summary>
         public TemperatureControllerStatus()
         {
-            _channelCount = 4;
+            _channelCount = 5;  // 메인 2채널 + 확장 3채널
             _channelStatus = new ChannelStatus[_channelCount];
             _modelName = "";
 
@@ -437,7 +457,8 @@ namespace VacX_OutSense.Core.Devices.TempController
             {
                 _channelStatus[i] = new ChannelStatus
                 {
-                    ChannelNumber = i + 1
+                    ChannelNumber = i + 1,
+                    IsExpansionChannel = (i >= 2)  // CH3 이상은 확장 채널
                 };
             }
         }
@@ -473,7 +494,8 @@ namespace VacX_OutSense.Core.Devices.TempController
                         {
                             newStatus[i] = new ChannelStatus
                             {
-                                ChannelNumber = i + 1
+                                ChannelNumber = i + 1,
+                                IsExpansionChannel = (i >= 2)  // CH3 이상은 확장 채널
                             };
                         }
 

@@ -18,9 +18,9 @@ namespace VacX_OutSense.Utils
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
         // 우선순위별 수집 태스크
-        private Task _criticalDataTask;    
-        private Task _normalDataTask;      
-        private Task _lowPriorityDataTask; 
+        private Task _criticalDataTask;
+        private Task _normalDataTask;
+        private Task _lowPriorityDataTask;
 
         private volatile bool _isRunning = false;
         private volatile bool _isPaused = false;
@@ -318,9 +318,7 @@ namespace VacX_OutSense.Utils
             {
                 semaphore.Release();
             }
-        }        // 통신 오류 처리 메서드
-
-
+        }
 
         private async Task CollectDryPumpData()
         {
@@ -358,6 +356,10 @@ namespace VacX_OutSense.Utils
             }
         }
 
+        /// <summary>
+        /// 온도 컨트롤러 데이터 수집 (메인 + 확장 모듈 통합)
+        /// UpdateStatusAsync() 하나로 메인 + 확장 모듈 모두 처리됨
+        /// </summary>
         private async Task CollectTempControllerData()
         {
             if (_mainForm._tempController?.IsConnected == true)
@@ -415,9 +417,6 @@ namespace VacX_OutSense.Utils
             }
         }
 
-        /// <summary>
-        /// 현재 데이터로 UI 스냅샷 생성
-        /// </summary>
         /// <summary>
         /// 현재 데이터로 UI 스냅샷 생성
         /// </summary>
@@ -594,6 +593,9 @@ namespace VacX_OutSense.Utils
             }
         }
 
+        /// <summary>
+        /// 온도 컨트롤러 데이터 처리 (5채널: 메인 2 + 확장 3)
+        /// </summary>
         private void ProcessTempControllerData(UIDataSnapshot snapshot, object tempStatus)
         {
             try
@@ -602,7 +604,10 @@ namespace VacX_OutSense.Utils
                 {
                     var status = _mainForm._tempController.Status;
 
-                    for (int i = 0; i < Math.Min(4, status.ChannelStatus.Length); i++)
+                    // 전체 채널 처리 (최대 5채널)
+                    int totalChannels = Math.Min(5, status.ChannelStatus.Length);
+
+                    for (int i = 0; i < totalChannels; i++)
                     {
                         var ch = status.ChannelStatus[i];
                         snapshot.TempController.Channels[i].PresentValue = ch.FormattedPresentValue;
@@ -636,6 +641,9 @@ namespace VacX_OutSense.Utils
             }
         }
 
+        /// <summary>
+        /// 버튼 상태 계산 (5채널 지원)
+        /// </summary>
         private void CalculateButtonStates(UIDataSnapshot snapshot)
         {
             try
@@ -676,14 +684,27 @@ namespace VacX_OutSense.Utils
                     snapshot.ButtonStates.BathCirculatorStopEnabled = snapshot.Connections.BathCirculator && status.IsRunning;
                 }
 
-                // 온도컨트롤러 버튼 상태
+                // 온도컨트롤러 버튼 상태 (5채널)
                 if (_mainForm._tempController?.Status != null)
                 {
-                    for (int i = 0; i < Math.Min(4, _mainForm._tempController.Status.ChannelStatus.Length); i++)
+                    var status = _mainForm._tempController.Status;
+                    int totalChannels = Math.Min(5, status.ChannelStatus.Length);
+
+                    for (int i = 0; i < totalChannels; i++)
                     {
-                        var ch = _mainForm._tempController.Status.ChannelStatus[i];
-                        snapshot.ButtonStates.TempControllerStartEnabled[i] = snapshot.Connections.TempController && !ch.IsRunning;
-                        snapshot.ButtonStates.TempControllerStopEnabled[i] = snapshot.Connections.TempController && ch.IsRunning;
+                        var ch = status.ChannelStatus[i];
+
+                        // 확장 채널(CH3~CH5)은 입력 전용이므로 버튼 비활성화
+                        if (ch.IsExpansionChannel)
+                        {
+                            snapshot.ButtonStates.TempControllerStartEnabled[i] = false;
+                            snapshot.ButtonStates.TempControllerStopEnabled[i] = false;
+                        }
+                        else
+                        {
+                            snapshot.ButtonStates.TempControllerStartEnabled[i] = snapshot.Connections.TempController && !ch.IsRunning;
+                            snapshot.ButtonStates.TempControllerStopEnabled[i] = snapshot.Connections.TempController && ch.IsRunning;
+                        }
                     }
                 }
             }
@@ -692,8 +713,6 @@ namespace VacX_OutSense.Utils
                 LoggerService.Instance.LogError($"버튼 상태 계산 오류: {ex.Message}", ex);
             }
         }
-
-        // OptimizedDataCollectionService.cs에 추가할 메서드들
 
         /// <summary>
         /// 최신 AI 데이터 가져오기
@@ -746,7 +765,6 @@ namespace VacX_OutSense.Utils
             }
             return (false, false, false);
         }
-
 
         public void Dispose()
         {
