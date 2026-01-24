@@ -60,6 +60,8 @@ namespace VacX_OutSense
         private bool _ch1AutoStartEnabled = false;
         private bool _ch1WaitingForVacuum = false;
         private double _ch1TargetPressure = 1E-5;  // 기본값: 1E-5 Torr
+        private int _ch1PressureReachCount = 0;     // 현재 도달 횟수
+        private int _ch1RequiredReachCount = 3;     // 필요 도달 횟수 (기본값: 3회)
         #endregion
 
         #region 서비스 및 타이머
@@ -661,6 +663,24 @@ namespace VacX_OutSense
 
         #region CH1 자동 시작/정지 타이머
 
+        // === 이벤트 핸들러 추가 ===
+
+        /// <summary>
+        /// ScientificPressureInput 값 변경 이벤트
+        /// </summary>
+        private void scientificPressureInput1_ValueChanged(object sender, EventArgs e)
+        {
+            _ch1TargetPressure = scientificPressureInput1.Value;
+        }
+
+        /// <summary>
+        /// 도달 횟수 변경 이벤트
+        /// </summary>
+        private void numCh1ReachCount_ValueChanged(object sender, EventArgs e)
+        {
+            _ch1RequiredReachCount = (int)numCh1ReachCount.Value;
+        }
+
         /// <summary>
         /// 자동 시작 활성화 체크박스 이벤트
         /// </summary>
@@ -728,13 +748,14 @@ namespace VacX_OutSense
             _ch1WaitingForVacuum = true;
             _ch1WaitingForTargetTemp = false;
             _ch1TimerActive = false;
+            _ch1PressureReachCount = 0;  // 카운터 초기화
 
             _ch1AutoStopTimer.Start();
             UpdateCh1TimerControls();
             lblCh1TimeRemainingValue.Text = "진공 대기중...";
             lblCh1TimeRemainingValue.ForeColor = Color.Purple;
 
-            LogInfo($"CH1 자동 시작 대기 - 목표: {_ch1TargetPressure:E1} Torr, 타이머: {_ch1Duration}");
+            LogInfo($"CH1 자동 시작 대기 - 목표: {_ch1TargetPressure:E1} Torr ({_ch1RequiredReachCount}회 확인), 타이머: {_ch1Duration}");
         }
 
         /// <summary>
@@ -768,36 +789,52 @@ namespace VacX_OutSense
 
                 if (currentPressure > 0 && currentPressure <= _ch1TargetPressure)
                 {
-                    _ch1WaitingForVacuum = false;
-                    LogInfo($"목표 진공 도달 ({currentPressure:E2} Torr) - CH1 자동 시작");
+                    _ch1PressureReachCount++;
 
-                    Task.Run(async () =>
+                    if (_ch1PressureReachCount >= _ch1RequiredReachCount)
                     {
-                        try
+                        _ch1WaitingForVacuum = false;
+                        _ch1PressureReachCount = 0;  // 카운터 리셋
+                        LogInfo($"목표 진공 도달 ({currentPressure:E2} Torr, {_ch1RequiredReachCount}회 연속) - CH1 자동 시작");
+
+                        Task.Run(async () =>
                         {
-                            await Task.Run(() => _tempController.Start(1));
-                            RunOnUIThread(() =>
+                            try
                             {
-                                LogInfo("CH1 자동 시작됨");
-                                _ch1WaitingForTargetTemp = true;
-                                lblCh1TimeRemainingValue.Text = "온도 대기중...";
-                                lblCh1TimeRemainingValue.ForeColor = Color.Orange;
-                            });
-                        }
-                        catch (Exception ex)
-                        {
-                            RunOnUIThread(() => { LogError($"CH1 자동 시작 실패: {ex.Message}"); StopCh1Timer(); });
-                        }
-                    });
+                                await Task.Run(() => _tempController.Start(1));
+                                RunOnUIThread(() =>
+                                {
+                                    LogInfo("CH1 자동 시작됨");
+                                    _ch1WaitingForTargetTemp = true;
+                                    lblCh1TimeRemainingValue.Text = "온도 대기중...";
+                                    lblCh1TimeRemainingValue.ForeColor = Color.Orange;
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                RunOnUIThread(() => { LogError($"CH1 자동 시작 실패: {ex.Message}"); StopCh1Timer(); });
+                            }
+                        });
+                    }
+                    else
+                    {
+                        // 아직 필요 횟수에 도달하지 않음
+                        string pressureText = $"{currentPressure:E2}";
+                        lblCh1TimeRemainingValue.Text = $"진공 확인 중... ({_ch1PressureReachCount}/{_ch1RequiredReachCount})";
+                        lblCh1TimeRemainingValue.ForeColor = Color.Purple;
+                    }
                 }
                 else
                 {
+                    // 압력이 목표보다 높으면 카운터 리셋
+                    _ch1PressureReachCount = 0;
                     string pressureText = currentPressure > 0 ? $"{currentPressure:E2}" : "N/A";
                     lblCh1TimeRemainingValue.Text = $"진공 대기 ({pressureText} / {_ch1TargetPressure:E1} Torr)";
                     lblCh1TimeRemainingValue.ForeColor = Color.Purple;
                 }
                 return;
             }
+
 
             // 2단계: 온도 대기
             if (_ch1WaitingForTargetTemp)
