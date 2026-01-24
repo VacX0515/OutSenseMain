@@ -133,7 +133,7 @@ namespace VacX_OutSense.Utils
 
             // 기본값 설정
             _ch2TargetTemperature = 25.0;
-            _chillerBaseTemperature = 22.5;
+            _chillerBaseTemperature = 23.5;
             _updateInterval = 10.0; // 5초마다 업데이트
 
             // 타이머 초기화

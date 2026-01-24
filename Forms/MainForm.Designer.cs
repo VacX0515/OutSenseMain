@@ -1,4 +1,5 @@
 ﻿using System.Windows.Forms;
+using VacX_OutSense.Forms.UserControls;
 
 namespace VacX_OutSense
 {
@@ -36,11 +37,11 @@ namespace VacX_OutSense
             tableLayoutPanel2 = new TableLayoutPanel();
             tableLayoutPanel3 = new TableLayoutPanel();
             tableLayoutPanel4 = new TableLayoutPanel();
-            connectionIndicator_bathcirculator = new Forms.UserControls.ConnectionIndicator();
-            connectionIndicator_tempcontroller = new Forms.UserControls.ConnectionIndicator();
-            connectionIndicator_iomodule = new Forms.UserControls.ConnectionIndicator();
-            connectionIndicator_drypump = new Forms.UserControls.ConnectionIndicator();
-            connectionIndicator_turbopump = new Forms.UserControls.ConnectionIndicator();
+            connectionIndicator_bathcirculator = new ConnectionIndicator();
+            connectionIndicator_tempcontroller = new ConnectionIndicator();
+            connectionIndicator_iomodule = new ConnectionIndicator();
+            connectionIndicator_drypump = new ConnectionIndicator();
+            connectionIndicator_turbopump = new ConnectionIndicator();
             panel1 = new Panel();
             grpChillerPID = new GroupBox();
             lblLastOutputValue = new Label();
@@ -65,7 +66,6 @@ namespace VacX_OutSense
             rampSettingControl1 = new UI.Controls.RampSettingControl();
             grpCh1Timer = new GroupBox();
             btnCh1AutoStart = new Button();
-            numCh1TargetPressure = new NumericUpDown();
             lblCh1TargetPressure = new Label();
             chkCh1AutoStartEnabled = new CheckBox();
             lblVentTempUnit = new Label();
@@ -80,10 +80,10 @@ namespace VacX_OutSense
             numCh1Seconds = new NumericUpDown();
             numCh1Minutes = new NumericUpDown();
             numCh1Hours = new NumericUpDown();
-            txtIGStatus = new Forms.UserControls.BindableTextBox();
-            txtIG = new Forms.UserControls.BindableTextBox();
-            txtPG = new Forms.UserControls.BindableTextBox();
-            txtATM = new Forms.UserControls.BindableTextBox();
+            txtIGStatus = new BindableTextBox();
+            txtIG = new BindableTextBox();
+            txtPG = new BindableTextBox();
+            txtATM = new BindableTextBox();
             panel5 = new Panel();
             tableLayoutPanel8 = new TableLayoutPanel();
             btnCh1Stop = new Button();
@@ -204,6 +204,7 @@ namespace VacX_OutSense
             toolStripStatusConnection = new ToolStripStatusLabel();
             gridViewMaster = new DataGridView();
             gridViewExpansion = new DataGridView();
+            scientificPressureInput1 = new ScientificPressureInput();
             tableLayoutPanelMain.SuspendLayout();
             tabControlMain.SuspendLayout();
             tabPage1.SuspendLayout();
@@ -220,7 +221,6 @@ namespace VacX_OutSense
             ((System.ComponentModel.ISupportInitialize)numChillerBase).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh2Target).BeginInit();
             grpCh1Timer.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numCh1TargetPressure).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numVentTargetTemp).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Seconds).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Minutes).BeginInit();
@@ -252,7 +252,7 @@ namespace VacX_OutSense
             tableLayoutPanelMain.RowCount = 1;
             tableLayoutPanelMain.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             tableLayoutPanelMain.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
-            tableLayoutPanelMain.Size = new Size(1171, 913);
+            tableLayoutPanelMain.Size = new Size(1171, 963);
             tableLayoutPanelMain.TabIndex = 0;
             // 
             // tabControlMain
@@ -264,7 +264,7 @@ namespace VacX_OutSense
             tabControlMain.Location = new Point(3, 3);
             tabControlMain.Name = "tabControlMain";
             tabControlMain.SelectedIndex = 0;
-            tabControlMain.Size = new Size(1165, 907);
+            tabControlMain.Size = new Size(1165, 957);
             tabControlMain.TabIndex = 1;
             // 
             // tabPage1
@@ -273,7 +273,7 @@ namespace VacX_OutSense
             tabPage1.Location = new Point(4, 24);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3);
-            tabPage1.Size = new Size(1157, 879);
+            tabPage1.Size = new Size(1157, 929);
             tabPage1.TabIndex = 2;
             tabPage1.Text = "Main";
             tabPage1.UseVisualStyleBackColor = true;
@@ -290,7 +290,7 @@ namespace VacX_OutSense
             tableLayoutPanel2.RowCount = 2;
             tableLayoutPanel2.RowStyles.Add(new RowStyle(SizeType.Absolute, 55F));
             tableLayoutPanel2.RowStyles.Add(new RowStyle());
-            tableLayoutPanel2.Size = new Size(1151, 873);
+            tableLayoutPanel2.Size = new Size(1151, 923);
             tableLayoutPanel2.TabIndex = 0;
             // 
             // tableLayoutPanel3
@@ -600,7 +600,7 @@ namespace VacX_OutSense
             numChillerBase.Size = new Size(70, 23);
             numChillerBase.TabIndex = 4;
             numChillerBase.TextAlign = HorizontalAlignment.Center;
-            numChillerBase.Value = new decimal(new int[] { 225, 0, 0, 65536 });
+            numChillerBase.Value = new decimal(new int[] { 235, 0, 0, 65536 });
             numChillerBase.ValueChanged += numChillerBase_ValueChanged;
             // 
             // lblChillerBase
@@ -657,8 +657,8 @@ namespace VacX_OutSense
             // 
             // grpCh1Timer
             // 
+            grpCh1Timer.Controls.Add(scientificPressureInput1);
             grpCh1Timer.Controls.Add(btnCh1AutoStart);
-            grpCh1Timer.Controls.Add(numCh1TargetPressure);
             grpCh1Timer.Controls.Add(lblCh1TargetPressure);
             grpCh1Timer.Controls.Add(chkCh1AutoStartEnabled);
             grpCh1Timer.Controls.Add(lblVentTempUnit);
@@ -690,25 +690,10 @@ namespace VacX_OutSense
             btnCh1AutoStart.UseVisualStyleBackColor = true;
             btnCh1AutoStart.Click += btnCh1AutoStart_Click;
             // 
-            // numCh1TargetPressure
-            // 
-            numCh1TargetPressure.DecimalPlaces = 6;
-            numCh1TargetPressure.Enabled = false;
-            numCh1TargetPressure.Increment = new decimal(new int[] { 1, 0, 0, 327680 });
-            numCh1TargetPressure.Location = new Point(190, 73);
-            numCh1TargetPressure.Maximum = new decimal(new int[] { 1, 0, 0, 196608 });
-            numCh1TargetPressure.Minimum = new decimal(new int[] { 1, 0, 0, 589824 });
-            numCh1TargetPressure.Name = "numCh1TargetPressure";
-            numCh1TargetPressure.Size = new Size(100, 23);
-            numCh1TargetPressure.TabIndex = 14;
-            numCh1TargetPressure.TextAlign = HorizontalAlignment.Center;
-            numCh1TargetPressure.Value = new decimal(new int[] { 1, 0, 0, 327680 });
-            numCh1TargetPressure.ValueChanged += numCh1TargetPressure_ValueChanged;
-            // 
             // lblCh1TargetPressure
             // 
             lblCh1TargetPressure.AutoSize = true;
-            lblCh1TargetPressure.Location = new Point(100, 76);
+            lblCh1TargetPressure.Location = new Point(141, 112);
             lblCh1TargetPressure.Name = "lblCh1TargetPressure";
             lblCh1TargetPressure.Size = new Size(91, 15);
             lblCh1TargetPressure.TabIndex = 13;
@@ -717,7 +702,7 @@ namespace VacX_OutSense
             // chkCh1AutoStartEnabled
             // 
             chkCh1AutoStartEnabled.AutoSize = true;
-            chkCh1AutoStartEnabled.Location = new Point(15, 75);
+            chkCh1AutoStartEnabled.Location = new Point(15, 80);
             chkCh1AutoStartEnabled.Name = "chkCh1AutoStartEnabled";
             chkCh1AutoStartEnabled.Size = new Size(78, 19);
             chkCh1AutoStartEnabled.TabIndex = 12;
@@ -728,7 +713,7 @@ namespace VacX_OutSense
             // lblVentTempUnit
             // 
             lblVentTempUnit.AutoSize = true;
-            lblVentTempUnit.Location = new Point(440, 49);
+            lblVentTempUnit.Location = new Point(393, 49);
             lblVentTempUnit.Name = "lblVentTempUnit";
             lblVentTempUnit.Size = new Size(20, 15);
             lblVentTempUnit.TabIndex = 11;
@@ -737,7 +722,7 @@ namespace VacX_OutSense
             // numVentTargetTemp
             // 
             numVentTargetTemp.DecimalPlaces = 1;
-            numVentTargetTemp.Location = new Point(365, 45);
+            numVentTargetTemp.Location = new Point(317, 47);
             numVentTargetTemp.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
             numVentTargetTemp.Name = "numVentTargetTemp";
             numVentTargetTemp.Size = new Size(70, 23);
@@ -2324,7 +2309,7 @@ namespace VacX_OutSense
             // 
             statusStrip.ImageScalingSize = new Size(24, 24);
             statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusConnection });
-            statusStrip.Location = new Point(0, 937);
+            statusStrip.Location = new Point(0, 987);
             statusStrip.Name = "statusStrip";
             statusStrip.Size = new Size(1171, 22);
             statusStrip.TabIndex = 2;
@@ -2367,9 +2352,17 @@ namespace VacX_OutSense
             gridViewExpansion.Size = new Size(240, 150);
             gridViewExpansion.TabIndex = 0;
             // 
+            // scientificPressureInput1
+            // 
+            scientificPressureInput1.Location = new Point(238, 109);
+            scientificPressureInput1.MinimumSize = new Size(150, 25);
+            scientificPressureInput1.Name = "scientificPressureInput1";
+            scientificPressureInput1.Size = new Size(185, 25);
+            scientificPressureInput1.TabIndex = 16;
+            // 
             // MainForm
             // 
-            ClientSize = new Size(1171, 959);
+            ClientSize = new Size(1171, 1009);
             Controls.Add(tableLayoutPanelMain);
             Controls.Add(menuStrip);
             Controls.Add(statusStrip);
@@ -2398,7 +2391,6 @@ namespace VacX_OutSense
             ((System.ComponentModel.ISupportInitialize)numCh2Target).EndInit();
             grpCh1Timer.ResumeLayout(false);
             grpCh1Timer.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numCh1TargetPressure).EndInit();
             ((System.ComponentModel.ISupportInitialize)numVentTargetTemp).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Seconds).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Minutes).EndInit();
@@ -2498,6 +2490,7 @@ namespace VacX_OutSense
         private CheckBox chkCh1AutoStartEnabled;
         private Label lblCh1TargetPressure;
         private NumericUpDown numCh1TargetPressure;
+        private ScientificPressureInput pressureInputCh1;
         private Button btnCh1AutoStart;
         private Forms.UserControls.BindableTextBox txtIGStatus;
         private Forms.UserControls.BindableTextBox txtIG;
@@ -2612,5 +2605,6 @@ namespace VacX_OutSense
         private TextBox txtCh3PresentValue;
         private TextBox txtCh4PresentValue;
         private TextBox txtCh5PresentValue;
+        private ScientificPressureInput scientificPressureInput1;
     }
 }
