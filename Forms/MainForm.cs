@@ -47,6 +47,11 @@ namespace VacX_OutSense
         private Label lblAutoRunRemainingTime;
         #endregion
 
+        #region 베이크 아웃 관련 필드
+        private ThermalRampProfileManager _profileManager;
+        private BakeoutSettings _bakeoutSettings;
+        #endregion
+
         #region 타이머 관련 필드
         private System.Windows.Forms.Timer _ch1AutoStopTimer;
         private bool _ch1TimerActive = false;
@@ -353,7 +358,88 @@ namespace VacX_OutSense
             _chillerPIDService = new ChillerPIDControlService(this);
 
             InitializeConnectionChecker();
+
+            // ★ 추가: 베이크 아웃 설정 초기화
+            InitializeBakeoutSettings();
+
+            // ★ 추가: SimpleRampControl 초기화
+            InitializeSimpleRampControl();
+
+
             LogInfo("서비스 시작 완료");
+        }
+
+        /// <summary>
+        /// 베이크 아웃 설정 초기화
+        /// </summary>
+        private void InitializeBakeoutSettings()
+        {
+            _profileManager = new ThermalRampProfileManager();
+            _bakeoutSettings = BakeoutSettings.Load();
+            LogInfo("베이크 아웃 설정 로드 완료");
+        }
+
+        /// <summary>
+        /// SimpleRampControl 초기화 및 이벤트 연결
+        /// </summary>
+        private void InitializeSimpleRampControl()
+        {
+            if (_tempController != null && simpleRampControl1 != null)
+            {
+                // 컨트롤 초기화
+                simpleRampControl1.Initialize(_tempController);
+
+                // 목표 온도 도달 시 타이머 시작 연동
+                simpleRampControl1.TargetTemperatureReached += SimpleRampControl_TargetReached;
+
+                // 로그 연동
+                simpleRampControl1.LogMessage += (s, msg) => LogInfo(msg);
+
+                // ★ 추가: 램프 완료/정지 시 컨트롤 상태 업데이트
+                if (simpleRampControl1.RampController != null)
+                {
+                    simpleRampControl1.RampController.RampCompleted += (s, e) =>
+                    {
+                        RunOnUIThread(() => UpdateCh1TimerControls());
+                    };
+                }
+
+                LogInfo("SimpleRampControl 초기화 완료");
+            }
+        }
+        /// <summary>
+        /// 온도 램프 목표 도달 시 CH1 타이머 시작
+        /// </summary>
+        private void SimpleRampControl_TargetReached(object sender, EventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => SimpleRampControl_TargetReached(sender, e)));
+                return;
+            }
+
+            // 자동 타이머 시작 옵션 확인
+            if (!simpleRampControl1.AutoStartTimerOnTargetReached) return;
+
+            // 타이머 활성화되어 있으면 시작
+            if (chkCh1TimerEnabled.Checked)
+            {
+                // ★ 타이머 직접 시작 (StartCh1Timer 호출하면 _ch1WaitingForTargetTemp = true가 됨)
+                _ch1TimerActive = true;
+                _ch1StartTime = DateTime.Now;
+
+                int hours = (int)numCh1Hours.Value;
+                int minutes = (int)numCh1Minutes.Value;
+                int seconds = (int)numCh1Seconds.Value;
+                _ch1Duration = new TimeSpan(hours, minutes, seconds);
+
+                if (!_ch1AutoStopTimer.Enabled)
+                    _ch1AutoStopTimer.Start();
+
+                UpdateCh1TimerControls();
+                lblCh1TimeRemainingValue.ForeColor = Color.Blue;
+                LogInfo("[온도 램프] CH2 목표 온도 도달 - 타이머 시작");
+            }
         }
 
         private void InitializeConnectionChecker()
@@ -527,6 +613,9 @@ namespace VacX_OutSense
         {
             _uiUpdateService.RequestUpdate(snapshot);
 
+            // ★ 추가: Thermal Ramp 설정값 적용 (통신 충돌 방지)
+            ApplyThermalRampPendingSetpoint();
+
             if (_isLoggingEnabled)
             {
                 Task.Run(() =>
@@ -550,6 +639,22 @@ namespace VacX_OutSense
                     }
                     catch (Exception ex) { LogError($"데이터 로깅 오류: {ex.Message}", ex); }
                 });
+            }
+        }
+
+        /// <summary>
+        /// Thermal Ramp 대기 중인 설정값 적용 (데이터 수집 주기에 맞춰 호출)
+        /// </summary>
+        private void ApplyThermalRampPendingSetpoint()
+        {
+            // SimpleRampControl이 실행 중이고 대기 중인 설정값이 있으면 적용
+            if (simpleRampControl1 != null && simpleRampControl1.IsRunning)
+            {
+                try
+                {
+                    simpleRampControl1.RampController?.ApplyPendingSetpoint();
+                }
+                catch { }
             }
         }
 
@@ -709,15 +814,30 @@ namespace VacX_OutSense
             bool autoStartEnabled = chkCh1AutoStartEnabled?.Checked ?? false;
             bool anyProcessActive = _ch1TimerActive || _ch1WaitingForTargetTemp || _ch1WaitingForVacuum;
 
-            numCh1Hours.Enabled = timerEnabled && !anyProcessActive;
-            numCh1Minutes.Enabled = timerEnabled && !anyProcessActive;
-            numCh1Seconds.Enabled = timerEnabled && !anyProcessActive;
-            numVentTargetTemp.Enabled = timerEnabled && !anyProcessActive;
+            // ★ 램프 진행 중 여부 추가
+            bool rampRunning = simpleRampControl1?.IsRunning ?? false;
+            bool isLocked = anyProcessActive || rampRunning;
 
+            // 타이머 설정
+            numCh1Hours.Enabled = timerEnabled && !isLocked;
+            numCh1Minutes.Enabled = timerEnabled && !isLocked;
+            numCh1Seconds.Enabled = timerEnabled && !isLocked;
+            numVentTargetTemp.Enabled = timerEnabled && !isLocked;
+
+            // 자동 시작 설정
             if (chkCh1AutoStartEnabled != null)
-                chkCh1AutoStartEnabled.Enabled = timerEnabled && !anyProcessActive;
-            if (numCh1TargetPressure != null)
-                numCh1TargetPressure.Enabled = timerEnabled && autoStartEnabled && !anyProcessActive;
+                chkCh1AutoStartEnabled.Enabled = timerEnabled && !isLocked;
+            if (scientificPressureInput1 != null)
+                scientificPressureInput1.Enabled = timerEnabled && autoStartEnabled && !isLocked;
+            if (numCh1ReachCount != null)
+                numCh1ReachCount.Enabled = timerEnabled && autoStartEnabled && !isLocked;
+
+            // ★ 추가: 베이크 아웃 설정 버튼
+            if (btnBakeoutSettings != null)
+                btnBakeoutSettings.Enabled = !isLocked;
+
+            // ★ 추가: 타이머 활성화 체크박스
+            chkCh1TimerEnabled.Enabled = !isLocked;
 
             if (!timerEnabled && anyProcessActive)
                 StopCh1Timer();
@@ -802,12 +922,27 @@ namespace VacX_OutSense
                             try
                             {
                                 await Task.Run(() => _tempController.Start(1));
+
                                 RunOnUIThread(() =>
                                 {
                                     LogInfo("CH1 자동 시작됨");
-                                    _ch1WaitingForTargetTemp = true;
-                                    lblCh1TimeRemainingValue.Text = "온도 대기중...";
-                                    lblCh1TimeRemainingValue.ForeColor = Color.Orange;
+
+                                    // ★ 베이크 아웃 램프 업 사용 여부에 따라 분기
+                                    if (_bakeoutSettings?.EnableAutoRampUp == true)
+                                    {
+                                        // 램프 사용 → CH2 감시 (TargetReached 이벤트로 타이머 시작)
+                                        StartBakeoutRampUp();
+                                        _ch1WaitingForTargetTemp = false;  // CH1 감시 건너뜀
+                                        lblCh1TimeRemainingValue.Text = "램프 진행중...";
+                                        lblCh1TimeRemainingValue.ForeColor = Color.Green;
+                                    }
+                                    else
+                                    {
+                                        // 기존 방식 → CH1 감시
+                                        _ch1WaitingForTargetTemp = true;
+                                        lblCh1TimeRemainingValue.Text = "온도 대기중...";
+                                        lblCh1TimeRemainingValue.ForeColor = Color.Orange;
+                                    }
                                 });
                             }
                             catch (Exception ex)
@@ -879,6 +1014,55 @@ namespace VacX_OutSense
                     lblCh1TimeRemainingValue.Text = $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
                     lblCh1TimeRemainingValue.ForeColor = remaining.TotalSeconds <= 60 ? Color.Red : remaining.TotalMinutes <= 5 ? Color.Orange : Color.Blue;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 베이크 아웃 램프 업 자동 시작
+        /// </summary>
+        private async void StartBakeoutRampUp()
+        {
+            if (_bakeoutSettings == null || !_bakeoutSettings.EnableAutoRampUp)
+            {
+                LogInfo("[베이크 아웃] 램프 업 비활성화됨");
+                return;
+            }
+
+            if (simpleRampControl1 == null)
+            {
+                LogWarning("[베이크 아웃] SimpleRampControl이 초기화되지 않음");
+                return;
+            }
+
+            try
+            {
+                // 타이머 자동 시작 옵션 설정
+                simpleRampControl1.AutoStartTimerOnTargetReached = _bakeoutSettings.AutoStartTimerOnTargetReached;
+
+                // ★ 추가: 종료 동작 설정
+                simpleRampControl1.EndAction = _bakeoutSettings.EndAction;
+                simpleRampControl1.HoldAfterComplete = (_bakeoutSettings.EndAction == BakeoutEndAction.MaintainTemperature);
+
+                // 램프 시작
+                bool success = await simpleRampControl1.StartRampAsync(
+                    _bakeoutSettings.TargetTemperature,
+                    _bakeoutSettings.RampRate,
+                    _bakeoutSettings.ProfileName
+                );
+
+                if (success)
+                {
+                    LogInfo($"[베이크 아웃] 램프 업 시작: {_bakeoutSettings.TargetTemperature}°C, {_bakeoutSettings.RampRate}°C/min");
+                    UpdateCh1TimerControls();  // ★ 추가
+                }
+                else
+                {
+                    LogWarning("[베이크 아웃] 램프 업 시작 실패");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"[베이크 아웃] 램프 업 오류: {ex.Message}");
             }
         }
 
@@ -1093,6 +1277,23 @@ namespace VacX_OutSense
         private void SetButtonEnabled(Button button, bool enabled) { if (button == null) return; if (InvokeRequired) BeginInvoke(new Action(() => button.Enabled = enabled)); else button.Enabled = enabled; }
         private void ShowMessageBox(string message, string title, MessageBoxButtons buttons, MessageBoxIcon icon) { if (InvokeRequired) BeginInvoke(new Action(() => MessageBox.Show(this, message, title, buttons, icon))); else MessageBox.Show(this, message, title, buttons, icon); }
         private void RunOnUIThread(Action action) { if (InvokeRequired) BeginInvoke(action); else action(); }
+
+        private void btnBakeoutSettings_Click(object sender, EventArgs e)
+        {
+            if (_profileManager == null)
+            {
+                _profileManager = new ThermalRampProfileManager();
+            }
+
+            using (var form = new BakeoutSettingsForm(_profileManager))
+            {
+                if (form.ShowDialog() == DialogResult.OK)
+                {
+                    _bakeoutSettings = form.Settings;
+                    LogInfo($"[베이크 아웃] 설정 저장: {_bakeoutSettings.TargetTemperature}°C, {_bakeoutSettings.HoldTimeMinutes}분");
+                }
+            }
+        }
 
         #endregion
 

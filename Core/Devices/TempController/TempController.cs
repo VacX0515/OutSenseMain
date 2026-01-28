@@ -84,6 +84,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         #region 필드 및 속성
 
         private int _deviceAddress = 1;
+        private readonly int _mainModuleAddress;  // ★ 메인 모듈 주소 저장 (변경되지 않음)
         private readonly int _numChannels;
         private int _timeout = 500;
         private bool _isUpdatingStatus = false;
@@ -159,6 +160,7 @@ namespace VacX_OutSense.Core.Devices.TempController
             : base(communicationManager)
         {
             DeviceAddress = deviceAddress;
+            _mainModuleAddress = deviceAddress;  // ★ 메인 모듈 주소 저장
             _numChannels = numChannels;
             _totalChannels = numChannels;
             _hasExpansion = false;
@@ -180,6 +182,7 @@ namespace VacX_OutSense.Core.Devices.TempController
             : base(communicationManager)
         {
             DeviceAddress = deviceAddress;
+            _mainModuleAddress = deviceAddress;  // ★ 메인 모듈 주소 저장
             _numChannels = numChannels;
             _hasExpansion = true;
             _expansionSlaveAddress = expansionSlaveAddress;
@@ -524,8 +527,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                // ★ 항상 메인 모듈 주소로 설정 - 확장 모듈 상태 업데이트 중에도 안전
+                _deviceAddress = _mainModuleAddress;
+
                 ushort registerAddress;
 
                 if (channelNumber == 1)
@@ -552,6 +561,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} 온도 설정 실패: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                // ★ 주소 복원
+                _deviceAddress = savedAddress;
+            }
         }
 
         public bool Start(int channelNumber)
@@ -564,8 +578,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                // ★ 항상 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 ushort coilAddress;
                 if (channelNumber == 1)
                     coilAddress = COIL_CH1_RUN_STOP;
@@ -591,6 +611,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} 시작 실패: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                // ★ 주소 복원
+                _deviceAddress = savedAddress;
+            }
         }
 
         public bool Stop(int channelNumber)
@@ -603,8 +628,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                // ★ 항상 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 ushort coilAddress;
                 if (channelNumber == 1)
                     coilAddress = COIL_CH1_RUN_STOP;
@@ -630,6 +661,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} 정지 실패: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                // ★ 주소 복원
+                _deviceAddress = savedAddress;
+            }
         }
 
         public bool StartAutoTuning(int channelNumber)
@@ -642,8 +678,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                // ★ 항상 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 ushort coilAddress;
                 if (channelNumber == 1)
                     coilAddress = COIL_CH1_AUTO_TUNING;
@@ -669,6 +711,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} 오토튜닝 시작 실패: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                // ★ 주소 복원
+                _deviceAddress = savedAddress;
+            }
         }
 
         public bool StopAutoTuning(int channelNumber)
@@ -681,8 +728,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                // ★ 항상 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 ushort coilAddress;
                 if (channelNumber == 1)
                     coilAddress = COIL_CH1_AUTO_TUNING;
@@ -708,6 +761,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} 오토튜닝 정지 실패: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                // ★ 주소 복원
+                _deviceAddress = savedAddress;
+            }
         }
 
         public bool SetPIDParameters(int channelNumber, float heatingP, int heatingI, int heatingD)
@@ -720,8 +778,14 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                // ★ 항상 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 ushort baseAddress = (ushort)(0x0065 + (channelNumber - 1) * 0x03E8);
                 ushort heatingPValue = (ushort)(heatingP * 10);
 
@@ -745,6 +809,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} PID 파라미터 설정 실패: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                // ★ 주소 복원
+                _deviceAddress = savedAddress;
+            }
         }
 
         public bool SetRampConfiguration(int channelNumber, ushort rampUpRate, ushort rampDownRate, RampTimeUnit timeUnit)
@@ -760,10 +829,16 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
             lock (_commandLock)
             {
                 try
                 {
+                    // ★ 항상 메인 모듈 주소로 설정
+                    _deviceAddress = _mainModuleAddress;
+
                     ushort baseAddress;
                     if (channelNumber == 1)
                         baseAddress = REG_HOLD_CH1_RAMP_UP;
@@ -791,6 +866,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 {
                     OnErrorOccurred($"채널 {channelNumber} Ramp 설정 실패: {ex.Message}");
                     return false;
+                }
+                finally
+                {
+                    // ★ 주소 복원
+                    _deviceAddress = savedAddress;
                 }
             }
         }

@@ -65,6 +65,7 @@ namespace VacX_OutSense
             chkChillerPIDEnabled = new CheckBox();
             rampSettingControl1 = new UI.Controls.RampSettingControl();
             grpCh1Timer = new GroupBox();
+            btnBakeoutSettings = new Button();
             numCh1ReachCount = new NumericUpDown();
             lblCh1ReachCount = new Label();
             scientificPressureInput1 = new ScientificPressureInput();
@@ -196,6 +197,7 @@ namespace VacX_OutSense
             tabPage2 = new TabPage();
             txtLog = new RichTextBox();
             tabPageAutoRun = new TabPage();
+            tabPageThermalRamp = new TabPage();
             menuStrip = new MenuStrip();
             menuFile = new ToolStripMenuItem();
             menuFileExit = new ToolStripMenuItem();
@@ -263,6 +265,7 @@ namespace VacX_OutSense
             tabControlMain.Controls.Add(tabPage1);
             tabControlMain.Controls.Add(tabPage2);
             tabControlMain.Controls.Add(tabPageAutoRun);
+            tabControlMain.Controls.Add(tabPageThermalRamp);
             tabControlMain.Dock = DockStyle.Fill;
             tabControlMain.Location = new Point(3, 3);
             tabControlMain.Name = "tabControlMain";
@@ -660,6 +663,7 @@ namespace VacX_OutSense
             // 
             // grpCh1Timer
             // 
+            grpCh1Timer.Controls.Add(btnBakeoutSettings);
             grpCh1Timer.Controls.Add(numCh1ReachCount);
             grpCh1Timer.Controls.Add(lblCh1ReachCount);
             grpCh1Timer.Controls.Add(scientificPressureInput1);
@@ -684,6 +688,16 @@ namespace VacX_OutSense
             grpCh1Timer.TabIndex = 50;
             grpCh1Timer.TabStop = false;
             grpCh1Timer.Text = "CH1 자동 시작/정지 타이머";
+            // 
+            // btnBakeoutSettings
+            // 
+            btnBakeoutSettings.Location = new Point(224, 74);
+            btnBakeoutSettings.Name = "btnBakeoutSettings";
+            btnBakeoutSettings.Size = new Size(141, 28);
+            btnBakeoutSettings.TabIndex = 19;
+            btnBakeoutSettings.Text = "Bakeout 램프업 설정";
+            btnBakeoutSettings.UseVisualStyleBackColor = true;
+            btnBakeoutSettings.Click += btnBakeoutSettings_Click;
             // 
             // numCh1ReachCount
             // 
@@ -2286,8 +2300,18 @@ namespace VacX_OutSense
             tabPageAutoRun.Padding = new Padding(3);
             tabPageAutoRun.Size = new Size(192, 72);
             tabPageAutoRun.TabIndex = 4;
-            tabPageAutoRun.Text = "AutoRun";
+            tabPageAutoRun.Text = "AutoRun(N/A)";
             tabPageAutoRun.UseVisualStyleBackColor = true;
+            // 
+            // tabPageThermalRamp
+            // 
+            tabPageThermalRamp.Location = new Point(4, 24);
+            tabPageThermalRamp.Name = "tabPageThermalRamp";
+            tabPageThermalRamp.Padding = new Padding(3);
+            tabPageThermalRamp.Size = new Size(192, 72);
+            tabPageThermalRamp.TabIndex = 5;
+            tabPageThermalRamp.Text = "온도 램프(Debug)";
+            tabPageThermalRamp.UseVisualStyleBackColor = true;
             // 
             // menuStrip
             // 
@@ -2636,5 +2660,9 @@ namespace VacX_OutSense
         private TextBox txtCh4PresentValue;
         private TextBox txtCh5PresentValue;
         private ScientificPressureInput scientificPressureInput1;
+
+        private TabPage tabPageThermalRamp;
+        private Forms.UserControls.SimpleRampControl simpleRampControl1;
+        private Button btnBakeoutSettings;
     }
 }
