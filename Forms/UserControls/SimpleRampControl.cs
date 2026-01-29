@@ -380,7 +380,7 @@ namespace VacX_OutSense.Forms.UserControls
             if (DesignMode) return;
 
             _tempController = tempController ?? throw new ArgumentNullException(nameof(tempController));
-            
+
             // 프로파일 매니저 초기화
             _profileManager = new ThermalRampProfileManager();
             LoadProfiles();
@@ -406,7 +406,7 @@ namespace VacX_OutSense.Forms.UserControls
         private void LoadProfiles()
         {
             cboProfile.Items.Clear();
-            
+
             foreach (var profile in _profileManager.Profiles)
             {
                 cboProfile.Items.Add(profile.Name);
@@ -449,9 +449,9 @@ namespace VacX_OutSense.Forms.UserControls
                 numTargetTemp.Maximum = (decimal)profile.MaxHeaterTemperature;
 
                 // 기본값 적용
-                numRampRate.Value = Math.Max(numRampRate.Minimum, 
+                numRampRate.Value = Math.Max(numRampRate.Minimum,
                     Math.Min(numRampRate.Maximum, (decimal)profile.DefaultRampRate));
-                numTargetTemp.Value = Math.Max(numTargetTemp.Minimum, 
+                numTargetTemp.Value = Math.Max(numTargetTemp.Minimum,
                     Math.Min(numTargetTemp.Maximum, (decimal)profile.DefaultTargetTemperature));
 
                 // 선택 저장
@@ -542,20 +542,29 @@ namespace VacX_OutSense.Forms.UserControls
 
         private async System.Threading.Tasks.Task<bool> StartRampInternalAsync(ThermalRampProfile profile, double targetTemp, double rampRate)
         {
-            // UI 값 업데이트
+            // UI 값 업데이트 - 프로파일 먼저 선택 (Min/Max가 업데이트됨)
             if (cboProfile.Items.Contains(profile.Name))
             {
                 cboProfile.SelectedItem = profile.Name;
             }
-            numTargetTemp.Value = (decimal)targetTemp;
-            numRampRate.Value = (decimal)rampRate;
+
+            // 값 범위 체크 후 설정
+            decimal targetTempDecimal = (decimal)targetTemp;
+            decimal rampRateDecimal = (decimal)rampRate;
+
+            // Min/Max 범위 내로 제한
+            targetTempDecimal = Math.Max(numTargetTemp.Minimum, Math.Min(numTargetTemp.Maximum, targetTempDecimal));
+            rampRateDecimal = Math.Max(numRampRate.Minimum, Math.Min(numRampRate.Maximum, rampRateDecimal));
+
+            numTargetTemp.Value = targetTempDecimal;
+            numRampRate.Value = rampRateDecimal;
 
             // UI 상태 변경
             SetControlState(true);
 
             // 램프 시작
             bool success = await _rampController.StartRampAsync(profile, targetTemp, rampRate);
-            
+
             if (!success)
             {
                 SetControlState(false);
@@ -633,10 +642,10 @@ namespace VacX_OutSense.Forms.UserControls
             lblHeaterSetpointValue.Text = $"{e.HeaterSetpoint:F1}°C";
             lblSampleTempValue.Text = $"{e.SampleTemp:F1}°C";
             lblTargetTempStatusValue.Text = $"{e.TargetTemp:F1}°C";
-            
+
             progressBar.Value = (int)Math.Min(100, Math.Max(0, e.ProgressPercent));
             lblProgressPercent.Text = $"{e.ProgressPercent:F0}%";
-            
+
             lblStatusValue.Text = e.StatusMessage;
             lblStatusValue.ForeColor = e.State switch
             {
@@ -772,6 +781,35 @@ namespace VacX_OutSense.Forms.UserControls
         }
 
         #endregion
+
+        /// <summary>
+        /// Hold 모드 직접 시작 (램프 없이 바로 유지)
+        /// </summary>
+        public async Task<bool> StartHoldModeAsync(double targetTemp, string profileName)
+        {
+            if (RampController == null || _tempController == null)
+                return false;
+
+            // 프로파일 로드
+            ThermalRampProfile profile = null;
+
+            if (!string.IsNullOrEmpty(profileName))
+                profile = _profileManager?.GetProfile(profileName);
+
+            // 프로파일 없으면 목록에서 첫 번째 사용
+            if (profile == null && _profileManager?.Profiles != null && _profileManager.Profiles.Count > 0)
+            {
+                profile = _profileManager.Profiles[0];
+            }
+
+            if (profile == null)
+            {
+                LogMessage?.Invoke(this, "프로파일을 찾을 수 없습니다.");
+                return false;
+            }
+
+            return await RampController.StartHoldOnlyAsync(profile, targetTemp);
+        }
 
         #region Dispose
 

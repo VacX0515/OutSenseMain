@@ -239,6 +239,37 @@ namespace VacX_OutSense.UI.Controls
                 }
             }
         }
+        /// <summary>
+        /// Ramp 활성화 여부
+        /// </summary>
+        public bool IsRampEnabled => chkEnableRamp?.Checked ?? false;
+
+        /// <summary>
+        /// 현재 설정을 컨트롤러에 적용 (외부 호출용)
+        /// </summary>
+        public bool ApplyRampSettings()
+        {
+            if (DesignMode || _tempController == null)
+                return false;
+
+            try
+            {
+                if (!IsRampEnabled)
+                    return true;  // 비활성화 상태면 적용 불필요
+
+                ushort rampUp = (ushort)(nudRampUpRate?.Value ?? 0);
+                ushort rampDown = (ushort)(nudRampDownRate?.Value ?? 0);
+                TempController.RampTimeUnit timeUnit =
+                    (TempController.RampTimeUnit)(cmbTimeUnit?.SelectedIndex ?? 1);
+
+                return _tempController.SetRampConfiguration(_channelNumber, rampUp, rampDown, timeUnit);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
 
         /// <summary>
         /// 상태 표시를 업데이트합니다.

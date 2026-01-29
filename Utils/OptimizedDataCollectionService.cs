@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using VacX_OutSense.Core.Devices.Base;
 using VacX_OutSense.Core.Devices.IO_Module.Models;
 using VacX_OutSense.Models;
 
@@ -11,9 +12,13 @@ namespace VacX_OutSense.Utils
 {
     /// <summary>
     /// 개선된 데이터 수집 서비스 - 우선순위 기반으로 효율적으로 동작
+    /// ★ 추가 AI (±10V) 지원 포함
     /// </summary>
     public class OptimizedDataCollectionService : IDisposable
     {
+        // 추가 AI 값 추적용
+        private double _lastAdditionalAIValue = double.NaN;
+
         private readonly MainForm _mainForm;
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
@@ -227,20 +232,19 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 압력 데이터만 빠르게 수집 (IO 충돌 방지)
+        /// 압력 데이터 수집 (IO 충돌 방지) - ★ 추가 AI 포함
         /// </summary>
         private async Task CollectPressureData()
         {
             if (_mainForm._ioModule?.IsConnected != true) return;
 
             var semaphore = _deviceLocks["IOModule"];
-            if (!await semaphore.WaitAsync(50)) return; // 50ms 내에 락을 못 얻으면 스킵
+            if (!await semaphore.WaitAsync(50)) return;
 
             try
             {
-                // 통신 전 버퍼 클리어 (중요!)
                 _mainForm._ioModule.CommunicationManager.DiscardInBuffer();
-                await Task.Delay(10); // 짧은 대기
+                await Task.Delay(10);
 
                 // AI 값 읽기
                 var aiData = await _mainForm._ioModule.ReadAnalogInputsAsync();
@@ -248,13 +252,51 @@ namespace VacX_OutSense.Utils
                 {
                     _latestData["AI_Data"] = aiData;
                     _errorCounts["IOModule"] = 0;
+
+                    // ★ Float 읽기 전 딜레이 추가 (통신 안정화)
+                    await Task.Delay(20);
+
+                    // ★ 추가 AI 고정밀 읽기 (Floating-point)
+                    var floatValue = await _mainForm._ioModule.ReadAIChannelFloatAsync(
+                        _mainForm._ioModule.AdditionalAIChannel);
+
+                    double additionalAIValue;
+
+                    // ★ Integer 값도 같이 읽기
+                    double integerValue = aiData.ExpansionVoltageValues[aiData.AdditionalAIChannelIndex];
+
+                    // ★ 둘 다 로깅해서 비교
+                    LoggerService.Instance.LogDebug(
+                        $"AI CH5 - Integer: {integerValue:F6}V, Float: {(floatValue.HasValue ? floatValue.Value.ToString("F6") : "FAIL")}");
+
+                    if (floatValue.HasValue)
+                    {
+                        // Float 성공 → Float 값 사용 및 저장
+                        additionalAIValue = floatValue.Value;
+                        aiData.AdditionalAIValueFloat = floatValue.Value;
+                        _latestData["AdditionalAI_FloatValue"] = floatValue.Value;  // Float 값 별도 저장
+                        LoggerService.Instance.LogDebug($"Voltage : {floatValue}");
+
+                    }
+                    else
+                    {
+                        // Float 실패 → 이전 Float 값이 있으면 사용, 없으면 Integer
+                        if (_latestData.TryGetValue("AdditionalAI_FloatValue", out var prevFloat) && prevFloat is double pf)
+                        {
+                            additionalAIValue = pf;  // 이전 Float 값 유지
+                        }
+                    }
+
+                    _latestData["AdditionalAI_Timestamp"] = aiData.Timestamp;
+
                 }
                 else
                 {
                     IncrementErrorCount("IOModule");
                 }
 
-                // AO 값도 읽기 (밸브 상태 확인용)
+                // AO 값 읽기
+                await Task.Delay(10);  // ★ 추가 딜레이
                 var aoData = await _mainForm._ioModule.ReadAnalogOutputsAsync();
                 if (aoData != null)
                 {
@@ -479,6 +521,9 @@ namespace VacX_OutSense.Utils
             return snapshot;
         }
 
+        /// <summary>
+        /// IO 모듈 데이터 처리 - ★ 추가 AI 포함
+        /// </summary>
         private void ProcessIOModuleData(UIDataSnapshot snapshot, AnalogInputValues aiData, AnalogOutputValues aoData)
         {
             try
@@ -490,6 +535,17 @@ namespace VacX_OutSense.Utils
                     snapshot.PiraniPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
                     snapshot.IonPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]) ?? 0;
                     snapshot.IonGaugeStatus = _mainForm._ionGauge?.CheckGaugeStatus(aiData.ExpansionVoltageValues[2], aiData.ExpansionVoltageValues[3]).ToString() ?? "N/A";
+
+                    // ★ 수정: Float 값 우선 사용
+                    if (_latestData.TryGetValue("AdditionalAI_Value", out var floatVal) && floatVal is double dVal)
+                    {
+                        snapshot.AdditionalAIValue = dVal;
+                    }
+                    else
+                    {
+                        snapshot.AdditionalAIValue = aiData.AdditionalAIValue;
+                    }
+                    snapshot.AdditionalAITimestamp = aiData.Timestamp;
 
                     // 밸브 상태 계산
                     string gateValvePhysical = "";
@@ -556,7 +612,7 @@ namespace VacX_OutSense.Utils
                     if (status.HasError)
                         snapshot.TurboPump.Warning = "오류: " + _mainForm._turboPump.GetErrorDescription();
                     else if (status.HasWarning)
-                        snapshot.TurboPump.Warning = "경고: " + _mainForm._turboPump.GetWarningDescription();
+                        snapshot.TurboPump.Warning = "경고: " + _mainForm._turboPump.GetErrorDescription();
                 }
             }
             catch (Exception ex)
@@ -735,6 +791,44 @@ namespace VacX_OutSense.Utils
             {
                 return aoData;
             }
+            return null;
+        }
+
+        /// <summary>
+        /// ★ 최신 추가 AI 값 조회 (±10V)
+        /// </summary>
+        public double GetLatestAdditionalAIValue()
+        {
+            // 먼저 별도 저장된 값 확인
+            if (_latestData.TryGetValue("AdditionalAI_Value", out var value) && value is double dValue)
+            {
+                return dValue;
+            }
+
+            // AI_Data에서 직접 가져오기
+            if (_latestData.TryGetValue("AI_Data", out var aiObj) && aiObj is AnalogInputValues aiData)
+            {
+                return aiData.AdditionalAIValue;
+            }
+
+            return double.NaN;
+        }
+
+        /// <summary>
+        /// ★ 최신 추가 AI 타임스탬프 조회
+        /// </summary>
+        public DateTime? GetLatestAdditionalAITimestamp()
+        {
+            if (_latestData.TryGetValue("AdditionalAI_Timestamp", out var value) && value is DateTime timestamp)
+            {
+                return timestamp;
+            }
+
+            if (_latestData.TryGetValue("AI_Data", out var aiObj) && aiObj is AnalogInputValues aiData)
+            {
+                return aiData.Timestamp;
+            }
+
             return null;
         }
 

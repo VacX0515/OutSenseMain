@@ -9,7 +9,9 @@ using VacX_OutSense.Core.Devices.IO_Module.Models;
 namespace VacX_OutSense.Core.Devices.IO_Module
 {
     /// <summary>
-    /// 개선된 IO 모듈 - 통신 안정성 향상
+    /// 개선된 IO 모듈 - 통신 안정성 향상 + ±10V 추가 AI 지원
+    /// 마스터: M31-XAXA0404G (4AI 전류 + 4AO)
+    /// 확장: M31-XGXX0800G (8AI 차동 전압)
     /// </summary>
     public class IO_Module : DeviceBase
     {
@@ -22,6 +24,7 @@ namespace VacX_OutSense.Core.Devices.IO_Module
 
         private const ushort REG_ADDR_AI_VALUES = 0x0000;
         private const ushort REG_ADDR_AO_VALUES = 0x0000;
+        private const ushort REG_ADDR_AI_RANGE = 0x0DAC;  // AI 레인지 설정 레지스터
 
         // 통신 설정
         private const int COMM_RETRY_COUNT = 3;
@@ -44,10 +47,121 @@ namespace VacX_OutSense.Core.Devices.IO_Module
         public AnalogInputValues LastValidAIValues => _lastValidAIValues;
         public AnalogOutputValues LastValidAOValues => _lastValidAOValues;
 
-
         public override string DeviceName => "IO Module";
         public override string Model => "M31-XAXA0404G-L";
         public byte SlaveId { get => _slaveId; set => _slaveId = value; }
+
+        #endregion
+
+        #region Floating-point AI 읽기 (고정밀)
+
+        private const ushort REG_ADDR_AI_FLOAT = 0x03E8;  // Floating-point 시작 주소
+
+        /// <summary>
+        /// 특정 채널의 AI 값을 Floating-point로 읽기 (내부 호출용)
+        /// </summary>
+        public async Task<double?> ReadAIChannelFloatAsync(int channel, int maxRetry = 2)
+        {
+            if (channel < 1 || channel > 8) return null;
+
+            for (int retry = 0; retry < maxRetry; retry++)
+            {
+                try
+                {
+                    if (retry > 0)
+                        await Task.Delay(30);  // 재시도 전 대기
+
+                    _communicationManager.DiscardInBuffer();
+                    _communicationManager.DiscardOutBuffer();
+                    await Task.Delay(BUFFER_CLEAR_DELAY);
+
+                    int registerOffset = (4 + channel - 1) * 2;
+                    ushort regAddress = (ushort)(REG_ADDR_AI_FLOAT + registerOffset);
+
+                    byte[] request = new byte[8];
+                    request[0] = _slaveId;
+                    request[1] = FUNCTION_READ_INPUT_REGISTERS;
+                    request[2] = (byte)((regAddress >> 8) & 0xFF);
+                    request[3] = (byte)(regAddress & 0xFF);
+                    request[4] = 0x00;
+                    request[5] = 0x02;
+
+                    ushort crc = CalculateCRC(request, 6);
+                    request[6] = (byte)(crc & 0xFF);
+                    request[7] = (byte)((crc >> 8) & 0xFF);
+
+                    if (!_communicationManager.Write(request, 0, request.Length))
+                        continue;  // 재시도
+
+                    await Task.Delay(50);
+                    byte[] response = _communicationManager.ReadAll();
+
+                    if (response == null || response.Length < 9)
+                        continue;  // 재시도
+
+                    if (response[1] != FUNCTION_READ_INPUT_REGISTERS)
+                        continue;  // 재시도
+
+                    // IEEE754 변환
+                    byte[] floatBytes = new byte[4];
+                    floatBytes[3] = response[3];
+                    floatBytes[2] = response[4];
+                    floatBytes[1] = response[5];
+                    floatBytes[0] = response[6];
+
+                    float value = BitConverter.ToSingle(floatBytes, 0);
+
+                    // ★ 유효성 검사 (NaN, Infinity 제외)
+                    if (float.IsNaN(value) || float.IsInfinity(value))
+                        continue;  // 재시도
+
+                    return value;
+                }
+                catch
+                {
+                    // 재시도
+                }
+            }
+
+            return null;  // 모든 재시도 실패
+        }
+
+        #endregion
+
+        #region 추가 AI 채널 설정 (±10V)
+
+        // 추가 AI 채널 설정 (확장 모듈 기준, 1-based)
+        // 확장 모듈 채널 1-4: 압력 센서 (0-10V)
+        // 확장 모듈 채널 5: 추가 AI (±10V)
+        private int _additionalAIChannel = 5;  // 확장 모듈 채널 5 (ExpansionVoltageValues[4])
+        private VoltageRange _additionalAIRange = VoltageRange.Range_Neg10_Pos10V;
+
+        /// <summary>
+        /// 추가 AI 채널 번호 (확장 모듈 기준 1~8)
+        /// </summary>
+        public int AdditionalAIChannel
+        {
+            get => _additionalAIChannel;
+            set
+            {
+                if (value >= 1 && value <= 8)
+                    _additionalAIChannel = value;
+            }
+        }
+
+        /// <summary>
+        /// 추가 AI 레인지
+        /// </summary>
+        public VoltageRange AdditionalAIRange
+        {
+            get => _additionalAIRange;
+            set => _additionalAIRange = value;
+        }
+
+        /// <summary>
+        /// 추가 AI 채널 인덱스 (0-based, ExpansionVoltageValues 배열용)
+        /// </summary>
+        public int AdditionalAIChannelIndex => _additionalAIChannel - 1;
 
         #endregion
 
@@ -62,10 +176,106 @@ namespace VacX_OutSense.Core.Devices.IO_Module
 
         #endregion
 
+        #region AI 레인지 설정
+
+        /// <summary>
+        /// 개별 AI 채널 레인지 설정 (Function Code 0x06)
+        /// 확장 모듈의 AI 채널 레인지를 변경합니다.
+        /// </summary>
+        /// <param name="channel">확장 모듈 채널 번호 (1~8)</param>
+        /// <param name="range">전압 레인지</param>
+        public async Task<bool> SetExpansionAIRangeAsync(int channel, VoltageRange range)
+        {
+            if (channel < 1 || channel > 8)
+            {
+                OnErrorOccurred($"AI 채널 범위 오류: {channel} (1~8 허용)");
+                return false;
+            }
+
+            await _commSemaphore.WaitAsync();
+            try
+            {
+                _communicationManager.DiscardInBuffer();
+                _communicationManager.DiscardOutBuffer();
+                await Task.Delay(BUFFER_CLEAR_DELAY);
+
+                // M31 레인지 설정값 변환
+                ushort rangeValue = range switch
+                {
+                    VoltageRange.Range_0_10V => 5,         // 0-10V
+                    VoltageRange.Range_Neg10_Pos10V => 6,  // ±10V
+                    VoltageRange.Range_Neg5_Pos5V => 4,    // ±5V
+                    _ => 5  // 기본값 0-10V
+                };
+
+                // 확장 모듈 AI 레인지 레지스터 주소
+                // 마스터 AI 4채널 이후 확장 모듈 시작
+                ushort regAddress = (ushort)(REG_ADDR_AI_RANGE + 4 + (channel - 1));
+                byte[] request = CreateWriteSingleRegisterRequest(regAddress, rangeValue);
+
+                if (!_communicationManager.Write(request, 0, request.Length))
+                {
+                    OnErrorOccurred("AI 레인지 설정 요청 전송 실패");
+                    return false;
+                }
+
+                await Task.Delay(50);
+                byte[] response = _communicationManager.ReadAll();
+
+                if (response != null && response.Length >= 8 && response[1] == FUNCTION_WRITE_SINGLE_REGISTER)
+                {
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"AI 레인지 설정 오류: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                _commSemaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// 추가 AI 채널 초기화 (±10V 레인지 설정)
+        /// </summary>
+        public async Task<bool> InitializeAdditionalAIChannelAsync()
+        {
+            bool success = await SetExpansionAIRangeAsync(_additionalAIChannel, VoltageRange.Range_Neg10_Pos10V);
+            if (success)
+            {
+                _additionalAIRange = VoltageRange.Range_Neg10_Pos10V;
+            }
+            return success;
+        }
+
+        private byte[] CreateWriteSingleRegisterRequest(ushort address, ushort value)
+        {
+            byte[] request = new byte[8];
+            request[0] = _slaveId;
+            request[1] = FUNCTION_WRITE_SINGLE_REGISTER;
+            request[2] = (byte)((address >> 8) & 0xFF);
+            request[3] = (byte)(address & 0xFF);
+            request[4] = (byte)((value >> 8) & 0xFF);
+            request[5] = (byte)(value & 0xFF);
+
+            ushort crc = CalculateCRC(request, 6);
+            request[6] = (byte)(crc & 0xFF);
+            request[7] = (byte)((crc >> 8) & 0xFF);
+
+            return request;
+        }
+
+        #endregion
+
         #region 개선된 통신 메서드
 
         /// <summary>
-        /// 아날로그 입력 읽기 (개선된 버전)
+        /// 아날로그 입력 읽기 (개선된 버전 + ±10V 지원)
         /// </summary>
         public async Task<AnalogInputValues> ReadAnalogInputsAsync()
         {
@@ -118,7 +328,7 @@ namespace VacX_OutSense.Core.Devices.IO_Module
                             throw new Exception("응답 데이터 부족");
                         }
 
-                        // 응답 파싱
+                        // 응답 파싱 (±10V 변환 포함)
                         var result = ParseAIResponse(response);
 
                         // 유효성 검사 (0값 체크)
@@ -369,7 +579,7 @@ namespace VacX_OutSense.Core.Devices.IO_Module
             request[2] = 0x00;
             request[3] = 0x00;
             request[4] = 0x00;
-            request[5] = 0x0C; // 12 registers
+            request[5] = 0x0C; // 12 registers (마스터 4 + 확장 8)
 
             ushort crc = CalculateCRC(request, 6);
             request[6] = (byte)(crc & 0xFF);
@@ -415,6 +625,9 @@ namespace VacX_OutSense.Core.Devices.IO_Module
             return request;
         }
 
+        /// <summary>
+        /// AI 응답 파싱 - ±10V 추가 AI 채널 지원
+        /// </summary>
         private AnalogInputValues ParseAIResponse(byte[] response)
         {
             if (response[1] != FUNCTION_READ_INPUT_REGISTERS)
@@ -423,7 +636,10 @@ namespace VacX_OutSense.Core.Devices.IO_Module
             var result = new AnalogInputValues
             {
                 MasterCurrentRange = CurrentRange.Range_0_20mA,
-                ExpansionVoltageRange = VoltageRange.Range_0_10V
+                ExpansionVoltageRange = VoltageRange.Range_0_10V,
+                AdditionalAIChannelIndex = AdditionalAIChannelIndex,
+                AdditionalAIRange = _additionalAIRange,
+                Timestamp = DateTime.Now
             };
 
             // 마스터 모듈 값 (전류, 채널 0-3)
@@ -434,15 +650,58 @@ namespace VacX_OutSense.Core.Devices.IO_Module
                 result.MasterCurrentValues[i] = rawValue / 1000.0;
             }
 
-            // 확장 모듈 값 (전압, 채널 4-11)
+            // 확장 모듈 값 (전압, 채널 4-11 → ExpansionVoltageValues[0-7])
             for (int i = 4; i < 12; i++)
             {
                 int dataIndex = 3 + i * 2;
                 int rawValue = (response[dataIndex] << 8) | response[dataIndex + 1];
-                result.ExpansionVoltageValues[i - 4] = rawValue / 1000.0;
+                int expansionIndex = i - 4;
+
+                // 추가 AI 채널인 경우 ±10V 변환 적용
+                if (expansionIndex == AdditionalAIChannel - 1)
+                {
+                    short signedValue = (short)rawValue;
+                    result.ExpansionVoltageValues[expansionIndex] = signedValue / 1000.0;
+                }
+                else
+                {
+                    // 기본 채널 (0-10V)
+                    result.ExpansionVoltageValues[expansionIndex] = ConvertToVoltage(rawValue, VoltageRange.Range_0_10V);
+                }
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Raw 값을 전압으로 변환
+        /// M31 시리즈: Process quantity 레지스터 사용 시 -27648 ~ +27648
+        /// 일반 레지스터 사용 시 0~20000 (uV) 또는 직접 변환
+        /// </summary>
+        private double ConvertToVoltage(int rawValue, VoltageRange range)
+        {
+            switch (range)
+            {
+                case VoltageRange.Range_0_10V:
+                    // 기존 방식 유지 (rawValue / 1000.0)
+                    // 또는 M31 스펙에 맞게: rawValue * 10.0 / 27648.0
+                    return rawValue / 1000.0;
+
+                case VoltageRange.Range_Neg10_Pos10V:
+                    // ±10V: 부호 있는 값으로 변환
+                    // rawValue가 unsigned로 들어오면 signed로 변환
+                    short signedValue = (short)rawValue;
+                    // M31 Process quantity: -27648 ~ +27648 → -10V ~ +10V
+return signedValue / 1000.0;
+
+                case VoltageRange.Range_Neg5_Pos5V:
+                    // ±5V
+                    short signed5V = (short)rawValue;
+                    return signed5V * 5.0 / 27648.0;
+
+                default:
+                    return rawValue / 1000.0;
+            }
         }
 
         private AnalogOutputValues ParseAOResponse(byte[] response)
@@ -530,6 +789,12 @@ namespace VacX_OutSense.Core.Devices.IO_Module
             {
                 await Task.Delay(100);
                 await CheckStatusAsync();
+
+                // 추가 AI 채널 레인지 설정
+                if (_additionalAIRange == VoltageRange.Range_Neg10_Pos10V)
+                {
+                    await InitializeAdditionalAIChannelAsync();
+                }
             });
         }
 

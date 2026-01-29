@@ -308,6 +308,11 @@ namespace VacX_OutSense.Forms
             {
                 lblProfileDesc.Text = profile.Description?.Split('\n')[0] ?? "";
 
+                // 현재 값 저장
+                decimal oldRampRate = numRampRate.Value;
+                decimal oldTargetTemp = numTargetTemp.Value;
+                bool valueAdjusted = false;
+
                 // 범위 제한 적용
                 numRampRate.Minimum = (decimal)profile.MinRampRate;
                 numRampRate.Maximum = (decimal)profile.MaxRampRate;
@@ -316,13 +321,40 @@ namespace VacX_OutSense.Forms
 
                 // 현재 값이 범위를 벗어나면 조정
                 if (numRampRate.Value < numRampRate.Minimum)
+                {
                     numRampRate.Value = numRampRate.Minimum;
+                    valueAdjusted = true;
+                }
                 if (numRampRate.Value > numRampRate.Maximum)
+                {
                     numRampRate.Value = numRampRate.Maximum;
+                    valueAdjusted = true;
+                }
                 if (numTargetTemp.Value < numTargetTemp.Minimum)
+                {
                     numTargetTemp.Value = numTargetTemp.Minimum;
+                    valueAdjusted = true;
+                }
                 if (numTargetTemp.Value > numTargetTemp.Maximum)
+                {
                     numTargetTemp.Value = numTargetTemp.Maximum;
+                    valueAdjusted = true;
+                }
+
+                // 값이 조정되었으면 알림
+                if (valueAdjusted)
+                {
+                    string msg = $"프로파일 '{profile.Name}'의 제한에 맞게 값이 조정되었습니다.\n\n";
+                    msg += $"승온 속도: {profile.MinRampRate:F1} ~ {profile.MaxRampRate:F1} °C/min\n";
+                    msg += $"목표 온도: {profile.MinTargetTemperature:F0} ~ {profile.MaxHeaterTemperature:F0} °C";
+
+                    lblProfileDesc.Text = "⚠️ 값이 프로파일 범위로 조정됨";
+                    lblProfileDesc.ForeColor = Color.OrangeRed;
+                }
+                else
+                {
+                    lblProfileDesc.ForeColor = Color.Gray;
+                }
             }
         }
 
@@ -349,8 +381,11 @@ namespace VacX_OutSense.Forms
 
         private void LoadSettings()
         {
-            numTargetTemp.Value = (decimal)_settings.TargetTemperature;
-            numRampRate.Value = (decimal)_settings.RampRate;
+            // 값을 범위 내로 제한해서 설정 (저장된 값이 프로파일 범위를 벗어날 수 있음)
+            numTargetTemp.Value = Math.Max(numTargetTemp.Minimum,
+                Math.Min(numTargetTemp.Maximum, (decimal)_settings.TargetTemperature));
+            numRampRate.Value = Math.Max(numRampRate.Minimum,
+                Math.Min(numRampRate.Maximum, (decimal)_settings.RampRate));
             numHoldTime.Value = _settings.HoldTimeMinutes;
             cboEndAction.SelectedIndex = (int)_settings.EndAction;
             chkAutoStartTimer.Checked = _settings.AutoStartTimerOnTargetReached;

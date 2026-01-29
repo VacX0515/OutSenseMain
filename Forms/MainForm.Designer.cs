@@ -198,6 +198,7 @@ namespace VacX_OutSense
             txtLog = new RichTextBox();
             tabPageAutoRun = new TabPage();
             tabPageThermalRamp = new TabPage();
+            simpleRampControl1 = new SimpleRampControl();
             menuStrip = new MenuStrip();
             menuFile = new ToolStripMenuItem();
             menuFileExit = new ToolStripMenuItem();
@@ -240,6 +241,7 @@ namespace VacX_OutSense
             tableLayoutPanel1.SuspendLayout();
             tableLayoutPanel5.SuspendLayout();
             tabPage2.SuspendLayout();
+            tabPageThermalRamp.SuspendLayout();
             menuStrip.SuspendLayout();
             statusStrip.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)gridViewMaster).BeginInit();
@@ -272,6 +274,7 @@ namespace VacX_OutSense
             tabControlMain.SelectedIndex = 0;
             tabControlMain.Size = new Size(1165, 957);
             tabControlMain.TabIndex = 1;
+            tabControlMain.SelectedIndexChanged += tabControlMain_SelectedIndexChanged;
             // 
             // tabPage1
             // 
@@ -735,7 +738,7 @@ namespace VacX_OutSense
             btnCh1AutoStart.Name = "btnCh1AutoStart";
             btnCh1AutoStart.Size = new Size(120, 28);
             btnCh1AutoStart.TabIndex = 15;
-            btnCh1AutoStart.Text = "자동 시작 대기";
+            btnCh1AutoStart.Text = "자동 유지 시작";
             btnCh1AutoStart.UseVisualStyleBackColor = true;
             btnCh1AutoStart.Click += btnCh1AutoStart_Click;
             // 
@@ -2305,6 +2308,7 @@ namespace VacX_OutSense
             // 
             // tabPageThermalRamp
             // 
+            tabPageThermalRamp.Controls.Add(simpleRampControl1);
             tabPageThermalRamp.Location = new Point(4, 24);
             tabPageThermalRamp.Name = "tabPageThermalRamp";
             tabPageThermalRamp.Padding = new Padding(3);
@@ -2312,6 +2316,18 @@ namespace VacX_OutSense
             tabPageThermalRamp.TabIndex = 5;
             tabPageThermalRamp.Text = "온도 램프(Debug)";
             tabPageThermalRamp.UseVisualStyleBackColor = true;
+            // 
+            // simpleRampControl1
+            // 
+            simpleRampControl1.AutoStartTimerOnTargetReached = true;
+            simpleRampControl1.BackColor = SystemColors.Control;
+            simpleRampControl1.Dock = DockStyle.Fill;
+            simpleRampControl1.EndAction = Core.Control.BakeoutEndAction.MaintainTemperature;
+            simpleRampControl1.HoldAfterComplete = true;
+            simpleRampControl1.Location = new Point(3, 3);
+            simpleRampControl1.Name = "simpleRampControl1";
+            simpleRampControl1.Size = new Size(186, 66);
+            simpleRampControl1.TabIndex = 0;
             // 
             // menuStrip
             // 
@@ -2462,6 +2478,7 @@ namespace VacX_OutSense
             tableLayoutPanel5.ResumeLayout(false);
             tableLayoutPanel5.PerformLayout();
             tabPage2.ResumeLayout(false);
+            tabPageThermalRamp.ResumeLayout(false);
             menuStrip.ResumeLayout(false);
             menuStrip.PerformLayout();
             statusStrip.ResumeLayout(false);

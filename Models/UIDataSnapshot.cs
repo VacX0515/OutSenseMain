@@ -38,6 +38,19 @@ namespace VacX_OutSense.Models
 
         // 버튼 활성화 상태
         public ButtonStates ButtonStates { get; set; } = new ButtonStates();
+
+        /// <summary>
+        /// 추가 AI 값 (±10V)
+        /// 확장 모듈 채널 5의 ±10V 아날로그 입력 값
+        /// </summary>
+        public double AdditionalAIValue { get; set; }
+
+        /// <summary>
+        /// 추가 AI 타임스탬프
+        /// </summary>
+        public DateTime AdditionalAITimestamp { get; set; }
+
+
     }
 
     public class PumpUIData
