@@ -26,7 +26,6 @@ namespace VacX_OutSense
     {
         #region 필드 및 속성
 
-
         #region AutoRun 관련 필드
         private AutoRunService _autoRunService;
         private AutoRunConfiguration _autoRunConfig;
@@ -51,7 +50,6 @@ namespace VacX_OutSense
         #region 베이크 아웃 관련 필드
         private ThermalRampProfileManager _profileManager;
         private BakeoutSettings _bakeoutSettings;
-        private bool _ch1AutoStartWaiting = false;  // 자동 시작 대기 중 여부
         #endregion
 
         #region 타이머 관련 필드
@@ -378,12 +376,6 @@ namespace VacX_OutSense
             // ★ 추가: SimpleRampControl 초기화
             InitializeSimpleRampControl();
 
-            // ★ 추가: RampSettingControl 초기화 (장치 생성 후)
-            if (rampSettingControl1 != null && _tempController != null)
-            {
-                rampSettingControl1.Initialize(_tempController, 1);
-            }
-
 
             LogInfo("서비스 시작 완료");
         }
@@ -642,7 +634,7 @@ namespace VacX_OutSense
                     try
                     {
                         if (snapshot.Connections.IOModule)
-                            DataLoggerService.Instance.LogDataAsync("Pressure", new List<string> { snapshot.AtmPressure.ToString("F2"), snapshot.PiraniPressure.ToString("E2"), snapshot.IonPressure.ToString("E2"), snapshot.IonGaugeStatus, snapshot.GateValveStatus, snapshot.VentValveStatus, snapshot.ExhaustValveStatus, snapshot.IonGaugeHVStatus, (snapshot.AdditionalAIValue).ToString("F5")
+                            DataLoggerService.Instance.LogDataAsync("Pressure", new List<string> { snapshot.AtmPressure.ToString("F2"), snapshot.PiraniPressure.ToString("E2"), snapshot.IonPressure.ToString("E2"), snapshot.IonGaugeStatus, snapshot.GateValveStatus, snapshot.VentValveStatus, snapshot.ExhaustValveStatus, snapshot.IonGaugeHVStatus, (snapshot.AdditionalAIValue * 20000).ToString("F6")
 });
 
                         if (snapshot.Connections.DryPump && _dryPump?.Status != null)
@@ -754,19 +746,7 @@ namespace VacX_OutSense
         private void btnBathCirculatorSetTemp_Click(object sender, EventArgs e) { if (_bathCirculator == null || !_bathCirculator.IsConnected) return; string input = Microsoft.VisualBasic.Interaction.InputBox("목표 온도 (℃):", "온도 설정", _bathCirculator.Status.SetTemperature.ToString("F1")); if (!string.IsNullOrEmpty(input) && double.TryParse(input, out double temp)) { if (_bathCirculator.SetTemperature(temp)) LogInfo($"칠러 온도 설정: {temp}℃"); } }
         private void btnBathCirculatorSetTime_Click(object sender, EventArgs e) { /* 기존 코드 유지 */ }
 
-        private async void btnCh1Start_Click(object sender, EventArgs e) { btnCh1Start.Enabled = false; 
-            try {
-                // ★ 램프 설정 적용 (Ramp 활성화 시)
-                if (rampSettingControl1 != null && rampSettingControl1.IsRampEnabled)
-                {
-                    rampSettingControl1.ApplyRampSettings();
-                }
-
-                await Task.Run(() => 
-
-            _tempController.Start(1)); LogInfo("온도컨트롤러 CH1 시작");
-                if (chkCh1TimerEnabled.Checked) StartCh1Timer(); } finally { btnCh1Start.Enabled = true; } }
-
+        private async void btnCh1Start_Click(object sender, EventArgs e) { btnCh1Start.Enabled = false; try { await Task.Run(() => _tempController.Start(1)); LogInfo("온도컨트롤러 CH1 시작"); if (chkCh1TimerEnabled.Checked) StartCh1Timer(); } finally { btnCh1Start.Enabled = true; } }
         private async void btnCh1Stop_Click(object sender, EventArgs e) { btnCh1Stop.Enabled = false; try { await Task.Run(() => _tempController.Stop(1)); LogInfo("온도컨트롤러 CH1 정지"); if (_ch1TimerActive || _ch1WaitingForTargetTemp || _ch1WaitingForVacuum) StopCh1Timer(); } finally { btnCh1Stop.Enabled = true; } }
         private void btnCh1SetTemp_Click(object sender, EventArgs e) { ShowTemperatureSetDialog(1); }
         private async void btnCh1AutoTuning_Click(object sender, EventArgs e) { if (_tempController == null || !_tempController.IsConnected) return; if (MessageBox.Show("CH1 오토튜닝을 시작하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) { btnCh1AutoTuning.Enabled = false; try { if (await Task.Run(() => _tempController.StartAutoTuning(1))) { LogInfo("CH1 오토튜닝 시작"); MessageBox.Show("CH1 오토튜닝 시작됨", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information); } else { LogError("CH1 오토튜닝 시작 실패"); MessageBox.Show("오토튜닝 실패", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error); } } finally { btnCh1AutoTuning.Enabled = true; } } }
@@ -878,213 +858,51 @@ namespace VacX_OutSense
         /// <summary>
         /// 자동 시작 대기 시작 (버튼 클릭 또는 외부 호출)
         /// </summary>
-        private void StartCh1AutoStartWaiting()
+        public void StartCh1AutoStartWaiting()
         {
-            if (!chkCh1AutoStartEnabled.Checked)
+            if (!chkCh1TimerEnabled.Checked || !_ch1AutoStartEnabled)
             {
-                MessageBox.Show("자동 시작을 먼저 활성화하세요.", "알림",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("타이머와 자동 시작이 활성화되어야 합니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // ★ 타이머 설정 확인
             int hours = (int)numCh1Hours.Value;
             int minutes = (int)numCh1Minutes.Value;
             int seconds = (int)numCh1Seconds.Value;
 
-            if (chkCh1TimerEnabled.Checked && hours == 0 && minutes == 0 && seconds == 0)
+            if (hours == 0 && minutes == 0 && seconds == 0)
             {
-                MessageBox.Show("타이머 시간을 설정해주세요.", "알림",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("타이머 시간을 설정해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            // ★ 모든 상태 초기화
-            _ch1AutoStartWaiting = true;
+            _ch1Duration = new TimeSpan(hours, minutes, seconds);
             _ch1WaitingForVacuum = true;
             _ch1WaitingForTargetTemp = false;
             _ch1TimerActive = false;
-            _ch1PressureReachCount = 0;
+            _ch1PressureReachCount = 0;  // 카운터 초기화
 
-            // ★ UI 컨트롤에서 값 동기화
-            _ch1TargetPressure = scientificPressureInput1.Value;
-            _ch1RequiredReachCount = (int)numCh1ReachCount.Value;
-            _ch1Duration = new TimeSpan(hours, minutes, seconds);
-
-            // 버튼 상태 변경
-            btnCh1AutoStart.Text = "자동 시작 종료";
-            btnCh1AutoStart.BackColor = Color.LightCoral;
-
-            // 타이머 시작
-            if (!_ch1AutoStopTimer.Enabled)
-                _ch1AutoStopTimer.Start();
-
+            _ch1AutoStopTimer.Start();
             UpdateCh1TimerControls();
-
-            lblCh1TimeRemainingValue.Text = "압력 대기중...";
+            lblCh1TimeRemainingValue.Text = "진공 대기중...";
             lblCh1TimeRemainingValue.ForeColor = Color.Purple;
 
-            LogInfo($"[CH1] 자동 시작 대기 시작 - 목표 압력: {_ch1TargetPressure:E1} Torr, 도달 횟수: {_ch1RequiredReachCount}회");
+            LogInfo($"CH1 자동 시작 대기 - 목표: {_ch1TargetPressure:E1} Torr ({_ch1RequiredReachCount}회 확인), 타이머: {_ch1Duration}");
         }
-
-        private void StopCh1AutoStartWaiting()
-        {
-            _ch1AutoStartWaiting = false;
-            _ch1WaitingForVacuum = false;       // ★ 추가
-            _ch1PressureReachCount = 0;
-
-            // ★ 버튼 텍스트 복원
-            btnCh1AutoStart.Text = "자동 시작 대기";
-            btnCh1AutoStart.BackColor = SystemColors.Control;
-
-            lblCh1TimeRemainingValue.Text = "00:00:00";
-            lblCh1TimeRemainingValue.ForeColor = Color.Blue;
-
-            UpdateCh1TimerControls();           // ★ 추가
-
-            LogInfo("[CH1] 자동 시작 대기 종료");
-
-            // 램프 실행 중이었으면 정지
-            if (simpleRampControl1 != null && simpleRampControl1.IsRunning)
-            {
-                simpleRampControl1.RampController?.Stop();
-                LogInfo("[CH1] 램프 제어 정지");
-            }
-        }
-
-        ///// <summary>
-        ///// 자동 시작 버튼 클릭 이벤트
-        ///// </summary>
-        //private void btnCh1AutoStart_Click(object sender, EventArgs e)
-        //{
-        //    if (!_ch1AutoStartWaiting)
-        //    {
-        //        // 자동 시작 대기 시작
-        //        StartCh1AutoStartWaiting();
-        //    }
-        //    else
-        //    {
-        //        // 자동 시작 대기 종료
-        //        StopCh1AutoStartWaiting();
-        //    }
-        //}
 
         /// <summary>
-        /// 자동 시작 버튼 클릭 - Hold 유지 모드만 실행
+        /// 자동 시작 버튼 클릭 이벤트
         /// </summary>
         private void btnCh1AutoStart_Click(object sender, EventArgs e)
         {
-            if (!_ch1AutoStartWaiting)
+            if (_ch1WaitingForVacuum || _ch1WaitingForTargetTemp || _ch1TimerActive)
             {
-                // Hold 유지 모드 시작
-                StartCh1HoldMode();
+                StopCh1Timer();
+                LogInfo("CH1 자동 시작/정지 취소됨");
             }
             else
             {
-                // Hold 유지 모드 종료
-                StopCh1HoldMode();
-            }
-        }
-
-        /// <summary>
-        /// CH2 온도 유지 모드 시작 (램프 컨트롤러의 Hold 모드 사용)
-        /// </summary>
-        private void StartCh1HoldMode()
-        {
-            if (simpleRampControl1 == null || simpleRampControl1.RampController == null)
-            {
-                MessageBox.Show("램프 컨트롤러가 초기화되지 않았습니다.", "알림",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            // 현재 CH2 온도를 목표로 설정
-            double currentCh2Temp = 25.0;
-            if (_tempController?.Status?.ChannelStatus != null && _tempController.Status.ChannelStatus.Length > 1)
-            {
-                var ch2 = _tempController.Status.ChannelStatus[1];
-                currentCh2Temp = ch2.PresentValue / (ch2.Dot == 0 ? 1.0 : 10.0);
-            }
-
-            // 목표 온도 입력 받기
-            string input = Microsoft.VisualBasic.Interaction.InputBox(
-                "CH2 유지 목표 온도 (°C):",
-                "온도 유지 모드",
-                currentCh2Temp.ToString("F1"));
-
-            if (string.IsNullOrEmpty(input) || !double.TryParse(input, out double targetTemp))
-                return;
-
-            _ch1AutoStartWaiting = true;
-
-            // 버튼 상태 변경
-            btnCh1AutoStart.Text = "유지 모드 종료";
-            btnCh1AutoStart.BackColor = Color.LightGreen;
-
-            // 램프 컨트롤러에 Hold 모드 직접 시작 요청
-            StartHoldModeAsync(targetTemp);
-
-            UpdateCh1TimerControls();
-
-            lblCh1TimeRemainingValue.Text = $"유지 중: {targetTemp:F1}°C";
-            lblCh1TimeRemainingValue.ForeColor = Color.Green;
-
-            LogInfo($"[CH1] 온도 유지 모드 시작 - 목표: {targetTemp:F1}°C");
-        }
-
-        /// <summary>
-        /// CH2 온도 유지 모드 종료
-        /// </summary>
-        private void StopCh1HoldMode()
-        {
-            _ch1AutoStartWaiting = false;
-
-            // 버튼 상태 복원
-            btnCh1AutoStart.Text = "온도 유지 시작";
-            btnCh1AutoStart.BackColor = SystemColors.Control;
-
-            // 램프 컨트롤러 정지
-            if (simpleRampControl1?.RampController != null)
-            {
-                simpleRampControl1.RampController.Stop();
-            }
-
-            UpdateCh1TimerControls();
-
-            lblCh1TimeRemainingValue.Text = "00:00:00";
-            lblCh1TimeRemainingValue.ForeColor = Color.Blue;
-
-            LogInfo("[CH1] 온도 유지 모드 종료");
-        }
-
-        /// <summary>
-        /// Hold 모드 비동기 시작
-        /// </summary>
-        private async void StartHoldModeAsync(double targetTemp)
-        {
-            try
-            {
-                // 프로파일 로드
-                string profileName = _bakeoutSettings?.ProfileName ?? "박막/웨이퍼";
-
-                bool success = await simpleRampControl1.StartHoldModeAsync(targetTemp, profileName);
-
-                if (!success)
-                {
-                    RunOnUIThread(() =>
-                    {
-                        LogWarning("[CH1] 유지 모드 시작 실패");
-                        StopCh1HoldMode();
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                RunOnUIThread(() =>
-                {
-                    LogError($"[CH1] 유지 모드 오류: {ex.Message}");
-                    StopCh1HoldMode();
-                });
+                StartCh1AutoStartWaiting();
             }
         }
 
@@ -1354,12 +1172,6 @@ namespace VacX_OutSense
                 if (feo) await ExecuteWithRetry("EV 닫기", async () => { bool r = await _ioModule.ControlExhaustValveAsync(false); await Task.Delay(1000); return r; }, btn_EV, 3, 1000);
 
                 LogInfo("CH1 종료 시퀀스 완료");
-
-                // 타이머 완료 시 버튼 복원
-                btnCh1AutoStart.Text = "자동 시작 대기";
-                btnCh1AutoStart.BackColor = SystemColors.Control;
-                _ch1AutoStartWaiting = false;
-
                 ShowMessageBox("CH1 종료 시퀀스 완료", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -1408,7 +1220,7 @@ namespace VacX_OutSense
 
         private void InitializeDataLogging()
         {
-            DataLoggerService.Instance.StartLogging("Pressure", new List<string> { "ATM(kPa)", "Pirani(Torr)", "Ion(Torr)", "IonStatus", "GateValve", "VentValve", "ExhaustValve", "IonGaugeHV", "Delta Freq(Hz)" });
+            DataLoggerService.Instance.StartLogging("Pressure", new List<string> { "ATM(kPa)", "Pirani(Torr)", "Ion(Torr)", "IonStatus", "GateValve", "VentValve", "ExhaustValve", "IonGaugeHV", "Delta Freq" });
             DataLoggerService.Instance.StartLogging("DryPump", new List<string> { "Status", "Frequency(Hz)", "Current(A)", "Temperature(°C)", "HasWarning", "HasFault" });
             DataLoggerService.Instance.StartLogging("TurboPump", new List<string> { "Status", "Speed(RPM)", "Current(A)", "Temperature(°C)", "HasWarning", "HasError" });
             DataLoggerService.Instance.StartLogging("BathCirculator", new List<string> { "Status", "CurrentTemp(°C)", "TargetTemp(°C)", "Mode", "Time", "HasError", "HasWarning" });
@@ -1468,9 +1280,7 @@ namespace VacX_OutSense
         private void MenuCommSettings_Click(object sender, EventArgs e) { MessageBox.Show("통신 설정은 메인 화면에서 변경 가능합니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information); }
         private void MenuHelpAbout_Click(object sender, EventArgs e) { MessageBox.Show("VacX OutSense System Controller\nv1.0.0\n\n© 2024 VacX Inc.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information); }
         private void tableLayoutPanel3_Paint(object sender, PaintEventArgs e) { }
-        private void rampSettingControl1_Load(object sender, EventArgs e)
-        { 
-        }
+        private void rampSettingControl1_Load(object sender, EventArgs e) { }
 
         #endregion
 
@@ -1501,6 +1311,36 @@ namespace VacX_OutSense
         {
 
         }
+
+        // MainForm.cs에 추가
+
+        /// <summary>
+        /// Hold 모드 설정 버튼 클릭
+        /// </summary>
+        private void btnHoldSettings_Click(object sender, EventArgs e)
+        {
+            var currentSettings = simpleRampControl1?.RampController?.HoldSettings
+                                  ?? HoldModeSettings.Load();
+
+            using (var form = new HoldModeSettingsForm(currentSettings))
+            {
+                if (form.ShowDialog() == DialogResult.OK)
+                {
+                    // 컨트롤러에 적용
+                    if (simpleRampControl1?.RampController != null)
+                    {
+                        simpleRampControl1.RampController.HoldSettings = form.Settings;
+                    }
+
+                    LogInfo($"[Hold] 설정 변경: {form.Settings.GetSourceText()}, " +
+                            $"간격={form.Settings.CheckIntervalMinutes}분, " +
+                            $"SV 범위={form.Settings.MinHeaterTemp}~{form.Settings.MaxHeaterTemp}°C");
+                }
+            }
+        }
+
+
+
 
         #endregion
 

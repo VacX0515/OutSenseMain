@@ -738,7 +738,7 @@ namespace VacX_OutSense
             btnCh1AutoStart.Name = "btnCh1AutoStart";
             btnCh1AutoStart.Size = new Size(120, 28);
             btnCh1AutoStart.TabIndex = 15;
-            btnCh1AutoStart.Text = "자동 유지 시작";
+            btnCh1AutoStart.Text = "자동 시작 대기";
             btnCh1AutoStart.UseVisualStyleBackColor = true;
             btnCh1AutoStart.Click += btnCh1AutoStart_Click;
             // 

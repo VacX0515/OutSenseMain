@@ -58,72 +58,60 @@ namespace VacX_OutSense.Core.Devices.IO_Module
         private const ushort REG_ADDR_AI_FLOAT = 0x03E8;  // Floating-point 시작 주소
 
         /// <summary>
-        /// 특정 채널의 AI 값을 Floating-point로 읽기 (내부 호출용)
+        /// 특정 채널의 AI 값을 Floating-point로 읽기 (내부 호출용 - 세마포어 없음)
         /// </summary>
-        public async Task<double?> ReadAIChannelFloatAsync(int channel, int maxRetry = 2)
+        public async Task<double?> ReadAIChannelFloatAsync(int channel)
         {
             if (channel < 1 || channel > 8) return null;
 
-            for (int retry = 0; retry < maxRetry; retry++)
+            // ★ 세마포어 제거 (호출부에서 이미 락 보유)
+            try
             {
-                try
-                {
-                    if (retry > 0)
-                        await Task.Delay(30);  // 재시도 전 대기
+                _communicationManager.DiscardInBuffer();
+                _communicationManager.DiscardOutBuffer();
+                await Task.Delay(BUFFER_CLEAR_DELAY);
 
-                    _communicationManager.DiscardInBuffer();
-                    _communicationManager.DiscardOutBuffer();
-                    await Task.Delay(BUFFER_CLEAR_DELAY);
+                int registerOffset = (4 + channel - 1) * 2;
+                ushort regAddress = (ushort)(REG_ADDR_AI_FLOAT + registerOffset);
 
-                    int registerOffset = (4 + channel - 1) * 2;
-                    ushort regAddress = (ushort)(REG_ADDR_AI_FLOAT + registerOffset);
+                byte[] request = new byte[8];
+                request[0] = _slaveId;
+                request[1] = FUNCTION_READ_INPUT_REGISTERS;
+                request[2] = (byte)((regAddress >> 8) & 0xFF);
+                request[3] = (byte)(regAddress & 0xFF);
+                request[4] = 0x00;
+                request[5] = 0x02;
 
-                    byte[] request = new byte[8];
-                    request[0] = _slaveId;
-                    request[1] = FUNCTION_READ_INPUT_REGISTERS;
-                    request[2] = (byte)((regAddress >> 8) & 0xFF);
-                    request[3] = (byte)(regAddress & 0xFF);
-                    request[4] = 0x00;
-                    request[5] = 0x02;
+                ushort crc = CalculateCRC(request, 6);
+                request[6] = (byte)(crc & 0xFF);
+                request[7] = (byte)((crc >> 8) & 0xFF);
 
-                    ushort crc = CalculateCRC(request, 6);
-                    request[6] = (byte)(crc & 0xFF);
-                    request[7] = (byte)((crc >> 8) & 0xFF);
+                if (!_communicationManager.Write(request, 0, request.Length))
+                    return null;
 
-                    if (!_communicationManager.Write(request, 0, request.Length))
-                        continue;  // 재시도
+                await Task.Delay(50);
+                byte[] response = _communicationManager.ReadAll();
 
-                    await Task.Delay(50);
-                    byte[] response = _communicationManager.ReadAll();
+                if (response == null || response.Length < 9)
+                    return null;
 
-                    if (response == null || response.Length < 9)
-                        continue;  // 재시도
+                if (response[1] != FUNCTION_READ_INPUT_REGISTERS)
+                    return null;
 
-                    if (response[1] != FUNCTION_READ_INPUT_REGISTERS)
-                        continue;  // 재시도
+                // IEEE754 변환
+                byte[] floatBytes = new byte[4];
+                floatBytes[3] = response[3];
+                floatBytes[2] = response[4];
+                floatBytes[1] = response[5];
+                floatBytes[0] = response[6];
 
-                    // IEEE754 변환
-                    byte[] floatBytes = new byte[4];
-                    floatBytes[3] = response[3];
-                    floatBytes[2] = response[4];
-                    floatBytes[1] = response[5];
-                    floatBytes[0] = response[6];
-
-                    float value = BitConverter.ToSingle(floatBytes, 0);
-
-                    // ★ 유효성 검사 (NaN, Infinity 제외)
-                    if (float.IsNaN(value) || float.IsInfinity(value))
-                        continue;  // 재시도
-
-                    return value;
-                }
-                catch
-                {
-                    // 재시도
-                }
+                return BitConverter.ToSingle(floatBytes, 0);
             }
-
-            return null;  // 모든 재시도 실패
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"AI Float 읽기 오류: {ex.Message}");
+                return null;
+            }
         }
 
         #endregion

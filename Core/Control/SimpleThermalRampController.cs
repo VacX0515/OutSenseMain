@@ -82,6 +82,10 @@ namespace VacX_OutSense.Core.Control
 
         #region 필드
 
+        private DateTime _holdCheckStartTime;
+        private double _holdCheckStartTemp;
+
+
         private readonly TempController _tempController;
         private ThermalRampProfile _currentProfile;
         private System.Timers.Timer _controlTimer;
@@ -135,6 +139,15 @@ namespace VacX_OutSense.Core.Control
         // 평형점 탐색
         private double _equilibriumHeaterTemp = 0;  // 발견된 평형 히터 온도
         private int _approachAdjustCount = 0;       // 접근 중 조정 횟수
+
+        private HoldModeSettings _holdSettings;
+
+        public HoldModeSettings HoldSettings
+        {
+            get => _holdSettings;
+            set => _holdSettings = value ?? new HoldModeSettings();
+        }
+
 
         #endregion
 
@@ -222,6 +235,7 @@ namespace VacX_OutSense.Core.Control
         public SimpleThermalRampController(TempController tempController)
         {
             _tempController = tempController ?? throw new ArgumentNullException(nameof(tempController));
+            _holdSettings = HoldModeSettings.Load();  // ★ 설정 로드
 
             _controlTimer = new System.Timers.Timer(1000); // 1초 주기 (통신 충돌 방지)
             _controlTimer.Elapsed += ControlTimer_Elapsed;
@@ -316,17 +330,10 @@ namespace VacX_OutSense.Core.Control
                     safeInitialHeater = Math.Min(safeInitialHeater, profile.MaxHeaterTemperature);
                     _learningStartHeaterTemp = safeInitialHeater;
 
-                    // 수정:
-                    // ★ Start 전에 직접 SV 설정
-                    ApplySetpointDirect(safeInitialHeater);
-
+                    SetHeaterTemperature(safeInitialHeater);
                     _tempController.Start(HeaterChannel);
-                    await Task.Delay(200);
+                    await Task.Delay(100);
                     _state = RampState.Learning;
-
-                    // ★ Start 후에도 다시 설정 (TM4가 내부값으로 복원했을 수 있음)
-                    ApplySetpointDirect(safeInitialHeater);
-
                 }
 
                 // 제어 시작
@@ -339,42 +346,6 @@ namespace VacX_OutSense.Core.Control
                 OnError($"램프 시작 실패: {ex.Message}");
                 _state = RampState.Error;
                 return false;
-            }
-        }
-
-
-
-
-        /// <summary>
-        /// 히터 설정 즉시 적용 (긴급 시)
-        /// </summary>
-        private void SetHeaterTemperatureImmediate(double temperature)
-        {
-            try
-            {
-                var status = _tempController.Status.ChannelStatus[HeaterChannel - 1];
-                short setValue = (short)(temperature * (status.Dot == 0 ? 1 : 10));
-                _tempController.SetTemperature(HeaterChannel, setValue);
-            }
-            catch { }
-        }
-
-
-        /// <summary>
-        /// 설정값 직접 적용 (pendingSetpoint 무시)
-        /// </summary>
-        private void ApplySetpointDirect(double temperature)
-        {
-            try
-            {
-                var status = _tempController.Status.ChannelStatus[HeaterChannel - 1];
-                short setValue = (short)(temperature * (status.Dot == 0 ? 1 : 10));
-                _tempController.SetTemperature(HeaterChannel, setValue);
-                OnLog($"히터 SV 직접 설정: {temperature:F1}°C");
-            }
-            catch (Exception ex)
-            {
-                OnLog($"SV 설정 실패: {ex.Message}");
             }
         }
 
@@ -535,42 +506,6 @@ namespace VacX_OutSense.Core.Control
         }
 
         /// <summary>
-        /// 히터 설정값에 모든 제한 적용
-        /// </summary>
-        private double ApplyHeaterLimits(double setpoint, double sampleTemp)
-        {
-            // 1. MaxHeaterSampleGap 제한
-            setpoint = Math.Min(setpoint, sampleTemp + _currentProfile.MaxHeaterSampleGap);
-
-            // 2. MaxHeaterTemperature 제한
-            setpoint = Math.Min(setpoint, _currentProfile.MaxHeaterTemperature);
-
-            // 3. UseTargetSlowdown 적용 - 목표 근접 시 추가 제한
-            if (_currentProfile.UseTargetSlowdown)
-            {
-                double distanceToTarget = _targetSampleTemp - sampleTemp;
-
-                // HeatTransferDelay 기반 선제 감속 거리 계산
-                // 지연이 클수록 더 일찍 감속 시작
-                double slowdownDistance = Math.Max(3, _currentProfile.HeatTransferDelay / 10.0);
-
-                if (distanceToTarget <= 0)
-                    setpoint = Math.Min(setpoint, _targetSampleTemp - 3);
-                else if (distanceToTarget <= 1)
-                    setpoint = Math.Min(setpoint, _targetSampleTemp - 2);
-                else if (distanceToTarget <= slowdownDistance)
-                    setpoint = Math.Min(setpoint, _targetSampleTemp);
-                else if (distanceToTarget <= slowdownDistance * 2)
-                    setpoint = Math.Min(setpoint, _targetSampleTemp + 3);
-            }
-
-            // 4. 최소값 (샘플보다 너무 낮지 않게)
-            setpoint = Math.Max(setpoint, sampleTemp - 5);
-
-            return setpoint;
-        }
-
-        /// <summary>
         /// 학습 단계: 열 전달 계수 측정
         /// </summary>
         private void ExecuteLearningPhase(double sampleTemp, double heaterTemp)
@@ -578,20 +513,41 @@ namespace VacX_OutSense.Core.Control
             double elapsedSeconds = (DateTime.Now - _learningStartTime).TotalSeconds;
             double tempRise = sampleTemp - _learningStartSampleTemp;
 
-            // ★ 추가: 학습 중에도 MaxHeaterSampleGap 적용
-            double currentSetpoint = GetHeaterSetpoint();
-            double limitedSetpoint = ApplyHeaterLimits(currentSetpoint, sampleTemp);
-            if (Math.Abs(currentSetpoint - limitedSetpoint) > 0.5)
-            {
-                SetHeaterTemperature(limitedSetpoint);
-            }
-
-            // 학습 완료 조건 (기존 코드 유지)
+            // 학습 완료 조건: 시간 경과 또는 충분한 온도 상승
             if (elapsedSeconds >= LearningDurationSeconds || tempRise >= MinLearningTempRise * 2)
             {
-                // ... 기존 코드 ...
+                if (tempRise >= MinLearningTempRise)
+                {
+                    // 열 전달 계수 계산
+                    // K = 샘플 온도 변화율 / (평균 히터온도 - 평균 샘플온도)
+                    double avgHeaterTemp = (_learningStartHeaterTemp + heaterTemp) / 2;
+                    double avgSampleTemp = (_learningStartSampleTemp + sampleTemp) / 2;
+                    double tempDiff = avgHeaterTemp - avgSampleTemp;
+
+                    if (tempDiff > 1)
+                    {
+                        double ratePerMinute = tempRise / (elapsedSeconds / 60.0);
+                        _thermalTransferCoeff = ratePerMinute / tempDiff;
+                        _coefficientLearned = true;
+
+                        OnLog($"열 특성 학습 완료: K={_thermalTransferCoeff:F4} °C/min/°C");
+                        OnLog($"  (샘플 {tempRise:F2}°C 상승, 온도차 {tempDiff:F1}°C, {elapsedSeconds:F0}초)");
+                    }
+                }
+
+                if (!_coefficientLearned)
+                {
+                    // 학습 실패 → 기본값 사용
+                    _thermalTransferCoeff = 0.1;  // 보수적 기본값
+                    OnLog($"학습 데이터 부족, 기본 K={_thermalTransferCoeff} 사용");
+                }
+
+                // Ramping 단계로 전환
+                _state = RampState.Ramping;
+                OnLog("램프 제어 시작");
             }
         }
+
         /// <summary>
         /// 적응형 램프 제어 (학습된 K 사용)
         /// </summary>
@@ -600,9 +556,7 @@ namespace VacX_OutSense.Core.Control
             double distanceToTarget = _targetSampleTemp - sampleTemp;
 
             // 목표 근접 시 Approaching 모드로 전환
-            // ★ 수정: HeatTransferDelay 기반 전환 거리
-            double approachDistance = Math.Max(3, _currentProfile.HeatTransferDelay / 20.0);
-            if (distanceToTarget <= approachDistance)
+            if (distanceToTarget <= 3)
             {
                 _state = RampState.Approaching;
                 _approachAdjustCount = 0;
@@ -610,152 +564,104 @@ namespace VacX_OutSense.Core.Control
                 return;
             }
 
-            // ★ 추가: MaxRampRate 실시간 제한
-            if (_currentRampRate > _currentProfile.MaxRampRate * 1.1)
+            // === 안전 우선: 승온 속도 체크 ===
+            if (_currentRampRate > _rampRate * 1.2)  // 20% 초과
             {
-                double currentSetpoint = GetHeaterSetpoint();
-                double newSetpoint = currentSetpoint - 3;
-                newSetpoint = ApplyHeaterLimits(newSetpoint, sampleTemp);
-                SetHeaterTemperature(newSetpoint);
-                OnLog($"승온 속도 초과 ({_currentRampRate:F2} > {_currentProfile.MaxRampRate}), 히터 감소");
-                return;
-            }
-
-            // 승온 속도 체크 (기존)
-            if (_currentRampRate > _rampRate * 1.2)
-            {
+                // 속도 초과 → 히터 낮춤
                 double currentSetpoint = GetHeaterSetpoint();
                 double newSetpoint = currentSetpoint - 2;
-                newSetpoint = ApplyHeaterLimits(newSetpoint, sampleTemp);
+                newSetpoint = Math.Max(newSetpoint, sampleTemp);
                 SetHeaterTemperature(newSetpoint);
-                OnLog($"목표 속도 초과 ({_currentRampRate:F2}°C/min), 히터 감소");
+                OnLog($"승온 속도 초과 ({_currentRampRate:F2}°C/min), 히터 감소 → {newSetpoint:F1}°C");
                 return;
             }
 
-            // 예측 기반 히터 설정 (기존)
+            // === 예측 기반 히터 설정 ===
             double targetRampRate = _rampRate;
+
+            // 목표 승온을 위해 필요한 온도차 계산
+            // K = 승온속도 / 온도차 → 온도차 = 승온속도 / K
             double requiredTempDiff = _thermalTransferCoeff > 0
                 ? targetRampRate / _thermalTransferCoeff
-                : 20;
+                : 20;  // 기본값
 
+            // 안전 마진 적용 (80%)
             double targetHeaterTemp = sampleTemp + (requiredTempDiff * 0.8);
 
-            // ★ 수정: 공통 제한 함수 사용
-            targetHeaterTemp = ApplyHeaterLimits(targetHeaterTemp, sampleTemp);
+            // === 거리에 따른 추가 제한 ===
+            if (distanceToTarget <= 10)
+            {
+                // 10°C 이내: 더 보수적
+                targetHeaterTemp = Math.Min(targetHeaterTemp, _targetSampleTemp + 3);
+            }
+            else if (distanceToTarget <= 20)
+            {
+                // 20°C 이내: 약간 보수적
+                targetHeaterTemp = Math.Min(targetHeaterTemp, _targetSampleTemp + 10);
+            }
 
-            // 점진적 변경 (기존)
+            // 프로파일 제한 적용
+            targetHeaterTemp = Math.Min(targetHeaterTemp, _currentProfile.MaxHeaterTemperature);
+            targetHeaterTemp = Math.Min(targetHeaterTemp, sampleTemp + _currentProfile.MaxHeaterSampleGap);
+            targetHeaterTemp = Math.Max(targetHeaterTemp, sampleTemp);
+
+            // 현재 설정값과 비교해서 점진적 변경 (급격한 변화 방지)
             double currentSetpoint2 = GetHeaterSetpoint();
-            double maxChange = 3.0;
+            double maxChange = 3.0;  // 사이클당 최대 3°C 변화
             double newSetpoint2 = currentSetpoint2;
 
             if (targetHeaterTemp > currentSetpoint2)
+            {
                 newSetpoint2 = Math.Min(currentSetpoint2 + maxChange, targetHeaterTemp);
+            }
             else if (targetHeaterTemp < currentSetpoint2)
+            {
                 newSetpoint2 = Math.Max(currentSetpoint2 - maxChange, targetHeaterTemp);
+            }
 
             SetHeaterTemperature(newSetpoint2);
         }
+
+        /// <summary>
+        /// 접근 제어: 평형점 탐색
+        /// </summary>
         private void ExecuteApproachControl(double sampleTemp, double heaterTemp)
         {
             double error = _targetSampleTemp - sampleTemp;
             double currentSetpoint = GetHeaterSetpoint();
             double newSetpoint;
 
-            // ★ 1. 이미 초과 → 즉시 히터 낮춤
-            if (error < -0.3)
+            // 샘플이 목표를 초과한 경우 → 히터를 샘플 아래로
+            if (error < -0.5)
             {
-                newSetpoint = _targetSampleTemp - 3;
-                newSetpoint = ApplyHeaterLimits(newSetpoint, sampleTemp);
-                SetHeaterTemperatureImmediate(newSetpoint);
-                OnLog($"⚠️ 샘플 초과 ({sampleTemp:F1}°C), 히터 즉시 → {newSetpoint:F1}°C");
-                return;
+                newSetpoint = sampleTemp - 2;
+                OnLog($"샘플 초과 ({sampleTemp:F1}°C > 목표), 히터 감소");
             }
-
-            // ★ 2. UseTargetSlowdown 적용 - 선제 감속
-            if (_currentProfile.UseTargetSlowdown)
-            {
-                if (error < 0.5)
-                {
-                    newSetpoint = _targetSampleTemp - 2;
-                    newSetpoint = ApplyHeaterLimits(newSetpoint, sampleTemp);
-                    SetHeaterTemperatureImmediate(newSetpoint);
-                    return;
-                }
-                if (error < 1.0)
-                {
-                    newSetpoint = _targetSampleTemp - 1;
-                    newSetpoint = ApplyHeaterLimits(newSetpoint, sampleTemp);
-                    SetHeaterTemperature(newSetpoint);
-                    return;
-                }
-            }
-
-            // 3. 안정 범위 도달 → Stabilizing 전환
-            if (Math.Abs(error) <= _currentProfile.TemperatureStabilityRange)
+            // 샘플이 목표 범위 내 → 안정화로 전환
+            else if (Math.Abs(error) <= _currentProfile.TemperatureStabilityRange)
             {
                 _equilibriumHeaterTemp = currentSetpoint;
                 _state = RampState.Stabilizing;
                 _stabilizationStartTime = DateTime.Now;
-                OnLog($"목표 도달, 평형 히터: {_equilibriumHeaterTemp:F1}°C");
+                OnLog($"목표 도달, 평형 히터 온도: {_equilibriumHeaterTemp:F1}°C");
                 return;
             }
+            // 샘플이 목표 미만 → 히터 미세 증가
+            else
+            {
+                // 남은 거리에 비례해서 조정
+                double adjustment = error * 0.3;  // 30%만
+                adjustment = Math.Max(0.2, Math.Min(2.0, adjustment));  // 0.2~2°C
+                newSetpoint = currentSetpoint + adjustment;
 
-            // 4. 그 외 → 미세 증가
-            double adjustment = error * 0.2;
-            adjustment = Math.Max(0.2, Math.Min(1.0, adjustment));
-            newSetpoint = currentSetpoint + adjustment;
+                // 안전 제한
+                newSetpoint = Math.Min(newSetpoint, _targetSampleTemp + 5);
+                newSetpoint = Math.Min(newSetpoint, _currentProfile.MaxHeaterTemperature);
+            }
 
-            // ★ 공통 제한 적용
-            newSetpoint = ApplyHeaterLimits(newSetpoint, sampleTemp);
-
+            newSetpoint = Math.Max(newSetpoint, sampleTemp - 5);
             SetHeaterTemperature(newSetpoint);
             _approachAdjustCount++;
-        }
-
-        /// <summary>
-        /// Hold 모드만 시작 (램프 건너뛰고 바로 유지)
-        /// </summary>
-        public async Task<bool> StartHoldOnlyAsync(ThermalRampProfile profile, double targetTemp)
-        {
-            if (IsRunning)
-            {
-                OnError("이미 실행 중입니다.");
-                return false;
-            }
-
-            try
-            {
-                _currentProfile = profile;
-                _targetSampleTemp = targetTemp;
-                _rampStartTime = DateTime.Now;
-
-                // 현재 온도 읽기
-                double currentSampleTemp = GetSampleTemperature();
-                _initialSampleTemp = currentSampleTemp;
-
-                // 현재 히터 설정값을 평형점으로 가정
-                _equilibriumHeaterTemp = GetHeaterSetpoint();
-
-                OnLog($"Hold 모드 시작: 목표 {targetTemp:F1}°C, 현재 {currentSampleTemp:F1}°C");
-
-                // 5분 관찰 초기화
-                _holdCheckStartTime = DateTime.Now;
-                _holdCheckStartTemp = currentSampleTemp;
-
-                // 바로 Holding 상태로
-                _state = RampState.Holding;
-
-                // 제어 타이머 시작
-                _controlTimer.Start();
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                OnError($"Hold 모드 시작 실패: {ex.Message}");
-                _state = RampState.Error;
-                return false;
-            }
         }
 
         private void ExecuteStabilizationCheck(double sampleTemp)
@@ -788,11 +694,8 @@ namespace VacX_OutSense.Core.Control
                 {
                     // Hold 모드로 전환 (온도 유지 제어 계속)
                     _state = RampState.Holding;
-                    // ★ 5분 관찰 초기화
-                    _holdCheckStartTime = DateTime.Now;
-                    _holdCheckStartTemp = sampleTemp;
-
-                    OnLog("Hold 모드 전환 - 5분 주기 관찰 시작");
+                    OnLog("Hold 모드 전환 - 목표 온도 유지 제어 중");
+                    // _controlTimer는 계속 실행
                 }
                 else
                 {
@@ -813,114 +716,56 @@ namespace VacX_OutSense.Core.Control
             }
         }
 
-        // Hold 모드 - 5분 주기 관찰용
-        private DateTime _holdCheckStartTime;
-        private double _holdCheckStartTemp;
-        private const double HoldCheckIntervalSeconds = 300;  // 5분
+        /// <summary>
+        /// Hold 제어 (10분 주기)
+        /// </summary>
         private void ExecuteHoldControl(double sampleTemp, double heaterTemp)
         {
-            double error = _targetSampleTemp - sampleTemp;
-            double currentSetpoint = GetHeaterSetpoint();
+            // 설정에 따른 온도 읽기
+            double controlTemp = GetSampleTemperatureBySource();
 
-            // ★ 1. 즉시 대응: CH2가 목표 초과 (0.3°C 이상) → 바로 감소
-            if (error < -0.3)
-            {
-                double decrease = Math.Abs(error) * 2;
-                decrease = Math.Max(0.5, Math.Min(5, decrease));
+            // 체크 간격
+            double checkIntervalSeconds = _holdSettings.CheckIntervalMinutes * 60;
 
-                double newSetpoint = currentSetpoint - decrease;
-                newSetpoint = Math.Max(newSetpoint, _targetSampleTemp - 5);
-
-                SetHeaterTemperatureImmediate(newSetpoint);
-                OnLog($"Hold: CH2 초과({sampleTemp:F1}°C), CH1 SV 즉시 감소 → {newSetpoint:F1}°C");
-
-                // 관찰 리셋
-                _holdCheckStartTime = DateTime.Now;
-                _holdCheckStartTemp = sampleTemp;
-                return;
-            }
-
-            // ★ 2. 5분 주기 체크
             double elapsedSeconds = (DateTime.Now - _holdCheckStartTime).TotalSeconds;
-
-            if (elapsedSeconds < HoldCheckIntervalSeconds)
+            if (elapsedSeconds < checkIntervalSeconds)
             {
-                // 아직 5분 안됨 → 대기
                 return;
             }
 
-            // ★ 3. 5분 경과 → 변화량 계산
-            double tempChange = sampleTemp - _holdCheckStartTemp;
-            double changePerMinute = tempChange / (elapsedSeconds / 60.0);
-
-            OnLog($"Hold 체크: {_holdCheckStartTemp:F1}→{sampleTemp:F1}°C ({tempChange:+0.0;-0.0}°C / {elapsedSeconds / 60:F1}분)");
-
+            double error = _targetSampleTemp - controlTemp;
+            double currentSetpoint = GetHeaterSetpoint();
             double newSV = currentSetpoint;
 
-            // ★ 4. 상태별 SV 조정
-            if (error > 0.1)
+            string sourceText = _holdSettings.GetSourceText();
+            OnLog($"Hold 체크: {sourceText}={controlTemp:F1}°C, 목표={_targetSampleTemp:F1}°C, 오차={error:+0.0;-0.0}°C");
+
+            // 오차 허용 범위 체크
+            if (Math.Abs(error) > _holdSettings.ErrorTolerance)
             {
-                // CH2가 목표보다 낮음
-                if (tempChange <= 0.1)
-                {
-                    // 온도 상승 없음 → SV 증가
-                    newSV = currentSetpoint + 1;
-                    OnLog($"Hold: 온도 상승 없음, CH1 SV +1 → {newSV:F1}°C");
-                }
-                else if (tempChange < error * 0.5)
-                {
-                    // 상승 중이지만 느림 → SV 소폭 증가
-                    newSV = currentSetpoint + 0.5;
-                    OnLog($"Hold: 상승 느림, CH1 SV +0.5 → {newSV:F1}°C");
-                }
-                // else: 적절히 상승 중 → 유지
-            }
-            else if (error < -0.1)
-            {
-                // CH2가 목표보다 높음 (0.1~0.3 사이)
-                if (tempChange >= 0)
-                {
-                    // 계속 상승 중 → SV 감소
-                    newSV = currentSetpoint - 0.5;
-                    OnLog($"Hold: 초과 상태에서 상승 중, CH1 SV -0.5 → {newSV:F1}°C");
-                }
-                // else: 하강 중 → 유지
+                double adjustment = error * _holdSettings.AdjustmentMultiplier;
+                newSV = currentSetpoint + adjustment;
+                OnLog($"Hold: CH1 SV {currentSetpoint:F1} → {newSV:F1}°C ({adjustment:+0.0;-0.0})");
             }
             else
             {
-                // 목표 범위 내 (±0.1°C)
                 _equilibriumHeaterTemp = currentSetpoint;
-
-                if (Math.Abs(tempChange) > 0.2)
-                {
-                    // 범위 내지만 변화 큼 → 미세 조정
-                    if (tempChange > 0.2)
-                    {
-                        newSV = currentSetpoint - 0.3;
-                        OnLog($"Hold: 목표 도달, 상승 추세 → CH1 SV -0.3");
-                    }
-                    else if (tempChange < -0.2)
-                    {
-                        newSV = currentSetpoint + 0.3;
-                        OnLog($"Hold: 목표 도달, 하강 추세 → CH1 SV +0.3");
-                    }
-                }
+                OnLog($"Hold: 목표 유지 중");
             }
 
             // 제한 적용
-            newSV = Math.Max(newSV, _targetSampleTemp - 5);
-            newSV = Math.Min(newSV, _targetSampleTemp + _currentProfile.MaxHeaterSampleGap);
-            newSV = Math.Min(newSV, _currentProfile.MaxHeaterTemperature);
+            newSV = Math.Max(newSV, _holdSettings.MinHeaterTemp);
+            newSV = Math.Min(newSV, _holdSettings.MaxHeaterTemp);
 
             if (Math.Abs(newSV - currentSetpoint) > 0.1)
             {
                 SetHeaterTemperature(newSV);
             }
 
-            // ★ 5. 다음 5분 관찰 시작
             _holdCheckStartTime = DateTime.Now;
-            _holdCheckStartTemp = sampleTemp;
+            _holdCheckStartTemp = controlTemp;
         }
+
         #endregion
 
         #region 히터 조정 계산
@@ -1153,13 +998,57 @@ namespace VacX_OutSense.Core.Control
             return GetChannelTemperature(HeaterChannel);
         }
 
+        /// <summary>
+        /// 지정 채널 온도 읽기
+        /// </summary>
         private double GetChannelTemperature(int channel)
         {
-            if (channel < 1 || channel > _tempController.Status.ChannelStatus.Length)
-                return 25.0;
+            try
+            {
+                if (_tempController?.Status?.ChannelStatus == null)
+                    return double.NaN;
 
-            var status = _tempController.Status.ChannelStatus[channel - 1];
-            return status.PresentValue / (status.Dot == 0 ? 1.0 : 10.0);
+                int index = channel - 1;
+                if (index < 0 || index >= _tempController.Status.ChannelStatus.Length)
+                    return double.NaN;
+
+                var ch = _tempController.Status.ChannelStatus[index];
+                double temp = ch.PresentValue;
+                if (ch.Dot > 0)
+                    temp /= Math.Pow(10, ch.Dot);
+
+                return temp;
+            }
+            catch
+            {
+                return double.NaN;
+            }
+        }
+
+        /// <summary>
+        /// 설정에 따라 샘플 온도 읽기
+        /// </summary>
+        private double GetSampleTemperatureBySource()
+        {
+            var channels = _holdSettings.GetSelectedChannels();
+
+            if (channels.Count == 0)
+                return GetSampleTemperature();
+
+            double sum = 0;
+            int count = 0;
+
+            foreach (int ch in channels)
+            {
+                double temp = GetChannelTemperature(ch);
+                if (!double.IsNaN(temp))
+                {
+                    sum += temp;
+                    count++;
+                }
+            }
+
+            return count > 0 ? sum / count : GetSampleTemperature();
         }
 
         private double GetHeaterSetpoint()

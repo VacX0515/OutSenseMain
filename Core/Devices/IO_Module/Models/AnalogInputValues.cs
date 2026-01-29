@@ -1,4 +1,4 @@
-﻿using System;
+﻿ using System;
 using VacX_OutSense.Core.Devices.IO_Module.Enum;
 
 namespace VacX_OutSense.Core.Devices.IO_Module.Models

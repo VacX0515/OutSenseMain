@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using VacX_OutSense.Core.Devices.Base;
 using VacX_OutSense.Core.Devices.IO_Module.Models;
 using VacX_OutSense.Models;
 
@@ -246,49 +245,37 @@ namespace VacX_OutSense.Utils
                 _mainForm._ioModule.CommunicationManager.DiscardInBuffer();
                 await Task.Delay(10);
 
-                // AI 값 읽기
+                // AI 값 읽기 (압력 센서 + 추가 AI)
                 var aiData = await _mainForm._ioModule.ReadAnalogInputsAsync();
                 if (aiData != null && IsValidAIData(aiData))
                 {
                     _latestData["AI_Data"] = aiData;
                     _errorCounts["IOModule"] = 0;
 
-                    // ★ Float 읽기 전 딜레이 추가 (통신 안정화)
-                    await Task.Delay(20);
-
                     // ★ 추가 AI 고정밀 읽기 (Floating-point)
+                    double additionalAIValue = aiData.AdditionalAIValue;  // 기본값 (Integer)
+
                     var floatValue = await _mainForm._ioModule.ReadAIChannelFloatAsync(
                         _mainForm._ioModule.AdditionalAIChannel);
 
-                    double additionalAIValue;
-
-                    // ★ Integer 값도 같이 읽기
-                    double integerValue = aiData.ExpansionVoltageValues[aiData.AdditionalAIChannelIndex];
-
-                    // ★ 둘 다 로깅해서 비교
-                    LoggerService.Instance.LogDebug(
-                        $"AI CH5 - Integer: {integerValue:F6}V, Float: {(floatValue.HasValue ? floatValue.Value.ToString("F6") : "FAIL")}");
-
                     if (floatValue.HasValue)
                     {
-                        // Float 성공 → Float 값 사용 및 저장
                         additionalAIValue = floatValue.Value;
                         aiData.AdditionalAIValueFloat = floatValue.Value;
-                        _latestData["AdditionalAI_FloatValue"] = floatValue.Value;  // Float 값 별도 저장
-                        LoggerService.Instance.LogDebug($"Voltage : {floatValue}");
-
-                    }
-                    else
-                    {
-                        // Float 실패 → 이전 Float 값이 있으면 사용, 없으면 Integer
-                        if (_latestData.TryGetValue("AdditionalAI_FloatValue", out var prevFloat) && prevFloat is double pf)
-                        {
-                            additionalAIValue = pf;  // 이전 Float 값 유지
-                        }
                     }
 
+                    // 값 저장
+                    _latestData["AdditionalAI_Value"] = additionalAIValue;
                     _latestData["AdditionalAI_Timestamp"] = aiData.Timestamp;
 
+                    // 값 변경 시 로깅
+                    if (Math.Abs(_lastAdditionalAIValue - additionalAIValue) > 0.0001 ||
+                        double.IsNaN(_lastAdditionalAIValue))
+                    {
+                        LoggerService.Instance.LogDebug(
+                            $"추가 AI (CH{aiData.AdditionalAIChannelIndex + 1}): {additionalAIValue:F6}V");
+                        _lastAdditionalAIValue = additionalAIValue;
+                    }
                 }
                 else
                 {
@@ -296,7 +283,6 @@ namespace VacX_OutSense.Utils
                 }
 
                 // AO 값 읽기
-                await Task.Delay(10);  // ★ 추가 딜레이
                 var aoData = await _mainForm._ioModule.ReadAnalogOutputsAsync();
                 if (aoData != null)
                 {

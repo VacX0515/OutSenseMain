@@ -228,7 +228,6 @@ namespace VacX_OutSense.Core.Control
 
         #region 기본 프로파일
 
-
         /// <summary>
         /// 시스템 기본 프로파일 생성
         /// </summary>
