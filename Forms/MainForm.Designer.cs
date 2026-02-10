@@ -660,7 +660,7 @@ namespace VacX_OutSense
             rampSettingControl1.Location = new Point(661, 439);
             rampSettingControl1.Margin = new Padding(4, 3, 4, 3);
             rampSettingControl1.Name = "rampSettingControl1";
-            rampSettingControl1.Size = new Size(424, 152);
+            rampSettingControl1.Size = new Size(463, 152);
             rampSettingControl1.TabIndex = 51;
             rampSettingControl1.Title = "Ramp 설정";
             rampSettingControl1.Load += rampSettingControl1_Load;

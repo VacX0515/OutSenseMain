@@ -416,6 +416,13 @@ namespace VacX_OutSense
                 }
 
                 LogInfo("SimpleRampControl 초기화 완료");
+
+                // ★ 추가: RampSettingControl 초기화 (CH1)
+                if (_tempController != null && rampSettingControl1 != null)
+                {
+                    rampSettingControl1.Initialize(_tempController, 1);
+                    LogInfo("RampSettingControl 초기화 완료 (CH1)");
+                }
             }
         }
         /// <summary>
@@ -1089,8 +1096,8 @@ namespace VacX_OutSense
 
         private void UpdateCh1TimerControls()
         {
-            bool timerEnabled = chkCh1TimerEnabled.Checked;
-            bool autoStartEnabled = chkCh1AutoStartEnabled?.Checked ?? false;
+            bool timerEnabled = chkCh1TimerEnabled?.Checked ?? false;
+            bool autoStartEnabled = _ch1AutoStartEnabled;
             bool anyProcessActive = _ch1TimerActive || _ch1WaitingForTargetTemp || _ch1WaitingForVacuum;
 
             // ★ 램프 진행 중 여부 추가
@@ -1118,9 +1125,31 @@ namespace VacX_OutSense
             // ★ 추가: 타이머 활성화 체크박스
             chkCh1TimerEnabled.Enabled = !isLocked;
 
+            // ★ 추가: 자동 시작 버튼 상태 업데이트 (텍스트/색상 피드백)
+            if (btnCh1AutoStart != null)
+            {
+                if (isLocked)
+                {
+                    // 프로세스 진행 중 → 취소 버튼으로 전환
+                    btnCh1AutoStart.Text = "⏹ 취소";
+                    btnCh1AutoStart.BackColor = Color.LightCoral;
+                    btnCh1AutoStart.ForeColor = Color.White;
+                    btnCh1AutoStart.Enabled = true;  // 취소는 항상 가능
+                }
+                else
+                {
+                    // 대기 상태 → 자동 시작 대기 버튼으로 복원
+                    btnCh1AutoStart.Text = "자동 시작 대기";
+                    btnCh1AutoStart.BackColor = SystemColors.Control;
+                    btnCh1AutoStart.ForeColor = SystemColors.ControlText;
+                    btnCh1AutoStart.Enabled = timerEnabled && autoStartEnabled;
+                }
+            }
+
             if (!timerEnabled && anyProcessActive)
                 StopCh1Timer();
         }
+
 
         /// <summary>
         /// 자동 시작 대기 시작 (버튼 클릭 또는 외부 호출)
@@ -1159,11 +1188,47 @@ namespace VacX_OutSense
 
         /// <summary>
         /// 자동 시작 버튼 클릭 이벤트
+        /// ★ 수정: 취소 시 확인 다이얼로그, 램프 함께 정지, 버튼 상태 피드백
         /// </summary>
         private void btnCh1AutoStart_Click(object sender, EventArgs e)
         {
-            if (_ch1WaitingForVacuum || _ch1WaitingForTargetTemp || _ch1TimerActive)
+            bool anyProcessActive = _ch1WaitingForVacuum || _ch1WaitingForTargetTemp || _ch1TimerActive;
+            bool rampRunning = simpleRampControl1?.IsRunning ?? false;
+
+            if (anyProcessActive || rampRunning)
             {
+                // ★ 취소 확인 다이얼로그
+                string statusText = _ch1WaitingForVacuum ? "진공 대기 중" :
+                                    _ch1WaitingForTargetTemp ? "온도 대기 중" :
+                                    _ch1TimerActive ? "타이머 진행 중" :
+                                    rampRunning ? "램프 진행 중" : "프로세스 진행 중";
+
+                var result = MessageBox.Show(
+                    $"현재 상태: {statusText}\n\n" +
+                    "자동 시작/정지 프로세스를 취소하시겠습니까?\n" +
+                    (rampRunning ? "진행 중인 램프도 함께 정지됩니다." : ""),
+                    "자동 시작 취소",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                if (result != DialogResult.Yes) return;
+
+                // ★ 램프 진행 중이면 함께 정지
+                if (rampRunning)
+                {
+                    try
+                    {
+                        // StopWithEndAction을 사용하여 램프 + 히터 정지
+                        // 히터를 유지하려면 BakeoutEndAction.MaintainTemperature 사용
+                        simpleRampControl1.StopWithEndAction(
+                            _bakeoutSettings?.EndAction ?? BakeoutEndAction.HeaterOff);
+                        LogInfo("[베이크 아웃] 램프 정지됨 (사용자 취소)");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogWarning($"램프 정지 실패: {ex.Message}");
+                    }
+                }
+
                 StopCh1Timer();
                 LogInfo("CH1 자동 시작/정지 취소됨");
             }
@@ -1298,6 +1363,7 @@ namespace VacX_OutSense
 
         /// <summary>
         /// 베이크 아웃 램프 업 자동 시작
+        /// ★ 수정: 설정값 범위 검증 추가로 NumericUpDown 범위 에러 방지
         /// </summary>
         private async void StartBakeoutRampUp()
         {
@@ -1315,6 +1381,17 @@ namespace VacX_OutSense
 
             try
             {
+                // ★ 설정값 범위 검증 (SimpleRampControl의 NUD 범위에 맞게 클램핑)
+                double targetTemp = Math.Max(25, Math.Min(300, _bakeoutSettings.TargetTemperature));
+                double rampRate = Math.Max(0.5, Math.Min(30, _bakeoutSettings.RampRate));
+
+                if (targetTemp != _bakeoutSettings.TargetTemperature || rampRate != _bakeoutSettings.RampRate)
+                {
+                    LogWarning($"[베이크 아웃] 설정값 범위 보정: " +
+                        $"온도 {_bakeoutSettings.TargetTemperature} → {targetTemp}°C, " +
+                        $"속도 {_bakeoutSettings.RampRate} → {rampRate}°C/min");
+                }
+
                 // 타이머 자동 시작 옵션 설정
                 simpleRampControl1.AutoStartTimerOnTargetReached = _bakeoutSettings.AutoStartTimerOnTargetReached;
 
@@ -1322,17 +1399,17 @@ namespace VacX_OutSense
                 simpleRampControl1.EndAction = _bakeoutSettings.EndAction;
                 simpleRampControl1.HoldAfterComplete = (_bakeoutSettings.EndAction == BakeoutEndAction.MaintainTemperature);
 
-                // 램프 시작
+                // 램프 시작 (검증된 값 사용)
                 bool success = await simpleRampControl1.StartRampAsync(
-                    _bakeoutSettings.TargetTemperature,
-                    _bakeoutSettings.RampRate,
+                    targetTemp,
+                    rampRate,
                     _bakeoutSettings.ProfileName
                 );
 
                 if (success)
                 {
-                    LogInfo($"[베이크 아웃] 램프 업 시작: {_bakeoutSettings.TargetTemperature}°C, {_bakeoutSettings.RampRate}°C/min");
-                    UpdateCh1TimerControls();  // ★ 추가
+                    LogInfo($"[베이크 아웃] 램프 업 시작: {targetTemp}°C, {rampRate}°C/min");
+                    UpdateCh1TimerControls();
                 }
                 else
                 {

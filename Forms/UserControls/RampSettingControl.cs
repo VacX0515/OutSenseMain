@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.ComponentModel;
 using VacX_OutSense.Core.Devices.TempController;
+using VacX_OutSense.Core.Extensions;
 
 namespace VacX_OutSense.UI.Controls
 {
@@ -141,26 +142,38 @@ namespace VacX_OutSense.UI.Controls
         /// TM4 매뉴얼: Ramp Rate 단위는 ℃/℉/Digit per 시간단위
         /// - Dot=0: 레지스터 값 10 = 10°C
         /// - Dot=1: 레지스터 값 10 = 1.0°C (10 digit = 10 × 0.1°C)
+        /// 
+        /// ★ 수정: 범위 에러 방지를 위해 Minimum/Maximum을 먼저 확장 후 값 설정
         /// </summary>
         private void ConfigureNudForDot(NumericUpDown nud, ushort rawValue)
         {
             if (nud == null) return;
 
+            // ★ 범위 에러 방지: 먼저 범위를 최대로 확장
+            nud.Minimum = 0;
+            nud.Maximum = 99999m;  // 임시 확장 (어떤 값이든 수용 가능)
+
             if (_dot == 1)
             {
                 nud.DecimalPlaces = 1;
                 nud.Increment = 0.1m;
+
+                decimal targetValue = Math.Max(0, Math.Min(rawValue / 10.0m, 999.9m));
+                nud.Value = targetValue;
+
+                // 실제 범위 설정 (값 설정 후)
                 nud.Maximum = 999.9m;       // raw 9999 → 999.9°C
-                nud.Minimum = 0;
-                nud.Value = Math.Min(rawValue / 10.0m, nud.Maximum);
             }
             else
             {
                 nud.DecimalPlaces = 0;
                 nud.Increment = 1;
+
+                decimal targetValue = Math.Max(0, Math.Min((decimal)rawValue, 9999m));
+                nud.Value = targetValue;
+
+                // 실제 범위 설정 (값 설정 후)
                 nud.Maximum = 9999;
-                nud.Minimum = 0;
-                nud.Value = Math.Min(rawValue, nud.Maximum);
             }
         }
 
@@ -281,6 +294,55 @@ namespace VacX_OutSense.UI.Controls
         }
 
         /// <summary>
+        /// ★ 추가: Ramp 설정을 0으로 초기화합니다 (Ramp OFF).
+        /// </summary>
+        private void btnReset_Click(object sender, EventArgs e)
+        {
+            if (DesignMode || _tempController == null) return;
+
+            var result = MessageBox.Show(
+                "Ramp 설정을 초기화하시겠습니까?\n상승/하강 변화율이 모두 0으로 설정됩니다. (Ramp OFF)",
+                "램프 초기화",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (result != DialogResult.Yes) return;
+
+            try
+            {
+                var status = _tempController.Status.ChannelStatus[_channelNumber - 1];
+
+                // 운전 중이고 Ramp가 활성화되어 있으면 열충격 경고
+                if (status.IsRunning && status.IsRampEnabled)
+                {
+                    var confirm = MessageBox.Show(
+                        "운전 중에 Ramp를 끄면 설정값(SV)이 즉시 목표값으로 변경됩니다.\n" +
+                        "급격한 온도 변화가 발생할 수 있습니다.\n\n계속하시겠습니까?",
+                        "⚠ 열충격 주의",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (confirm != DialogResult.Yes) return;
+                }
+
+                TempController.RampTimeUnit timeUnit =
+                    (TempController.RampTimeUnit)cmbTimeUnit.SelectedIndex;
+
+                if (_tempController.SetRampConfiguration(_channelNumber, 0, 0, timeUnit))
+                {
+                    LoadCurrentSettings();
+                }
+                else
+                {
+                    MessageBox.Show("램프 초기화에 실패했습니다.", "오류",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"초기화 오류: {ex.Message}", "오류",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
         /// 상태 표시를 업데이트합니다.
         /// ChannelStatus.RampStatusText가 Dot을 반영하므로 직접 사용
         /// </summary>
@@ -357,16 +419,29 @@ namespace VacX_OutSense.UI.Controls
         }
 
         /// <summary>
-        /// 현재 설정 새로고침
+        /// 현재 설정 새로고침 - 컨트롤러에서 최신 상태를 읽어 UI에 동기화
         /// </summary>
         private void btnRefresh_Click(object sender, EventArgs e)
         {
-            if (!DesignMode && _tempController != null)
+            if (DesignMode || _tempController == null) return;
+
+            try
             {
+                // ★ 컨트롤러 상태를 먼저 갱신
+                _tempController.UpdateAllChannelStatus();
+
+                // 설정 로드 (ConfigureNudForDot 포함)
                 LoadCurrentSettings();
+
+                // 상태 표시 갱신
+                UpdateStatusDisplay();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"새로고침 실패: {ex.Message}", "오류",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-
         /// <summary>
         /// 컨트롤이 로드될 때
         /// </summary>

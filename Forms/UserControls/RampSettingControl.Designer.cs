@@ -15,6 +15,7 @@
         private System.Windows.Forms.Label lblNote;
         private System.Windows.Forms.Button btnApply;
         private System.Windows.Forms.Button btnRefresh;
+        private System.Windows.Forms.Button btnReset;        // ★ 추가: 램프 초기화 버튼
         private System.Windows.Forms.Label lblRampStatus;
         private System.Windows.Forms.Label lblRunStatus;
         private System.Windows.Forms.ProgressBar progressBar;
@@ -43,6 +44,7 @@
             this.lblNote = new System.Windows.Forms.Label();
             this.btnApply = new System.Windows.Forms.Button();
             this.btnRefresh = new System.Windows.Forms.Button();
+            this.btnReset = new System.Windows.Forms.Button();    // ★ 추가
             this.lblRampStatus = new System.Windows.Forms.Label();
             this.lblRunStatus = new System.Windows.Forms.Label();
             this.progressBar = new System.Windows.Forms.ProgressBar();
@@ -65,6 +67,7 @@
             this.grpRampSetting.Controls.Add(this.nudRampDownRate);
             this.grpRampSetting.Controls.Add(this.lblDownRateUnit);
             this.grpRampSetting.Controls.Add(this.btnApply);
+            this.grpRampSetting.Controls.Add(this.btnReset);      // ★ 추가
             this.grpRampSetting.Controls.Add(this.btnRefresh);
             this.grpRampSetting.Controls.Add(this.lblNote);
             this.grpRampSetting.Controls.Add(this.lblRampStatus);
@@ -132,7 +135,7 @@
             this.cmbTimeUnit.TabIndex = 4;
             this.cmbTimeUnit.SelectedIndexChanged += new System.EventHandler(this.cmbTimeUnit_SelectedIndexChanged);
 
-            // ═══════════ Row 2 (y=55): 하강 변화율 + 버튼 ═══════════
+            // ═══════════ Row 2 (y=55): 하강 변화율 + 버튼 3개 ═══════════
             // 
             // lblRampDownRate
             // 
@@ -165,22 +168,34 @@
             this.lblDownRateUnit.Text = "°C/분";
 
             // 
-            // btnApply
+            // btnApply  ★ 위치 조정: 3개 버튼 배치
             // 
-            this.btnApply.Location = new System.Drawing.Point(248, 53);
-            this.btnApply.Name = "btnApply";
-            this.btnApply.Size = new System.Drawing.Size(65, 25);
-            this.btnApply.TabIndex = 8;
+            this.btnApply.Location = new System.Drawing.Point(192+30, 53);
+            this.btnApply.Size = new System.Drawing.Size(52, 25);
             this.btnApply.Text = "적용";
+            this.btnApply.TabIndex = 8;
             this.btnApply.UseVisualStyleBackColor = true;
             this.btnApply.Click += new System.EventHandler(this.btnApply_Click);
 
+            // ★ 추가: 램프 초기화 버튼
             // 
-            // btnRefresh
+            // btnReset
             // 
-            this.btnRefresh.Location = new System.Drawing.Point(320, 53);
+            this.btnReset.Location = new System.Drawing.Point(248+30, 53);
+            this.btnReset.Name = "btnReset";
+            this.btnReset.Size = new System.Drawing.Size(60, 25);
+            this.btnReset.TabIndex = 15;
+            this.btnReset.Text = "초기화";
+            this.btnReset.ForeColor = System.Drawing.Color.Red;
+            this.btnReset.UseVisualStyleBackColor = true;
+            this.btnReset.Click += new System.EventHandler(this.btnReset_Click);
+
+            // 
+            // btnRefresh  ★ 위치 조정
+            // 
+            this.btnRefresh.Location = new System.Drawing.Point(312 + 30, 53);
             this.btnRefresh.Name = "btnRefresh";
-            this.btnRefresh.Size = new System.Drawing.Size(67, 25);
+            this.btnRefresh.Size = new System.Drawing.Size(75, 25);
             this.btnRefresh.TabIndex = 9;
             this.btnRefresh.Text = "새로고침";
             this.btnRefresh.UseVisualStyleBackColor = true;
