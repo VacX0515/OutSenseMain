@@ -634,7 +634,7 @@ namespace VacX_OutSense
                     try
                     {
                         if (snapshot.Connections.IOModule)
-                            DataLoggerService.Instance.LogDataAsync("Pressure", new List<string> { snapshot.AtmPressure.ToString("F2"), snapshot.PiraniPressure.ToString("E2"), snapshot.IonPressure.ToString("E2"), snapshot.IonGaugeStatus, snapshot.GateValveStatus, snapshot.VentValveStatus, snapshot.ExhaustValveStatus, snapshot.IonGaugeHVStatus, (snapshot.AdditionalAIValue * 20000).ToString("F6")
+                            DataLoggerService.Instance.LogDataAsync("Pressure", new List<string> { snapshot.AtmPressure.ToString("F2"), snapshot.PiraniPressure.ToString("E2"), snapshot.IonPressure.ToString("E2"), snapshot.IonGaugeStatus, snapshot.GateValveStatus, snapshot.VentValveStatus, snapshot.ExhaustValveStatus, snapshot.IonGaugeHVStatus, (snapshot.AdditionalAIValue).ToString("F6")
 });
 
                         if (snapshot.Connections.DryPump && _dryPump?.Status != null)
@@ -746,22 +746,289 @@ namespace VacX_OutSense
         private void btnBathCirculatorSetTemp_Click(object sender, EventArgs e) { if (_bathCirculator == null || !_bathCirculator.IsConnected) return; string input = Microsoft.VisualBasic.Interaction.InputBox("목표 온도 (℃):", "온도 설정", _bathCirculator.Status.SetTemperature.ToString("F1")); if (!string.IsNullOrEmpty(input) && double.TryParse(input, out double temp)) { if (_bathCirculator.SetTemperature(temp)) LogInfo($"칠러 온도 설정: {temp}℃"); } }
         private void btnBathCirculatorSetTime_Click(object sender, EventArgs e) { /* 기존 코드 유지 */ }
 
-        private async void btnCh1Start_Click(object sender, EventArgs e) { btnCh1Start.Enabled = false; try { await Task.Run(() => _tempController.Start(1)); LogInfo("온도컨트롤러 CH1 시작"); if (chkCh1TimerEnabled.Checked) StartCh1Timer(); } finally { btnCh1Start.Enabled = true; } }
-        private async void btnCh1Stop_Click(object sender, EventArgs e) { btnCh1Stop.Enabled = false; try { await Task.Run(() => _tempController.Stop(1)); LogInfo("온도컨트롤러 CH1 정지"); if (_ch1TimerActive || _ch1WaitingForTargetTemp || _ch1WaitingForVacuum) StopCh1Timer(); } finally { btnCh1Stop.Enabled = true; } }
+        private async void btnCh1Start_Click(object sender, EventArgs e)
+        {
+            if (_tempController == null || !_tempController.IsConnected)
+                return;
+
+            var chStatus = _tempController.Status.ChannelStatus[0];
+            string svDisplay = chStatus.Dot == 1
+                ? $"{chStatus.SetValue / 10.0:F1}"
+                : $"{chStatus.SetValue}";
+
+            var result = MessageBox.Show(
+                $"채널 1 히터를 시작하시겠습니까?\n\n" +
+                $"설정 온도: {svDisplay}{chStatus.TemperatureUnit}\n" +
+                $"Ramp: {chStatus.RampStatusText}",
+                "히터 시작 확인",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (result != DialogResult.Yes)
+                return;
+
+            btnCh1Start.Enabled = false;
+            try
+            {
+                await Task.Run(() => _tempController.Start(1));
+                LogInfo("온도컨트롤러 CH1 시작");
+
+                if (chkCh1TimerEnabled.Checked)
+                {
+                    StartCh1Timer();
+                }
+            }
+            finally
+            {
+                btnCh1Start.Enabled = true;
+            }
+        }
+        private async void btnCh1Stop_Click(object sender, EventArgs e)
+        {
+            if (_tempController == null || !_tempController.IsConnected)
+                return;
+
+            var chStatus = _tempController.Status.ChannelStatus[0];
+            string pvDisplay = chStatus.Dot == 1
+                ? $"{chStatus.PresentValue / 10.0:F1}"
+                : $"{chStatus.PresentValue}";
+
+            string warning = "";
+            if (chStatus.IsRampActive)
+                warning = "\n\n⚠ Ramp 진행 중입니다. 정지하면 Ramp가 중단됩니다.";
+
+            var result = MessageBox.Show(
+                $"채널 1 히터를 정지하시겠습니까?\n\n" +
+                $"현재 온도: {pvDisplay}{chStatus.TemperatureUnit}" +
+                warning,
+                "히터 정지 확인",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+
+            if (result != DialogResult.Yes)
+                return;
+
+            btnCh1Stop.Enabled = false;
+            try
+            {
+                await Task.Run(() => _tempController.Stop(1));
+                LogInfo("온도컨트롤러 CH1 정지");
+
+                if (_ch1TimerActive)
+                {
+                    StopCh1Timer();
+                }
+            }
+            finally
+            {
+                btnCh1Stop.Enabled = true;
+            }
+        }
         private void btnCh1SetTemp_Click(object sender, EventArgs e) { ShowTemperatureSetDialog(1); }
         private async void btnCh1AutoTuning_Click(object sender, EventArgs e) { if (_tempController == null || !_tempController.IsConnected) return; if (MessageBox.Show("CH1 오토튜닝을 시작하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) { btnCh1AutoTuning.Enabled = false; try { if (await Task.Run(() => _tempController.StartAutoTuning(1))) { LogInfo("CH1 오토튜닝 시작"); MessageBox.Show("CH1 오토튜닝 시작됨", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information); } else { LogError("CH1 오토튜닝 시작 실패"); MessageBox.Show("오토튜닝 실패", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error); } } finally { btnCh1AutoTuning.Enabled = true; } } }
 
+        /// <summary>
+        /// 온도 설정 다이얼로그를 표시합니다.
+        /// PV, Ramp 상태를 함께 표시하고, NUD로 입력 범위를 제한합니다.
+        /// </summary>
         private void ShowTemperatureSetDialog(int channel)
         {
-            if (_tempController == null || !_tempController.IsConnected) return;
-            if (channel > _tempController.ChannelCount) { MessageBox.Show($"CH{channel}은 확장 모듈 채널로 입력 전용입니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-            var ch = _tempController.Status.ChannelStatus[channel - 1];
-            string currentValue = ch.Dot == 0 ? ch.SetValue.ToString() : (ch.SetValue / 10.0).ToString("F1");
-            string input = Microsoft.VisualBasic.Interaction.InputBox($"CH{channel} 목표 온도 ({ch.TemperatureUnit}):", "온도 설정", currentValue);
-            if (!string.IsNullOrEmpty(input))
+            if (_tempController == null || !_tempController.IsConnected)
+                return;
+
+            var chStatus = _tempController.Status.ChannelStatus[channel - 1];
+            int dot = chStatus.Dot;
+            string unit = chStatus.TemperatureUnit;
+            int maxTempRaw = _tempController.MaxTemperatureRaw;
+
+            // 현재 표시값 계산
+            string pvDisplay = dot == 1
+                ? $"{chStatus.PresentValue / 10.0:F1}"
+                : $"{chStatus.PresentValue}";
+            string svDisplay = dot == 1
+                ? $"{chStatus.SetValue / 10.0:F1}"
+                : $"{chStatus.SetValue}";
+
+            // 표시용 최대 온도
+            decimal maxDisplay = dot == 1
+                ? (decimal)(maxTempRaw / 10.0)
+                : (decimal)maxTempRaw;
+
+            // 다이얼로그 생성
+            using (Form dlg = new Form())
             {
-                if (ch.Dot == 0) { if (short.TryParse(input, out short sv)) { _tempController.SetTemperature(channel, sv); LogInfo($"CH{channel} 온도 설정: {sv}{ch.TemperatureUnit}"); } }
-                else { if (double.TryParse(input, out double dv)) { _tempController.SetTemperature(channel, (short)(dv * 10)); LogInfo($"CH{channel} 온도 설정: {dv:F1}{ch.TemperatureUnit}"); } }
+                dlg.Text = $"채널 {channel} 온도 설정";
+                dlg.Width = 340;
+                dlg.Height = 290;
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.MaximizeBox = false;
+                dlg.MinimizeBox = false;
+
+                int y = 15;
+
+                // 현재 온도 (PV)
+                Label lblPV = new Label
+                {
+                    Text = $"현재 온도 (PV):  {pvDisplay}{unit}",
+                    Location = new Point(20, y),
+                    AutoSize = true,
+                    Font = new Font(Font.FontFamily, 9.5f, FontStyle.Bold)
+                };
+                dlg.Controls.Add(lblPV);
+                y += 28;
+
+                // 현재 설정값 (SV)
+                Label lblSV = new Label
+                {
+                    Text = $"현재 설정값 (SV):  {svDisplay}{unit}",
+                    Location = new Point(20, y),
+                    AutoSize = true
+                };
+                dlg.Controls.Add(lblSV);
+                y += 28;
+
+                // Ramp 상태
+                Label lblRamp = new Label
+                {
+                    Text = $"Ramp 상태:  {chStatus.RampStatusText}",
+                    Location = new Point(20, y),
+                    AutoSize = true,
+                    ForeColor = chStatus.IsRampEnabled ? Color.Blue : Color.Gray
+                };
+                dlg.Controls.Add(lblRamp);
+                y += 35;
+
+                // 구분선
+                Label separator = new Label
+                {
+                    BorderStyle = BorderStyle.Fixed3D,
+                    Location = new Point(20, y),
+                    Size = new Size(280, 2)
+                };
+                dlg.Controls.Add(separator);
+                y += 12;
+
+                // 새 온도 입력 (범위 표시)
+                Label lblNew = new Label
+                {
+                    Text = $"새 설정 온도 ({unit}, 최대 {maxDisplay}):",
+                    Location = new Point(20, y + 3),
+                    AutoSize = true
+                };
+                dlg.Controls.Add(lblNew);
+
+                NumericUpDown nudTemp = new NumericUpDown
+                {
+                    Location = new Point(220, y),
+                    Size = new Size(80, 23),
+                    TextAlign = HorizontalAlignment.Center
+                };
+
+                if (dot == 1)
+                {
+                    nudTemp.DecimalPlaces = 1;
+                    nudTemp.Minimum = 0;
+                    nudTemp.Maximum = maxDisplay;
+                    nudTemp.Increment = 0.1m;
+                    nudTemp.Value = Math.Min((decimal)(chStatus.SetValue / 10.0), nudTemp.Maximum);
+                }
+                else
+                {
+                    nudTemp.DecimalPlaces = 0;
+                    nudTemp.Minimum = 0;
+                    nudTemp.Maximum = maxDisplay;
+                    nudTemp.Increment = 1;
+                    nudTemp.Value = Math.Min((decimal)chStatus.SetValue, nudTemp.Maximum);
+                }
+                dlg.Controls.Add(nudTemp);
+                y += 35;
+
+                // Ramp 경고 (큰 온도 변화 시 표시될 라벨)
+                Label lblWarning = new Label
+                {
+                    Location = new Point(20, y),
+                    Size = new Size(280, 30),
+                    ForeColor = Color.OrangeRed,
+                    Font = new Font(Font.FontFamily, 8.5f),
+                    Visible = false
+                };
+                dlg.Controls.Add(lblWarning);
+
+                // 값 변경 시 경고 갱신
+                nudTemp.ValueChanged += (s, ev) =>
+                {
+                    double newTemp = (double)nudTemp.Value;
+                    double currentPV = dot == 1
+                        ? chStatus.PresentValue / 10.0
+                        : chStatus.PresentValue;
+                    double diff = Math.Abs(newTemp - currentPV);
+
+                    if (diff > 50 && !chStatus.IsRampEnabled)
+                    {
+                        lblWarning.Text = $"⚠ Ramp 없이 {diff:F0}{unit} 변화 → 급격한 온도 변화 주의";
+                        lblWarning.Visible = true;
+                    }
+                    else if (diff > 100)
+                    {
+                        lblWarning.Text = $"⚠ {diff:F0}{unit} 큰 온도 변화 → 도달 시간이 길 수 있음";
+                        lblWarning.Visible = true;
+                    }
+                    else
+                    {
+                        lblWarning.Visible = false;
+                    }
+                };
+                y += 35;
+
+                // 버튼
+                Button btnOK = new Button
+                {
+                    Text = "설정",
+                    DialogResult = DialogResult.OK,
+                    Location = new Point(100, y),
+                    Size = new Size(80, 30)
+                };
+                Button btnCancel = new Button
+                {
+                    Text = "취소",
+                    DialogResult = DialogResult.Cancel,
+                    Location = new Point(195, y),
+                    Size = new Size(80, 30)
+                };
+                dlg.Controls.Add(btnOK);
+                dlg.Controls.Add(btnCancel);
+                dlg.AcceptButton = btnOK;
+                dlg.CancelButton = btnCancel;
+
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    short rawValue;
+                    double displayValue;
+
+                    if (dot == 1)
+                    {
+                        displayValue = (double)nudTemp.Value;
+                        rawValue = (short)(displayValue * 10);
+                    }
+                    else
+                    {
+                        displayValue = (double)nudTemp.Value;
+                        rawValue = (short)displayValue;
+                    }
+
+                    if (_tempController.SetTemperature(channel, rawValue))
+                    {
+                        string formatted = dot == 1 ? $"{displayValue:F1}" : $"{displayValue:F0}";
+                        LogInfo($"CH{channel} 온도 설정: {formatted}{unit}");
+                    }
+                    else
+                    {
+                        MessageBox.Show("온도 설정에 실패했습니다.\n" +
+                            "로그를 확인하세요.", "오류",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
             }
         }
 

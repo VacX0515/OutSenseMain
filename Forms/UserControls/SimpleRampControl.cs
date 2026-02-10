@@ -380,7 +380,7 @@ namespace VacX_OutSense.Forms.UserControls
             if (DesignMode) return;
 
             _tempController = tempController ?? throw new ArgumentNullException(nameof(tempController));
-            
+
             // 프로파일 매니저 초기화
             _profileManager = new ThermalRampProfileManager();
             LoadProfiles();
@@ -406,7 +406,7 @@ namespace VacX_OutSense.Forms.UserControls
         private void LoadProfiles()
         {
             cboProfile.Items.Clear();
-            
+
             foreach (var profile in _profileManager.Profiles)
             {
                 cboProfile.Items.Add(profile.Name);
@@ -449,9 +449,9 @@ namespace VacX_OutSense.Forms.UserControls
                 numTargetTemp.Maximum = (decimal)profile.MaxHeaterTemperature;
 
                 // 기본값 적용
-                numRampRate.Value = Math.Max(numRampRate.Minimum, 
+                numRampRate.Value = Math.Max(numRampRate.Minimum,
                     Math.Min(numRampRate.Maximum, (decimal)profile.DefaultRampRate));
-                numTargetTemp.Value = Math.Max(numTargetTemp.Minimum, 
+                numTargetTemp.Value = Math.Max(numTargetTemp.Minimum,
                     Math.Min(numTargetTemp.Maximum, (decimal)profile.DefaultTargetTemperature));
 
                 // 선택 저장
@@ -542,20 +542,30 @@ namespace VacX_OutSense.Forms.UserControls
 
         private async System.Threading.Tasks.Task<bool> StartRampInternalAsync(ThermalRampProfile profile, double targetTemp, double rampRate)
         {
-            // UI 값 업데이트
+            // 프로파일 선택
             if (cboProfile.Items.Contains(profile.Name))
             {
                 cboProfile.SelectedItem = profile.Name;
             }
-            numTargetTemp.Value = (decimal)targetTemp;
-            numRampRate.Value = (decimal)rampRate;
+
+            // ★ 프로파일 범위를 명시적으로 적용 (SelectedIndexChanged 미발생 대비)
+            numRampRate.Minimum = (decimal)profile.MinRampRate;
+            numRampRate.Maximum = (decimal)profile.MaxRampRate;
+            numTargetTemp.Minimum = (decimal)profile.MinTargetTemperature;
+            numTargetTemp.Maximum = (decimal)profile.MaxHeaterTemperature;
+
+            // ★ 클램핑하여 대입
+            numTargetTemp.Value = Math.Max(numTargetTemp.Minimum,
+                                  Math.Min(numTargetTemp.Maximum, (decimal)targetTemp));
+            numRampRate.Value = Math.Max(numRampRate.Minimum,
+                                Math.Min(numRampRate.Maximum, (decimal)rampRate));
 
             // UI 상태 변경
             SetControlState(true);
 
-            // 램프 시작
+            // 램프 시작 (컨트롤러에는 원래 값 전달)
             bool success = await _rampController.StartRampAsync(profile, targetTemp, rampRate);
-            
+
             if (!success)
             {
                 SetControlState(false);
@@ -633,10 +643,10 @@ namespace VacX_OutSense.Forms.UserControls
             lblHeaterSetpointValue.Text = $"{e.HeaterSetpoint:F1}°C";
             lblSampleTempValue.Text = $"{e.SampleTemp:F1}°C";
             lblTargetTempStatusValue.Text = $"{e.TargetTemp:F1}°C";
-            
+
             progressBar.Value = (int)Math.Min(100, Math.Max(0, e.ProgressPercent));
             lblProgressPercent.Text = $"{e.ProgressPercent:F0}%";
-            
+
             lblStatusValue.Text = e.StatusMessage;
             lblStatusValue.ForeColor = e.State switch
             {

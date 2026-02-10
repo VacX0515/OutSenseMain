@@ -215,21 +215,30 @@ namespace VacX_OutSense.Controls
             }
             else if (_channelStatus.IsRunning)
             {
-                // PV와 SV 비교하여 상태 결정
                 int pv = _channelStatus.PresentValue;
                 int sv = _channelStatus.SetValue;
 
-                if (Math.Abs(pv - sv) <= (_channelStatus.Dot == 0 ? 2 : 20)) // 0.1도 단위일 경우 2도 차이
+                // 안정 판정: raw 단위 비교 (물리 기준 ±3°C)
+                // Dot=0: 3 raw = 3°C, Dot=1: 30 raw = 3.0°C
+                int tolerance = _channelStatus.Dot == 0 ? 3 : 30;
+
+                if (Math.Abs(pv - sv) <= tolerance)
                 {
                     StatusText = "안정 상태";
                 }
+                else if (_channelStatus.IsRampActive)
+                {
+                    // Ramp가 실제로 진행 중
+                    StatusText = pv < sv ? "Ramp 승온 중" : "Ramp 냉각 중";
+                }
                 else if (pv < sv)
                 {
-                    StatusText = "승온 중";
+                    // Ramp 설정은 있지만 목표 도달 또는 비활성
+                    StatusText = _channelStatus.IsRampEnabled ? "승온 중 (Ramp)" : "승온 중";
                 }
                 else
                 {
-                    StatusText = "냉각 중";
+                    StatusText = _channelStatus.IsRampEnabled ? "냉각 중 (Ramp)" : "냉각 중";
                 }
             }
             else

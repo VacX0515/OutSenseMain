@@ -149,6 +149,12 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         public override string Model => _hasExpansion ? "TM4 + N2SE" : "TM4 Series";
 
+        /// <summary>
+        /// 최대 온도 제한값 (raw 레지스터 값)
+        /// Dot=0: 그대로 °C, Dot=1: /10.0 하여 °C 변환
+        /// </summary>
+        public int MaxTemperatureRaw => _maxTemp;
+
         #endregion
 
         #region 생성자
@@ -252,6 +258,9 @@ namespace VacX_OutSense.Core.Devices.TempController
 
                 Thread.Sleep(100);
 
+                // ★ 초기화 시 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 ReadDeviceInfo();
 
                 bool statusCheck = UpdateStatus();
@@ -284,8 +293,13 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         private void ReadDeviceInfo()
         {
+            // ★ 메인 모듈 주소 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                _deviceAddress = _mainModuleAddress;
+
                 ushort[] registers = ReadInputRegisters(0x0064, 4);
                 if (registers != null && registers.Length >= 4)
                 {
@@ -326,6 +340,11 @@ namespace VacX_OutSense.Core.Devices.TempController
             {
                 OnErrorOccurred($"장치 정보 읽기 실패: {ex.Message}");
             }
+            finally
+            {
+                // ★ 메인 모듈 주소로 복원
+                _deviceAddress = _mainModuleAddress;
+            }
         }
 
         #endregion
@@ -345,6 +364,9 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
+                // ★ 상태 업데이트 시작 시 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 // 메인 모듈 채널 업데이트
                 for (int ch = 1; ch <= _numChannels; ch++)
                 {
@@ -370,6 +392,8 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
             finally
             {
+                // ★ 상태 업데이트 완료 후 항상 메인 모듈 주소로 복원
+                _deviceAddress = _mainModuleAddress;
                 _isUpdatingStatus = false;
             }
         }
@@ -387,8 +411,14 @@ namespace VacX_OutSense.Core.Devices.TempController
             if (channelNumber < 1 || channelNumber > _numChannels)
                 throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
 
+            // ★ 메인 모듈 주소 강제 설정
+            int savedAddress = _deviceAddress;
+
             try
             {
+                // ★ 항상 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
                 ushort baseAddress = (ushort)(REG_CH1_PV + (channelNumber - 1) * 6);
                 ushort[] registers = ReadInputRegisters(baseAddress, 6);
 
@@ -407,8 +437,8 @@ namespace VacX_OutSense.Core.Devices.TempController
                     bool isAutoTuning = ReadCoil(autoTuningCoilAddr);
                     _status.ChannelStatus[index].IsAutoTuning = isAutoTuning;
 
-                    // Ramp 설정 읽기
-                    GetRampConfiguration(channelNumber);
+                    // Ramp 설정 읽기 (내부에서 주소 관리함)
+                    GetRampConfigurationInternal(channelNumber);
 
                     return true;
                 }
@@ -420,6 +450,11 @@ namespace VacX_OutSense.Core.Devices.TempController
                 OnErrorOccurred($"채널 {channelNumber} 상태 업데이트 오류: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                // ★ 메인 모듈 주소로 복원
+                _deviceAddress = savedAddress;
+            }
         }
 
         /// <summary>
@@ -430,20 +465,15 @@ namespace VacX_OutSense.Core.Devices.TempController
             if (expansionChannelNumber < 1 || expansionChannelNumber > _expansionNumChannels)
                 return false;
 
-            int originalAddress = _deviceAddress;
-
             try
             {
-                // 슬레이브 주소를 확장 모듈로 변경
+                // ★ 확장 모듈 주소로 변경
                 _deviceAddress = _expansionSlaveAddress;
                 Thread.Sleep(10);
 
                 // 확장 모듈 레지스터 읽기
                 ushort baseAddress = (ushort)(REG_CH1_PV + (expansionChannelNumber - 1) * 6);
                 ushort[] registers = ReadInputRegisters(baseAddress, 6);
-
-                // 슬레이브 주소 복원
-                _deviceAddress = originalAddress;
 
                 if (registers != null && registers.Length >= 6)
                 {
@@ -463,10 +493,13 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
             catch (Exception ex)
             {
-                // 슬레이브 주소 복원
-                _deviceAddress = originalAddress;
                 OnErrorOccurred($"확장 채널 {expansionChannelNumber} 상태 업데이트 오류: {ex.Message}");
                 return false;
+            }
+            finally
+            {
+                // ★ 항상 메인 모듈 주소로 복원
+                _deviceAddress = _mainModuleAddress;
             }
         }
 
@@ -510,19 +543,38 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         #region 제어 메서드
 
+        /// <summary>
+        /// 지정된 채널의 온도 설정값을 변경합니다.
+        /// </summary>
+        /// <param name="channelNumber">채널 번호 (1-4)</param>
+        /// <param name="setValue">설정 온도 값 (raw 레지스터 값: Dot=1이면 10 = 1.0°C)</param>
+        /// <returns>명령 성공 여부</returns>
         public bool SetTemperature(int channelNumber, short setValue)
         {
-            // 확장 채널은 입력 전용
-            if (channelNumber > _numChannels)
-                throw new InvalidOperationException($"채널 {channelNumber}은 확장 모듈 채널로 입력 전용입니다.");
-
             if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            {
+                throw new ArgumentOutOfRangeException(nameof(channelNumber),
+                    $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            }
 
+            // 인터락: 최대 온도 제한 (Dot 반영 메시지)
             if (setValue > _maxTemp)
             {
-                MessageBox.Show($"설정 온도는 {_maxTemp / 10} 이하여야 합니다.", "Interlock", MessageBoxButtons.OK);
-                throw new ArgumentOutOfRangeException(nameof(setValue), $"설정 온도는 {_maxTemp} 이하여야 합니다.");
+                var chStatus = _status.ChannelStatus[channelNumber - 1];
+                string displayMax = chStatus.Dot == 1
+                    ? $"{_maxTemp / 10.0:F1}"
+                    : $"{_maxTemp}";
+
+                OnErrorOccurred($"채널 {channelNumber} 온도 설정 거부: " +
+                    $"설정값이 최대 허용 온도({displayMax}{chStatus.TemperatureUnit})를 초과합니다.");
+                return false;
+            }
+
+            // 인터락: 음수 온도 제한
+            if (setValue < 0)
+            {
+                OnErrorOccurred($"채널 {channelNumber} 온도 설정 거부: 음수 온도는 설정할 수 없습니다.");
+                return false;
             }
 
             EnsureConnected();
@@ -532,9 +584,10 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // ★ 항상 메인 모듈 주소로 설정 - 확장 모듈 상태 업데이트 중에도 안전
+                // ★ 항상 메인 모듈 주소로 설정
                 _deviceAddress = _mainModuleAddress;
 
+                // 채널별 레지스터 주소 계산
                 ushort registerAddress;
 
                 if (channelNumber == 1)
@@ -544,13 +597,21 @@ namespace VacX_OutSense.Core.Devices.TempController
                 else
                     registerAddress = (ushort)((channelNumber - 1) * 0x03E8);
 
+                // 설정 값 쓰기
                 bool result = WriteSingleRegister(registerAddress, (ushort)setValue);
 
                 if (result)
                 {
-                    _status.ChannelStatus[channelNumber - 1].SetValue = setValue;
+                    var chStatus = _status.ChannelStatus[channelNumber - 1];
+                    chStatus.SetValue = setValue;
+
+                    // 로그에 Dot 반영 온도 표시
+                    string displayValue = chStatus.Dot == 1
+                        ? $"{setValue / 10.0:F1}"
+                        : $"{setValue}";
+
                     OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                        $"채널 {channelNumber} 온도 설정 성공: {setValue}{_status.ChannelStatus[channelNumber - 1].TemperatureUnit}",
+                        $"채널 {channelNumber} 온도 설정 성공: {displayValue}{chStatus.TemperatureUnit}",
                         DeviceStatusCode.Ready));
                 }
 
@@ -563,7 +624,7 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
             finally
             {
-                // ★ 주소 복원
+                // ★ 메인 모듈 주소로 복원
                 _deviceAddress = savedAddress;
             }
         }
@@ -875,6 +936,9 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
         }
 
+        /// <summary>
+        /// Ramp 설정 읽기 (외부 호출용 - 주소 관리 포함)
+        /// </summary>
         public bool GetRampConfiguration(int channelNumber)
         {
             if (channelNumber < 1 || channelNumber > _numChannels)
@@ -882,6 +946,28 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
+            // ★ 메인 모듈 주소 백업 및 강제 설정
+            int savedAddress = _deviceAddress;
+
+            try
+            {
+                // ★ 항상 메인 모듈 주소로 설정
+                _deviceAddress = _mainModuleAddress;
+
+                return GetRampConfigurationInternal(channelNumber);
+            }
+            finally
+            {
+                // ★ 주소 복원
+                _deviceAddress = savedAddress;
+            }
+        }
+
+        /// <summary>
+        /// Ramp 설정 읽기 (내부 호출용 - 주소 관리 없음, 호출자가 관리)
+        /// </summary>
+        private bool GetRampConfigurationInternal(int channelNumber)
+        {
             try
             {
                 ushort baseAddress;
@@ -913,14 +999,21 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
         }
 
+        /// <summary>
+        /// Ramp 진행 상태를 확인합니다.
+        /// </summary>
+        /// <param name="channelNumber">채널 번호</param>
         private void CheckRampProgress(int channelNumber)
         {
             var status = _status.ChannelStatus[channelNumber - 1];
 
+            // Ramp가 활성화되어 있고 운전 중이면
             if (status.IsRampEnabled && status.IsRunning)
             {
-                float diff = Math.Abs(status.SetValue - status.PresentValue);
-                float tolerance = status.Dot == 0 ? 2.0f : 0.2f;
+                // raw 단위 비교 (물리 기준 ±2°C)
+                // Dot=0: 2 raw = 2°C, Dot=1: 20 raw = 2.0°C
+                int diff = Math.Abs(status.SetValue - status.PresentValue);
+                int tolerance = status.Dot == 0 ? 2 : 20;
                 status.IsRampActive = diff > tolerance;
             }
             else
@@ -1343,14 +1436,23 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             if (channelStatus.IsRunning)
             {
-                float tolerance = channelStatus.Dot == 0 ? 3.0f : 0.3f;
+                // 안정 판정: raw 단위 비교 (물리 기준 ±3°C)
+                // Dot=0: 3 raw = 3°C, Dot=1: 30 raw = 3.0°C
+                int tolerance = channelStatus.Dot == 0 ? 3 : 30;
                 if (Math.Abs(channelStatus.PresentValue - channelStatus.SetValue) <= tolerance)
+                {
                     return "안정 상태";
+                }
                 else if (channelStatus.PresentValue < channelStatus.SetValue)
+                {
                     return channelStatus.IsRampEnabled ? "승온 중 (Ramp)" : "승온 중";
+                }
                 else
+                {
                     return channelStatus.IsRampEnabled ? "냉각 중 (Ramp)" : "냉각 중";
+                }
             }
+
             else
             {
                 return "정지";

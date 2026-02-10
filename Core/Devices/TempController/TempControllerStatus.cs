@@ -339,7 +339,9 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// Ramp 상태 텍스트
+        /// Ramp 상태 텍스트 (Dot 반영)
+        /// Dot=0: raw값 그대로 (예: 10 → "10°C/분")
+        /// Dot=1: raw값 ÷ 10 (예: 10 → "1.0°C/분")
         /// </summary>
         public string RampStatusText
         {
@@ -348,7 +350,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 if (!IsRampEnabled)
                     return "Ramp OFF";
 
-                string unit = _rampTimeUnit switch
+                string timeUnit = _rampTimeUnit switch
                 {
                     0 => "/초",
                     1 => "/분",
@@ -358,11 +360,19 @@ namespace VacX_OutSense.Core.Devices.TempController
 
                 string status = "";
                 if (_rampUpRate > 0)
-                    status += $"상승: {_rampUpRate}{_temperatureUnit}{unit}";
+                {
+                    string rateStr = _dot == 1
+                        ? $"{_rampUpRate / 10.0:F1}"
+                        : $"{_rampUpRate}";
+                    status += $"상승: {rateStr}{_temperatureUnit}{timeUnit}";
+                }
                 if (_rampDownRate > 0)
                 {
                     if (status.Length > 0) status += ", ";
-                    status += $"하강: {_rampDownRate}{_temperatureUnit}{unit}";
+                    string rateStr = _dot == 1
+                        ? $"{_rampDownRate / 10.0:F1}"
+                        : $"{_rampDownRate}";
+                    status += $"하강: {rateStr}{_temperatureUnit}{timeUnit}";
                 }
 
                 return status;

@@ -10,6 +10,8 @@ namespace VacX_OutSense.UI.Controls
     {
         private TempController _tempController;
         private int _channelNumber;
+        private int _dot = 0;              // 소수점 위치 (0: 정수, 1: 소수 1자리)
+        private string _tempUnit = "°C";   // 온도 단위
         private System.Windows.Forms.Timer _updateTimer;
         private bool _isUpdating = false;
 
@@ -30,13 +32,18 @@ namespace VacX_OutSense.UI.Controls
         {
             InitializeComponent();
 
-            // 디자인 모드가 아닐 때만 타이머 초기화
+            // ★ 콤보박스 기본 초기화
+            if (cmbTimeUnit != null && cmbTimeUnit.Items.Count == 0)
+            {
+                cmbTimeUnit.Items.AddRange(new object[] { "초", "분", "시간" });
+                cmbTimeUnit.SelectedIndex = 1;  // 기본: 분
+            }
+
             if (!DesignMode)
             {
                 InitializeTimer();
             }
         }
-
         private void InitializeTimer()
         {
             if (DesignMode) return;
@@ -56,7 +63,6 @@ namespace VacX_OutSense.UI.Controls
             _tempController = controller;
             _channelNumber = channelNumber;
 
-            // 제목 설정
             Title = $"채널 {channelNumber} Ramp 설정";
 
             // 콤보박스 초기화
@@ -67,7 +73,6 @@ namespace VacX_OutSense.UI.Controls
                 cmbTimeUnit.SelectedIndex = 1; // 기본값: 분
             }
 
-            // 타이머가 없으면 초기화
             if (_updateTimer == null)
             {
                 InitializeTimer();
@@ -76,7 +81,6 @@ namespace VacX_OutSense.UI.Controls
             // 초기 설정 로드
             LoadCurrentSettings();
 
-            // 타이머 시작
             if (_updateTimer != null)
             {
                 _updateTimer.Start();
@@ -84,11 +88,10 @@ namespace VacX_OutSense.UI.Controls
         }
 
         /// <summary>
-        /// 현재 Ramp 설정을 로드합니다.
+        /// 현재 Ramp 설정을 컨트롤러에서 읽어 UI에 반영합니다.
         /// </summary>
         private void LoadCurrentSettings()
         {
-            // 디자인 모드이거나 컨트롤러가 없으면 반환
             if (DesignMode || _tempController == null || _isUpdating)
                 return;
 
@@ -100,19 +103,20 @@ namespace VacX_OutSense.UI.Controls
                 {
                     var status = _tempController.Status.ChannelStatus[_channelNumber - 1];
 
-                    // UI 업데이트 - null 체크 추가
-                    if (nudRampUpRate != null)
-                        nudRampUpRate.Value = status.RampUpRate;
+                    // ★ Dot, 온도 단위 동기화
+                    _dot = (int)status.Dot;
+                    _tempUnit = status.TemperatureUnit;
 
-                    if (nudRampDownRate != null)
-                        nudRampDownRate.Value = status.RampDownRate;
+                    // ★ Dot에 따라 NUD 설정 변경
+                    ConfigureNudForDot(nudRampUpRate, status.RampUpRate);
+                    ConfigureNudForDot(nudRampDownRate, status.RampDownRate);
 
-                    if (cmbTimeUnit != null)
+                    // 시간 단위 콤보박스
+                    if (cmbTimeUnit != null && status.RampTimeUnit <= 2)
                         cmbTimeUnit.SelectedIndex = (int)status.RampTimeUnit;
 
-                    // 활성화 상태 업데이트
-                    if (chkEnableRamp != null)
-                        chkEnableRamp.Checked = status.IsRampEnabled;
+                    // 단위 라벨 갱신
+                    UpdateRateUnitLabels();
 
                     UpdateStatusDisplay();
                 }
@@ -132,7 +136,89 @@ namespace VacX_OutSense.UI.Controls
         }
 
         /// <summary>
+        /// Dot 설정에 따라 NumericUpDown의 표시 형식과 값을 설정합니다.
+        /// 
+        /// TM4 매뉴얼: Ramp Rate 단위는 ℃/℉/Digit per 시간단위
+        /// - Dot=0: 레지스터 값 10 = 10°C
+        /// - Dot=1: 레지스터 값 10 = 1.0°C (10 digit = 10 × 0.1°C)
+        /// </summary>
+        private void ConfigureNudForDot(NumericUpDown nud, ushort rawValue)
+        {
+            if (nud == null) return;
+
+            if (_dot == 1)
+            {
+                nud.DecimalPlaces = 1;
+                nud.Increment = 0.1m;
+                nud.Maximum = 999.9m;       // raw 9999 → 999.9°C
+                nud.Minimum = 0;
+                nud.Value = Math.Min(rawValue / 10.0m, nud.Maximum);
+            }
+            else
+            {
+                nud.DecimalPlaces = 0;
+                nud.Increment = 1;
+                nud.Maximum = 9999;
+                nud.Minimum = 0;
+                nud.Value = Math.Min(rawValue, nud.Maximum);
+            }
+        }
+
+        /// <summary>
+        /// NUD 값을 레지스터에 쓸 raw 값으로 변환합니다.
+        /// </summary>
+        private ushort NudToRawValue(NumericUpDown nud)
+        {
+            if (nud == null) return 0;
+
+            if (_dot == 1)
+                return (ushort)(nud.Value * 10);
+            else
+                return (ushort)nud.Value;
+        }
+
+        /// <summary>
+        /// 시간 단위 콤보박스 변경 시 단위 라벨을 갱신합니다.
+        /// </summary>
+        private void cmbTimeUnit_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            string unit = cmbTimeUnit.SelectedIndex switch
+            {
+                0 => "°C/초",
+                1 => "°C/분",
+                2 => "°C/시",
+                _ => "°C/분"
+            };
+
+            lblUpRateUnit.Text = unit;
+            lblDownRateUnit.Text = unit;
+        }
+
+        /// <summary>
+        /// 변화율 단위 라벨을 현재 온도 단위 + 시간 단위로 갱신합니다.
+        /// 예: "°C/분", "°C/시간"
+        /// </summary>
+        private void UpdateRateUnitLabels()
+        {
+            if (cmbTimeUnit == null || lblUpRateUnit == null || lblDownRateUnit == null)
+                return;
+
+            string timeStr = cmbTimeUnit.SelectedIndex switch
+            {
+                0 => "초",
+                1 => "분",
+                2 => "시간",
+                _ => "분"
+            };
+
+            string unit = $"{_tempUnit}/{timeStr}";
+            lblUpRateUnit.Text = unit;
+            lblDownRateUnit.Text = unit;
+        }
+
+        /// <summary>
         /// Ramp 설정을 적용합니다.
+        /// ★ 운전 중 변경 시 경고, Ramp OFF 시 열충격 경고
         /// </summary>
         private void btnApply_Click(object sender, EventArgs e)
         {
@@ -140,21 +226,45 @@ namespace VacX_OutSense.UI.Controls
 
             try
             {
-                // 입력 값 검증
-                if (!ValidateInput()) return;
+                ushort rampUp = NudToRawValue(nudRampUpRate);
+                ushort rampDown = NudToRawValue(nudRampDownRate);
 
-                ushort rampUp = (ushort)nudRampUpRate.Value;
-                ushort rampDown = (ushort)nudRampDownRate.Value;
+                var status = _tempController.Status.ChannelStatus[_channelNumber - 1];
+
+                // ★ 운전 중 경고
+                if (status.IsRunning)
+                {
+                    bool wasEnabled = status.IsRampEnabled;
+                    bool willDisable = (rampUp == 0 && rampDown == 0);
+
+                    if (wasEnabled && willDisable)
+                    {
+                        // Ramp ON → OFF: SV가 즉시 목표값으로 점프
+                        var result = MessageBox.Show(
+                            "운전 중에 Ramp를 끄면 설정값(SV)이 즉시 목표값으로 변경됩니다.\n" +
+                            "급격한 온도 변화가 발생할 수 있습니다.\n\n계속하시겠습니까?",
+                            "⚠ 열충격 주의",
+                            MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                        if (result != DialogResult.Yes) return;
+                    }
+                    else
+                    {
+                        // 운전 중 Ramp 설정 변경
+                        var result = MessageBox.Show(
+                            "운전 중에 Ramp 설정을 변경합니다.\n" +
+                            "새 설정은 남은 구간에 즉시 적용됩니다.\n\n계속하시겠습니까?",
+                            "운전 중 설정 변경",
+                            MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                        if (result != DialogResult.Yes) return;
+                    }
+                }
+
                 TempController.RampTimeUnit timeUnit =
                     (TempController.RampTimeUnit)cmbTimeUnit.SelectedIndex;
 
-                // 설정 적용
                 if (_tempController.SetRampConfiguration(_channelNumber, rampUp, rampDown, timeUnit))
                 {
-                    MessageBox.Show($"채널 {_channelNumber} Ramp 설정이 적용되었습니다.", "성공",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                    // 상태 업데이트
+                    // 성공 시 현재 설정 다시 로드
                     LoadCurrentSettings();
                 }
                 else
@@ -171,81 +281,11 @@ namespace VacX_OutSense.UI.Controls
         }
 
         /// <summary>
-        /// 입력 값을 검증합니다.
-        /// </summary>
-        private bool ValidateInput()
-        {
-            if (nudRampUpRate == null || nudRampDownRate == null)
-                return false;
-
-            if (nudRampUpRate.Value == 0 && nudRampDownRate.Value == 0)
-            {
-                var result = MessageBox.Show("Ramp 기능이 비활성화됩니다. 계속하시겠습니까?",
-                    "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                return result == DialogResult.Yes;
-            }
-
-            if (nudRampUpRate.Value > 9999 || nudRampDownRate.Value > 9999)
-            {
-                MessageBox.Show("Ramp 변화율은 0-9999 사이여야 합니다.", "입력 오류",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Ramp 활성화 체크박스 변경 이벤트
-        /// </summary>
-        private void chkEnableRamp_CheckedChanged(object sender, EventArgs e)
-        {
-            if (DesignMode || _isUpdating) return;
-
-            bool isEnabled = chkEnableRamp?.Checked ?? false;
-
-            // 컨트롤 활성화/비활성화
-            if (nudRampUpRate != null)
-                nudRampUpRate.Enabled = isEnabled;
-
-            if (nudRampDownRate != null)
-                nudRampDownRate.Enabled = isEnabled;
-
-            if (cmbTimeUnit != null)
-                cmbTimeUnit.Enabled = isEnabled;
-
-            if (btnApply != null)
-                btnApply.Enabled = isEnabled;
-
-            if (!isEnabled)
-            {
-                // Ramp OFF 설정
-                if (nudRampUpRate != null)
-                    nudRampUpRate.Value = 0;
-
-                if (nudRampDownRate != null)
-                    nudRampDownRate.Value = 0;
-            }
-            else
-            {
-                // 기본값 설정
-                if (nudRampUpRate != null && nudRampDownRate != null)
-                {
-                    if (nudRampUpRate.Value == 0 && nudRampDownRate.Value == 0)
-                    {
-                        nudRampUpRate.Value = 10;
-                        nudRampDownRate.Value = 10;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
         /// 상태 표시를 업데이트합니다.
+        /// ChannelStatus.RampStatusText가 Dot을 반영하므로 직접 사용
         /// </summary>
         private void UpdateStatusDisplay()
         {
-            // 디자인 모드이거나 필수 객체가 없으면 반환
             if (DesignMode || _tempController == null || _channelNumber < 1)
                 return;
 
@@ -253,30 +293,24 @@ namespace VacX_OutSense.UI.Controls
             {
                 var status = _tempController.Status.ChannelStatus[_channelNumber - 1];
 
-                // 현재 상태 텍스트 업데이트
                 if (lblRampStatus != null)
                 {
                     lblRampStatus.Text = status.RampStatusText;
 
-                    // Ramp 진행 상태 표시
                     if (status.IsRampActive)
-                    {
                         lblRampStatus.ForeColor = Color.Green;
-                    }
+                    else if (status.IsRampEnabled)
+                        lblRampStatus.ForeColor = Color.Blue;
                     else
-                    {
-                        lblRampStatus.ForeColor = status.IsRampEnabled ? Color.Blue : Color.Gray;
-                    }
+                        lblRampStatus.ForeColor = Color.Gray;
                 }
 
-                // 진행 상태 표시
+                // 프로그레스 바
                 if (progressBar != null)
                 {
                     progressBar.Visible = status.IsRampActive;
                     if (status.IsRampActive)
-                    {
                         progressBar.Style = ProgressBarStyle.Marquee;
-                    }
                 }
 
                 // 진행 상태 텍스트
@@ -301,11 +335,11 @@ namespace VacX_OutSense.UI.Controls
                     lblRunStatus.ForeColor = status.IsRunning ? Color.Green : Color.Red;
                 }
             }
-            catch (Exception ex)
+            catch
             {
                 if (lblRampStatus != null)
                 {
-                    lblRampStatus.Text = $"상태 확인 오류";
+                    lblRampStatus.Text = "상태 확인 오류";
                     lblRampStatus.ForeColor = Color.Red;
                 }
             }
@@ -340,7 +374,6 @@ namespace VacX_OutSense.UI.Controls
         {
             base.OnLoad(e);
 
-            // 디자인 모드에서는 기본값 표시
             if (DesignMode)
             {
                 if (lblRampStatus != null)
@@ -381,8 +414,7 @@ namespace VacX_OutSense.UI.Controls
                 if (base.DesignMode)
                     return true;
 
-                return System.ComponentModel.LicenseManager.UsageMode ==
-                       System.ComponentModel.LicenseUsageMode.Designtime;
+                return LicenseManager.UsageMode == LicenseUsageMode.Designtime;
             }
         }
     }

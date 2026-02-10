@@ -12,6 +12,12 @@ namespace VacX_OutSense.Core.Control
     public class HoldModeSettings
     {
         /// <summary>
+        /// 1회 최대 조정량 (°C)
+        /// </summary>
+        public double MaxAdjustment { get; set; } = 2.0;
+
+
+        /// <summary>
         /// 사용할 채널 (다중 선택 가능)
         /// </summary>
         public bool UseCh2 { get; set; } = true;

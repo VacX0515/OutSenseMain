@@ -784,25 +784,42 @@ namespace VacX_OutSense.Core.AutoRun
                 LogError($"압력이 너무 높습니다. (현재: {measurements.CurrentPressure:E2} Torr)");
                 return false;
             }
-
             // 온도 설정
             UpdateProgress("히터 온도 설정 중...", 20);
 
-            // CH1 설정
-            short ch1SetValue = (short)(_config.HeaterCh1SetTemperature * 10); // 소수점 1자리 가정
+            // Dot 값 확보를 위해 최신 상태 읽기
+            // (Dot 기본값 0 → 실제 센서가 Dot=1이면 변환 누락 방지)
+            await _mainForm._tempController.UpdateStatusAsync();
+
+            // Dot 값에 따라 raw 레지스터 값 변환
+            // Config의 온도는 실제 온도(°C) 기준
+            // Dot=0: raw = 실제온도 (예: 100°C → 100)
+            // Dot=1: raw = 실제온도 × 10 (예: 100.0°C → 1000)
+            var ch1Status = _mainForm._tempController.Status.ChannelStatus[0];
+            var ch2Status = _mainForm._tempController.Status.ChannelStatus[1];
+
+            short ch1SetValue = ch1Status.Dot == 1
+                ? (short)(_config.HeaterCh1SetTemperature * 10)
+                : (short)_config.HeaterCh1SetTemperature;
+
             if (!_mainForm._tempController.SetTemperature(1, ch1SetValue))
             {
                 LogError("CH1 온도 설정 실패");
                 return false;
             }
 
-            // CH2 설정
-            short ch2SetValue = (short)(_config.HeaterCh2SetTemperature * 10);
+            short ch2SetValue = ch2Status.Dot == 1
+                ? (short)(_config.HeaterCh2SetTemperature * 10)
+                : (short)_config.HeaterCh2SetTemperature;
+
             if (!_mainForm._tempController.SetTemperature(2, ch2SetValue))
             {
                 LogError("CH2 온도 설정 실패");
                 return false;
             }
+
+            LogInfo($"히터 온도 설정 완료 - CH1: {_config.HeaterCh1SetTemperature}°C (Dot:{ch1Status.Dot}, raw:{ch1SetValue}), " +
+                    $"CH2: {_config.HeaterCh2SetTemperature}°C (Dot:{ch2Status.Dot}, raw:{ch2SetValue})");
 
             await Task.Delay(1000, cancellationToken);
 

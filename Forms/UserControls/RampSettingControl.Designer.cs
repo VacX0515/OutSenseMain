@@ -4,13 +4,15 @@
     {
         private System.ComponentModel.IContainer components = null;
         private System.Windows.Forms.GroupBox grpRampSetting;
-        private System.Windows.Forms.CheckBox chkEnableRamp;
         private System.Windows.Forms.NumericUpDown nudRampUpRate;
         private System.Windows.Forms.NumericUpDown nudRampDownRate;
         private System.Windows.Forms.ComboBox cmbTimeUnit;
         private System.Windows.Forms.Label lblRampUpRate;
         private System.Windows.Forms.Label lblRampDownRate;
         private System.Windows.Forms.Label lblTimeUnit;
+        private System.Windows.Forms.Label lblUpRateUnit;
+        private System.Windows.Forms.Label lblDownRateUnit;
+        private System.Windows.Forms.Label lblNote;
         private System.Windows.Forms.Button btnApply;
         private System.Windows.Forms.Button btnRefresh;
         private System.Windows.Forms.Label lblRampStatus;
@@ -30,13 +32,15 @@
         private void InitializeComponent()
         {
             this.grpRampSetting = new System.Windows.Forms.GroupBox();
-            this.chkEnableRamp = new System.Windows.Forms.CheckBox();
             this.nudRampUpRate = new System.Windows.Forms.NumericUpDown();
             this.nudRampDownRate = new System.Windows.Forms.NumericUpDown();
             this.cmbTimeUnit = new System.Windows.Forms.ComboBox();
             this.lblRampUpRate = new System.Windows.Forms.Label();
             this.lblRampDownRate = new System.Windows.Forms.Label();
             this.lblTimeUnit = new System.Windows.Forms.Label();
+            this.lblUpRateUnit = new System.Windows.Forms.Label();
+            this.lblDownRateUnit = new System.Windows.Forms.Label();
+            this.lblNote = new System.Windows.Forms.Label();
             this.btnApply = new System.Windows.Forms.Button();
             this.btnRefresh = new System.Windows.Forms.Button();
             this.lblRampStatus = new System.Windows.Forms.Label();
@@ -52,15 +56,17 @@
             // 
             // grpRampSetting
             // 
-            this.grpRampSetting.Controls.Add(this.chkEnableRamp);
             this.grpRampSetting.Controls.Add(this.lblRampUpRate);
             this.grpRampSetting.Controls.Add(this.nudRampUpRate);
-            this.grpRampSetting.Controls.Add(this.lblRampDownRate);
-            this.grpRampSetting.Controls.Add(this.nudRampDownRate);
+            this.grpRampSetting.Controls.Add(this.lblUpRateUnit);
             this.grpRampSetting.Controls.Add(this.lblTimeUnit);
             this.grpRampSetting.Controls.Add(this.cmbTimeUnit);
+            this.grpRampSetting.Controls.Add(this.lblRampDownRate);
+            this.grpRampSetting.Controls.Add(this.nudRampDownRate);
+            this.grpRampSetting.Controls.Add(this.lblDownRateUnit);
             this.grpRampSetting.Controls.Add(this.btnApply);
             this.grpRampSetting.Controls.Add(this.btnRefresh);
+            this.grpRampSetting.Controls.Add(this.lblNote);
             this.grpRampSetting.Controls.Add(this.lblRampStatus);
             this.grpRampSetting.Controls.Add(this.lblRunStatus);
             this.grpRampSetting.Controls.Add(this.progressBar);
@@ -73,68 +79,46 @@
             this.grpRampSetting.TabStop = false;
             this.grpRampSetting.Text = "Ramp 설정";
 
-            // 
-            // chkEnableRamp
-            // 
-            this.chkEnableRamp.AutoSize = true;
-            this.chkEnableRamp.Location = new System.Drawing.Point(15, 25);
-            this.chkEnableRamp.Name = "chkEnableRamp";
-            this.chkEnableRamp.Size = new System.Drawing.Size(100, 17);
-            this.chkEnableRamp.TabIndex = 0;
-            this.chkEnableRamp.Text = "Ramp 활성화";
-            this.chkEnableRamp.UseVisualStyleBackColor = true;
-            this.chkEnableRamp.CheckedChanged += new System.EventHandler(this.chkEnableRamp_CheckedChanged);
-
+            // ═══════════ Row 1 (y=25): 상승 변화율 + 시간 단위 ═══════════
             // 
             // lblRampUpRate
             // 
             this.lblRampUpRate.AutoSize = true;
-            this.lblRampUpRate.Location = new System.Drawing.Point(15, 55);
+            this.lblRampUpRate.Location = new System.Drawing.Point(12, 28);
             this.lblRampUpRate.Name = "lblRampUpRate";
-            this.lblRampUpRate.Size = new System.Drawing.Size(85, 13);
-            this.lblRampUpRate.TabIndex = 1;
+            this.lblRampUpRate.Size = new System.Drawing.Size(79, 13);
+            this.lblRampUpRate.TabIndex = 0;
             this.lblRampUpRate.Text = "상승 변화율:";
 
             // 
             // nudRampUpRate
             // 
-            this.nudRampUpRate.Location = new System.Drawing.Point(110, 53);
+            this.nudRampUpRate.Location = new System.Drawing.Point(100, 25);
             this.nudRampUpRate.Maximum = new decimal(new int[] { 9999, 0, 0, 0 });
             this.nudRampUpRate.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             this.nudRampUpRate.Name = "nudRampUpRate";
-            this.nudRampUpRate.Size = new System.Drawing.Size(80, 20);
-            this.nudRampUpRate.TabIndex = 2;
+            this.nudRampUpRate.Size = new System.Drawing.Size(75, 20);
+            this.nudRampUpRate.TabIndex = 1;
             this.nudRampUpRate.Value = new decimal(new int[] { 0, 0, 0, 0 });
 
             // 
-            // lblRampDownRate
+            // lblUpRateUnit
             // 
-            this.lblRampDownRate.AutoSize = true;
-            this.lblRampDownRate.Location = new System.Drawing.Point(15, 85);
-            this.lblRampDownRate.Name = "lblRampDownRate";
-            this.lblRampDownRate.Size = new System.Drawing.Size(85, 13);
-            this.lblRampDownRate.TabIndex = 3;
-            this.lblRampDownRate.Text = "하강 변화율:";
-
-            // 
-            // nudRampDownRate
-            // 
-            this.nudRampDownRate.Location = new System.Drawing.Point(110, 83);
-            this.nudRampDownRate.Maximum = new decimal(new int[] { 9999, 0, 0, 0 });
-            this.nudRampDownRate.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
-            this.nudRampDownRate.Name = "nudRampDownRate";
-            this.nudRampDownRate.Size = new System.Drawing.Size(80, 20);
-            this.nudRampDownRate.TabIndex = 4;
-            this.nudRampDownRate.Value = new decimal(new int[] { 0, 0, 0, 0 });
+            this.lblUpRateUnit.AutoSize = true;
+            this.lblUpRateUnit.Location = new System.Drawing.Point(178, 28);
+            this.lblUpRateUnit.Name = "lblUpRateUnit";
+            this.lblUpRateUnit.Size = new System.Drawing.Size(40, 13);
+            this.lblUpRateUnit.TabIndex = 2;
+            this.lblUpRateUnit.Text = "°C/분";
 
             // 
             // lblTimeUnit
             // 
             this.lblTimeUnit.AutoSize = true;
-            this.lblTimeUnit.Location = new System.Drawing.Point(210, 55);
+            this.lblTimeUnit.Location = new System.Drawing.Point(248, 28);
             this.lblTimeUnit.Name = "lblTimeUnit";
-            this.lblTimeUnit.Size = new System.Drawing.Size(70, 13);
-            this.lblTimeUnit.TabIndex = 5;
+            this.lblTimeUnit.Size = new System.Drawing.Size(61, 13);
+            this.lblTimeUnit.TabIndex = 3;
             this.lblTimeUnit.Text = "시간 단위:";
 
             // 
@@ -142,18 +126,51 @@
             // 
             this.cmbTimeUnit.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbTimeUnit.FormattingEnabled = true;
-            this.cmbTimeUnit.Location = new System.Drawing.Point(285, 52);
+            this.cmbTimeUnit.Location = new System.Drawing.Point(315, 24);
             this.cmbTimeUnit.Name = "cmbTimeUnit";
-            this.cmbTimeUnit.Size = new System.Drawing.Size(90, 21);
-            this.cmbTimeUnit.TabIndex = 6;
+            this.cmbTimeUnit.Size = new System.Drawing.Size(72, 21);
+            this.cmbTimeUnit.TabIndex = 4;
+            this.cmbTimeUnit.SelectedIndexChanged += new System.EventHandler(this.cmbTimeUnit_SelectedIndexChanged);
+
+            // ═══════════ Row 2 (y=55): 하강 변화율 + 버튼 ═══════════
+            // 
+            // lblRampDownRate
+            // 
+            this.lblRampDownRate.AutoSize = true;
+            this.lblRampDownRate.Location = new System.Drawing.Point(12, 58);
+            this.lblRampDownRate.Name = "lblRampDownRate";
+            this.lblRampDownRate.Size = new System.Drawing.Size(79, 13);
+            this.lblRampDownRate.TabIndex = 5;
+            this.lblRampDownRate.Text = "하강 변화율:";
+
+            // 
+            // nudRampDownRate
+            // 
+            this.nudRampDownRate.Location = new System.Drawing.Point(100, 55);
+            this.nudRampDownRate.Maximum = new decimal(new int[] { 9999, 0, 0, 0 });
+            this.nudRampDownRate.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            this.nudRampDownRate.Name = "nudRampDownRate";
+            this.nudRampDownRate.Size = new System.Drawing.Size(75, 20);
+            this.nudRampDownRate.TabIndex = 6;
+            this.nudRampDownRate.Value = new decimal(new int[] { 0, 0, 0, 0 });
+
+            // 
+            // lblDownRateUnit
+            // 
+            this.lblDownRateUnit.AutoSize = true;
+            this.lblDownRateUnit.Location = new System.Drawing.Point(178, 58);
+            this.lblDownRateUnit.Name = "lblDownRateUnit";
+            this.lblDownRateUnit.Size = new System.Drawing.Size(40, 13);
+            this.lblDownRateUnit.TabIndex = 7;
+            this.lblDownRateUnit.Text = "°C/분";
 
             // 
             // btnApply
             // 
-            this.btnApply.Location = new System.Drawing.Point(210, 83);
+            this.btnApply.Location = new System.Drawing.Point(248, 53);
             this.btnApply.Name = "btnApply";
-            this.btnApply.Size = new System.Drawing.Size(75, 23);
-            this.btnApply.TabIndex = 7;
+            this.btnApply.Size = new System.Drawing.Size(65, 25);
+            this.btnApply.TabIndex = 8;
             this.btnApply.Text = "적용";
             this.btnApply.UseVisualStyleBackColor = true;
             this.btnApply.Click += new System.EventHandler(this.btnApply_Click);
@@ -161,54 +178,74 @@
             // 
             // btnRefresh
             // 
-            this.btnRefresh.Location = new System.Drawing.Point(300, 83);
+            this.btnRefresh.Location = new System.Drawing.Point(320, 53);
             this.btnRefresh.Name = "btnRefresh";
-            this.btnRefresh.Size = new System.Drawing.Size(75, 23);
-            this.btnRefresh.TabIndex = 8;
+            this.btnRefresh.Size = new System.Drawing.Size(67, 25);
+            this.btnRefresh.TabIndex = 9;
             this.btnRefresh.Text = "새로고침";
             this.btnRefresh.UseVisualStyleBackColor = true;
             this.btnRefresh.Click += new System.EventHandler(this.btnRefresh_Click);
 
+            // ═══════════ Row 3 (y=85): 안내 메시지 ═══════════
+            // 
+            // lblNote
+            // 
+            this.lblNote.AutoSize = true;
+            this.lblNote.ForeColor = System.Drawing.Color.Gray;
+            this.lblNote.Location = new System.Drawing.Point(12, 85);
+            this.lblNote.Name = "lblNote";
+            this.lblNote.Size = new System.Drawing.Size(250, 13);
+            this.lblNote.TabIndex = 10;
+            this.lblNote.Text = "※ 변화율 0 = 해당 방향 Ramp OFF";
+
+            // ═══════════ Row 4 (y=110): 상태 표시 ═══════════
             // 
             // lblRampStatus
             // 
             this.lblRampStatus.AutoSize = true;
             this.lblRampStatus.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold);
-            this.lblRampStatus.Location = new System.Drawing.Point(15, 125);
+            this.lblRampStatus.Location = new System.Drawing.Point(12, 110);
             this.lblRampStatus.Name = "lblRampStatus";
             this.lblRampStatus.Size = new System.Drawing.Size(69, 15);
-            this.lblRampStatus.TabIndex = 9;
+            this.lblRampStatus.TabIndex = 11;
             this.lblRampStatus.Text = "Ramp OFF";
 
             // 
             // lblRunStatus
             // 
             this.lblRunStatus.AutoSize = true;
-            this.lblRunStatus.Location = new System.Drawing.Point(300, 127);
+            this.lblRunStatus.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold);
+            this.lblRunStatus.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.lblRunStatus.Location = new System.Drawing.Point(340, 110);
             this.lblRunStatus.Name = "lblRunStatus";
-            this.lblRunStatus.Size = new System.Drawing.Size(31, 13);
-            this.lblRunStatus.TabIndex = 10;
+            this.lblRunStatus.Size = new System.Drawing.Size(31, 15);
+            this.lblRunStatus.TabIndex = 12;
             this.lblRunStatus.Text = "정지";
 
+            // ═══════════ Row 5 (y=135): 진행 바 ═══════════
             // 
             // progressBar
             // 
-            this.progressBar.Location = new System.Drawing.Point(15, 150);
+            this.progressBar.Location = new System.Drawing.Point(12, 135);
             this.progressBar.Name = "progressBar";
-            this.progressBar.Size = new System.Drawing.Size(360, 23);
-            this.progressBar.TabIndex = 11;
+            this.progressBar.Size = new System.Drawing.Size(375, 20);
+            this.progressBar.TabIndex = 13;
             this.progressBar.Visible = false;
 
+            // ═══════════ Row 6 (y=162): 진행 텍스트 ═══════════
             // 
             // lblProgress
             // 
             this.lblProgress.AutoSize = true;
-            this.lblProgress.Location = new System.Drawing.Point(15, 180);
+            this.lblProgress.Location = new System.Drawing.Point(12, 162);
             this.lblProgress.Name = "lblProgress";
             this.lblProgress.Size = new System.Drawing.Size(0, 13);
-            this.lblProgress.TabIndex = 12;
+            this.lblProgress.TabIndex = 14;
             this.lblProgress.Visible = false;
 
+            // 
+            // grpRampSetting - ResumeLayout
+            // 
             this.grpRampSetting.ResumeLayout(false);
             this.grpRampSetting.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudRampUpRate)).EndInit();

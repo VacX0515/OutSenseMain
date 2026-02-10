@@ -65,6 +65,7 @@ namespace VacX_OutSense
             chkChillerPIDEnabled = new CheckBox();
             rampSettingControl1 = new UI.Controls.RampSettingControl();
             grpCh1Timer = new GroupBox();
+            btnHoldSettings = new Button();
             btnBakeoutSettings = new Button();
             numCh1ReachCount = new NumericUpDown();
             lblCh1ReachCount = new Label();
@@ -666,6 +667,7 @@ namespace VacX_OutSense
             // 
             // grpCh1Timer
             // 
+            grpCh1Timer.Controls.Add(btnHoldSettings);
             grpCh1Timer.Controls.Add(btnBakeoutSettings);
             grpCh1Timer.Controls.Add(numCh1ReachCount);
             grpCh1Timer.Controls.Add(lblCh1ReachCount);
@@ -692,9 +694,19 @@ namespace VacX_OutSense
             grpCh1Timer.TabStop = false;
             grpCh1Timer.Text = "CH1 자동 시작/정지 타이머";
             // 
+            // btnHoldSettings
+            // 
+            btnHoldSettings.Location = new Point(357, 76);
+            btnHoldSettings.Name = "btnHoldSettings";
+            btnHoldSettings.Size = new Size(102, 28);
+            btnHoldSettings.TabIndex = 20;
+            btnHoldSettings.Text = "온도 유지 설정";
+            btnHoldSettings.UseVisualStyleBackColor = true;
+            btnHoldSettings.Click += btnHoldSettings_Click;
+            // 
             // btnBakeoutSettings
             // 
-            btnBakeoutSettings.Location = new Point(224, 74);
+            btnBakeoutSettings.Location = new Point(210, 75);
             btnBakeoutSettings.Name = "btnBakeoutSettings";
             btnBakeoutSettings.Size = new Size(141, 28);
             btnBakeoutSettings.TabIndex = 19;
@@ -734,7 +746,7 @@ namespace VacX_OutSense
             // 
             // btnCh1AutoStart
             // 
-            btnCh1AutoStart.Location = new Point(98, 74);
+            btnCh1AutoStart.Location = new Point(89, 75);
             btnCh1AutoStart.Name = "btnCh1AutoStart";
             btnCh1AutoStart.Size = new Size(120, 28);
             btnCh1AutoStart.TabIndex = 15;
@@ -2681,5 +2693,6 @@ namespace VacX_OutSense
         private TabPage tabPageThermalRamp;
         private Forms.UserControls.SimpleRampControl simpleRampControl1;
         private Button btnBakeoutSettings;
+        private Button btnHoldSettings;
     }
 }

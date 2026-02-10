@@ -721,10 +721,7 @@ namespace VacX_OutSense.Core.Control
         /// </summary>
         private void ExecuteHoldControl(double sampleTemp, double heaterTemp)
         {
-            // 설정에 따른 온도 읽기
             double controlTemp = GetSampleTemperatureBySource();
-
-            // 체크 간격
             double checkIntervalSeconds = _holdSettings.CheckIntervalMinutes * 60;
 
             double elapsedSeconds = (DateTime.Now - _holdCheckStartTime).TotalSeconds;
@@ -734,32 +731,76 @@ namespace VacX_OutSense.Core.Control
             }
 
             double error = _targetSampleTemp - controlTemp;
+            double tempChange = controlTemp - _holdCheckStartTemp;
+            double changeRate = tempChange / (elapsedSeconds / 60.0);  // °C/min
             double currentSetpoint = GetHeaterSetpoint();
-            double newSV = currentSetpoint;
 
             string sourceText = _holdSettings.GetSourceText();
-            OnLog($"Hold 체크: {sourceText}={controlTemp:F1}°C, 목표={_targetSampleTemp:F1}°C, 오차={error:+0.0;-0.0}°C");
+            OnLog($"Hold 체크: {sourceText}={controlTemp:F1}°C, 변화율={changeRate:+0.00;-0.00}°C/min, 오차={error:+0.0;-0.0}°C");
 
-            // 오차 허용 범위 체크
-            if (Math.Abs(error) > _holdSettings.ErrorTolerance)
-            {
-                double adjustment = error * _holdSettings.AdjustmentMultiplier;
-                newSV = currentSetpoint + adjustment;
-                OnLog($"Hold: CH1 SV {currentSetpoint:F1} → {newSV:F1}°C ({adjustment:+0.0;-0.0})");
-            }
-            else
+            // ★ 자동 판단 로직
+            double newSV = currentSetpoint;
+            bool shouldAdjust = false;
+            string reason = "";
+
+            // 1. 목표 범위 내 → 유지
+            if (Math.Abs(error) <= _holdSettings.ErrorTolerance)
             {
                 _equilibriumHeaterTemp = currentSetpoint;
-                OnLog($"Hold: 목표 유지 중");
+                reason = "목표 범위 내";
+            }
+            // 2. 초과 상태 (error < 0)
+            else if (error < 0)
+            {
+                if (changeRate < -0.02)
+                {
+                    // 이미 하강 중 → 대기
+                    reason = "초과지만 하강 중 → 대기";
+                }
+                else
+                {
+                    // 하강 안 함 → SV 감소 필요
+                    shouldAdjust = true;
+                    newSV = currentSetpoint + error;  // error가 음수이므로 감소
+                    reason = "초과 + 정체 → SV 감소";
+                }
+            }
+            // 3. 부족 상태 (error > 0)
+            else
+            {
+                if (changeRate > 0.02)
+                {
+                    // 이미 상승 중 → 대기
+                    reason = "부족하지만 상승 중 → 대기";
+                }
+                else
+                {
+                    // 상승 안 함 → SV 증가 필요
+                    shouldAdjust = true;
+                    newSV = currentSetpoint + error;  // error가 양수이므로 증가
+                    reason = "부족 + 정체 → SV 증가";
+                }
             }
 
-            // 제한 적용
-            newSV = Math.Max(newSV, _holdSettings.MinHeaterTemp);
-            newSV = Math.Min(newSV, _holdSettings.MaxHeaterTemp);
+            OnLog($"Hold 판단: {reason}");
 
-            if (Math.Abs(newSV - currentSetpoint) > 0.1)
+            if (shouldAdjust)
             {
-                SetHeaterTemperature(newSV);
+                // 최대 조정량 제한
+                double maxAdj = _holdSettings.MaxAdjustment;
+                double adjustment = newSV - currentSetpoint;
+                adjustment = Math.Max(-maxAdj, Math.Min(maxAdj, adjustment));
+                newSV = currentSetpoint + adjustment;
+
+                // 범위 제한
+                newSV = Math.Max(newSV, _holdSettings.MinHeaterTemp);
+                newSV = Math.Min(newSV, _holdSettings.MaxHeaterTemp);
+
+                if (Math.Abs(newSV - currentSetpoint) > 0.1)
+                {
+                    SetHeaterTemperature(newSV);
+                    OnLog($"Hold: CH1 SV {currentSetpoint:F1} → {newSV:F1}°C");
+                }
             }
 
             _holdCheckStartTime = DateTime.Now;
