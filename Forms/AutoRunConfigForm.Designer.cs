@@ -44,16 +44,23 @@
             lblTemperatureStabilityTolerance = new Label();
             txtHeaterRampUpRate = new TextBox();
             lblHeaterRampUpRate = new Label();
-            txtHeaterCh2SetTemperature = new TextBox();
-            lblHeaterCh2SetTemperature = new Label();
+            lblTempNote = new Label();
             txtHeaterCh1SetTemperature = new TextBox();
             lblHeaterCh1SetTemperature = new Label();
             txtChillerSetTemperature = new TextBox();
             lblChillerSetTemperature = new Label();
+            lblShutdownTempHeader = new Label();
+            txtCoolingTargetTemperature = new TextBox();
+            lblCoolingTargetTemperature = new Label();
+            txtVentTargetPressure = new TextBox();
+            lblVentTargetPressure = new Label();
             tabTime = new TabPage();
             nudDataLoggingIntervalSeconds = new NumericUpDown();
             lblDataLoggingInterval = new Label();
-            nudExperimentDurationHours = new NumericUpDown();
+            nudExperimentHours = new NumericUpDown();
+            lblExpHoursUnit = new Label();
+            nudExperimentMinutes = new NumericUpDown();
+            lblExpMinutesUnit = new Label();
             lblExperimentDuration = new Label();
             tabTimeout = new TabPage();
             nudShutdownTimeout = new NumericUpDown();
@@ -82,6 +89,7 @@
             lblMaxRetryCount = new Label();
             cmbRunMode = new ComboBox();
             lblRunMode = new Label();
+            lblRunModeDesc = new Label();
             panelButtons = new Panel();
             btnCancel = new Button();
             btnOk = new Button();
@@ -91,7 +99,8 @@
             tabTemperature.SuspendLayout();
             tabTime.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)nudDataLoggingIntervalSeconds).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)nudExperimentDurationHours).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)nudExperimentHours).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)nudExperimentMinutes).BeginInit();
             tabTimeout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)nudShutdownTimeout).BeginInit();
             ((System.ComponentModel.ISupportInitialize)nudHeaterStartTimeout).BeginInit();
@@ -142,17 +151,16 @@
             // 
             // lblPressureInfo
             // 
-            lblPressureInfo.AutoSize = true;
-            lblPressureInfo.ForeColor = Color.Blue;
-            lblPressureInfo.Location = new Point(20, 200);
+            lblPressureInfo.ForeColor = SystemColors.GrayText;
+            lblPressureInfo.Location = new Point(20, 170);
             lblPressureInfo.Name = "lblPressureInfo";
-            lblPressureInfo.Size = new Size(307, 15);
+            lblPressureInfo.Size = new Size(400, 40);
             lblPressureInfo.TabIndex = 8;
-            lblPressureInfo.Text = "* 압력은 과학적 표기법으로 입력 가능합니다. (예: 1E-5)";
+            lblPressureInfo.Text = "※ 압력값은 과학적 표기법(예: 1.00E-05)으로 입력하세요.";
             // 
             // txtMaxPressureDuringExperiment
             // 
-            txtMaxPressureDuringExperiment.Location = new Point(230, 140);
+            txtMaxPressureDuringExperiment.Location = new Point(230, 130);
             txtMaxPressureDuringExperiment.Name = "txtMaxPressureDuringExperiment";
             txtMaxPressureDuringExperiment.Size = new Size(120, 23);
             txtMaxPressureDuringExperiment.TabIndex = 7;
@@ -160,15 +168,15 @@
             // lblMaxPressureDuringExperiment
             // 
             lblMaxPressureDuringExperiment.AutoSize = true;
-            lblMaxPressureDuringExperiment.Location = new Point(20, 143);
+            lblMaxPressureDuringExperiment.Location = new Point(20, 133);
             lblMaxPressureDuringExperiment.Name = "lblMaxPressureDuringExperiment";
-            lblMaxPressureDuringExperiment.Size = new Size(167, 15);
+            lblMaxPressureDuringExperiment.Size = new Size(175, 15);
             lblMaxPressureDuringExperiment.TabIndex = 6;
             lblMaxPressureDuringExperiment.Text = "실험 중 최대 허용 압력 (Torr):";
             // 
             // txtTargetPressureForHeater
             // 
-            txtTargetPressureForHeater.Location = new Point(230, 100);
+            txtTargetPressureForHeater.Location = new Point(230, 93);
             txtTargetPressureForHeater.Name = "txtTargetPressureForHeater";
             txtTargetPressureForHeater.Size = new Size(120, 23);
             txtTargetPressureForHeater.TabIndex = 5;
@@ -176,15 +184,15 @@
             // lblTargetPressureForHeater
             // 
             lblTargetPressureForHeater.AutoSize = true;
-            lblTargetPressureForHeater.Location = new Point(20, 103);
+            lblTargetPressureForHeater.Location = new Point(20, 96);
             lblTargetPressureForHeater.Name = "lblTargetPressureForHeater";
-            lblTargetPressureForHeater.Size = new Size(123, 15);
+            lblTargetPressureForHeater.Size = new Size(175, 15);
             lblTargetPressureForHeater.TabIndex = 4;
-            lblTargetPressureForHeater.Text = "히터 시작 압력 (Torr):";
+            lblTargetPressureForHeater.Text = "히터 시작 목표 압력 (Torr):";
             // 
             // txtTargetPressureForIonGauge
             // 
-            txtTargetPressureForIonGauge.Location = new Point(230, 60);
+            txtTargetPressureForIonGauge.Location = new Point(230, 56);
             txtTargetPressureForIonGauge.Name = "txtTargetPressureForIonGauge";
             txtTargetPressureForIonGauge.Size = new Size(120, 23);
             txtTargetPressureForIonGauge.TabIndex = 3;
@@ -192,9 +200,9 @@
             // lblTargetPressureForIonGauge
             // 
             lblTargetPressureForIonGauge.AutoSize = true;
-            lblTargetPressureForIonGauge.Location = new Point(20, 63);
+            lblTargetPressureForIonGauge.Location = new Point(20, 59);
             lblTargetPressureForIonGauge.Name = "lblTargetPressureForIonGauge";
-            lblTargetPressureForIonGauge.Size = new Size(171, 15);
+            lblTargetPressureForIonGauge.Size = new Size(193, 15);
             lblTargetPressureForIonGauge.TabIndex = 2;
             lblTargetPressureForIonGauge.Text = "이온게이지 활성화 압력 (Torr):";
             // 
@@ -210,25 +218,28 @@
             lblTargetPressureForTurboPump.AutoSize = true;
             lblTargetPressureForTurboPump.Location = new Point(20, 23);
             lblTargetPressureForTurboPump.Name = "lblTargetPressureForTurboPump";
-            lblTargetPressureForTurboPump.Size = new Size(147, 15);
+            lblTargetPressureForTurboPump.Size = new Size(193, 15);
             lblTargetPressureForTurboPump.TabIndex = 0;
-            lblTargetPressureForTurboPump.Text = "터보펌프 시작 압력 (Torr):";
+            lblTargetPressureForTurboPump.Text = "터보펌프 시작 목표 압력 (Torr):";
             // 
             // tabTemperature
             // 
+            tabTemperature.Controls.Add(lblTempNote);
             tabTemperature.Controls.Add(txtTemperatureStabilityTolerance);
             tabTemperature.Controls.Add(lblTemperatureStabilityTolerance);
             tabTemperature.Controls.Add(txtHeaterRampUpRate);
             tabTemperature.Controls.Add(lblHeaterRampUpRate);
-            tabTemperature.Controls.Add(txtHeaterCh2SetTemperature);
-            tabTemperature.Controls.Add(lblHeaterCh2SetTemperature);
             tabTemperature.Controls.Add(txtHeaterCh1SetTemperature);
             tabTemperature.Controls.Add(lblHeaterCh1SetTemperature);
             tabTemperature.Controls.Add(txtChillerSetTemperature);
             tabTemperature.Controls.Add(lblChillerSetTemperature);
+            tabTemperature.Controls.Add(lblShutdownTempHeader);
+            tabTemperature.Controls.Add(txtCoolingTargetTemperature);
+            tabTemperature.Controls.Add(lblCoolingTargetTemperature);
+            tabTemperature.Controls.Add(txtVentTargetPressure);
+            tabTemperature.Controls.Add(lblVentTargetPressure);
             tabTemperature.Location = new Point(4, 24);
             tabTemperature.Name = "tabTemperature";
-            tabTemperature.Padding = new Padding(3);
             tabTemperature.Size = new Size(436, 430);
             tabTemperature.TabIndex = 1;
             tabTemperature.Text = "온도 설정";
@@ -236,55 +247,39 @@
             // 
             // txtTemperatureStabilityTolerance
             // 
-            txtTemperatureStabilityTolerance.Location = new Point(230, 180);
+            txtTemperatureStabilityTolerance.Location = new Point(230, 131);
             txtTemperatureStabilityTolerance.Name = "txtTemperatureStabilityTolerance";
             txtTemperatureStabilityTolerance.Size = new Size(120, 23);
-            txtTemperatureStabilityTolerance.TabIndex = 9;
+            txtTemperatureStabilityTolerance.TabIndex = 7;
             // 
             // lblTemperatureStabilityTolerance
             // 
             lblTemperatureStabilityTolerance.AutoSize = true;
-            lblTemperatureStabilityTolerance.Location = new Point(20, 183);
+            lblTemperatureStabilityTolerance.Location = new Point(20, 134);
             lblTemperatureStabilityTolerance.Name = "lblTemperatureStabilityTolerance";
-            lblTemperatureStabilityTolerance.Size = new Size(163, 15);
-            lblTemperatureStabilityTolerance.TabIndex = 8;
-            lblTemperatureStabilityTolerance.Text = "온도 안정성 허용 범위 (±°C):";
+            lblTemperatureStabilityTolerance.Size = new Size(147, 15);
+            lblTemperatureStabilityTolerance.TabIndex = 6;
+            lblTemperatureStabilityTolerance.Text = "온도 허용 오차 (±°C):";
             // 
             // txtHeaterRampUpRate
             // 
-            txtHeaterRampUpRate.Location = new Point(230, 140);
+            txtHeaterRampUpRate.Location = new Point(230, 94);
             txtHeaterRampUpRate.Name = "txtHeaterRampUpRate";
             txtHeaterRampUpRate.Size = new Size(120, 23);
-            txtHeaterRampUpRate.TabIndex = 7;
+            txtHeaterRampUpRate.TabIndex = 5;
             // 
             // lblHeaterRampUpRate
             // 
             lblHeaterRampUpRate.AutoSize = true;
-            lblHeaterRampUpRate.Location = new Point(20, 143);
+            lblHeaterRampUpRate.Location = new Point(20, 97);
             lblHeaterRampUpRate.Name = "lblHeaterRampUpRate";
-            lblHeaterRampUpRate.Size = new Size(153, 15);
-            lblHeaterRampUpRate.TabIndex = 6;
-            lblHeaterRampUpRate.Text = "히터 램프업 속도 (°C/min):";
-            // 
-            // txtHeaterCh2SetTemperature
-            // 
-            txtHeaterCh2SetTemperature.Location = new Point(230, 100);
-            txtHeaterCh2SetTemperature.Name = "txtHeaterCh2SetTemperature";
-            txtHeaterCh2SetTemperature.Size = new Size(120, 23);
-            txtHeaterCh2SetTemperature.TabIndex = 5;
-            // 
-            // lblHeaterCh2SetTemperature
-            // 
-            lblHeaterCh2SetTemperature.AutoSize = true;
-            lblHeaterCh2SetTemperature.Location = new Point(20, 103);
-            lblHeaterCh2SetTemperature.Name = "lblHeaterCh2SetTemperature";
-            lblHeaterCh2SetTemperature.Size = new Size(143, 15);
-            lblHeaterCh2SetTemperature.TabIndex = 4;
-            lblHeaterCh2SetTemperature.Text = "히터 CH2 설정 온도 (°C):";
+            lblHeaterRampUpRate.Size = new Size(155, 15);
+            lblHeaterRampUpRate.TabIndex = 4;
+            lblHeaterRampUpRate.Text = "히터 램프 속도 (°C/min):";
             // 
             // txtHeaterCh1SetTemperature
             // 
-            txtHeaterCh1SetTemperature.Location = new Point(230, 60);
+            txtHeaterCh1SetTemperature.Location = new Point(230, 57);
             txtHeaterCh1SetTemperature.Name = "txtHeaterCh1SetTemperature";
             txtHeaterCh1SetTemperature.Size = new Size(120, 23);
             txtHeaterCh1SetTemperature.TabIndex = 3;
@@ -292,9 +287,9 @@
             // lblHeaterCh1SetTemperature
             // 
             lblHeaterCh1SetTemperature.AutoSize = true;
-            lblHeaterCh1SetTemperature.Location = new Point(20, 63);
+            lblHeaterCh1SetTemperature.Location = new Point(20, 60);
             lblHeaterCh1SetTemperature.Name = "lblHeaterCh1SetTemperature";
-            lblHeaterCh1SetTemperature.Size = new Size(143, 15);
+            lblHeaterCh1SetTemperature.Size = new Size(146, 15);
             lblHeaterCh1SetTemperature.TabIndex = 2;
             lblHeaterCh1SetTemperature.Text = "히터 CH1 설정 온도 (°C):";
             // 
@@ -314,18 +309,119 @@
             lblChillerSetTemperature.TabIndex = 0;
             lblChillerSetTemperature.Text = "칠러 설정 온도 (°C):";
             // 
+            // lblShutdownTempHeader
+            // 
+            lblShutdownTempHeader.AutoSize = true;
+            lblShutdownTempHeader.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
+            lblShutdownTempHeader.Location = new Point(20, 175);
+            lblShutdownTempHeader.Name = "lblShutdownTempHeader";
+            lblShutdownTempHeader.Size = new Size(120, 15);
+            lblShutdownTempHeader.TabIndex = 9;
+            lblShutdownTempHeader.Text = "── 종료 시퀀스 설정";
+            // 
+            // txtCoolingTargetTemperature
+            // 
+            txtCoolingTargetTemperature.Location = new Point(230, 200);
+            txtCoolingTargetTemperature.Name = "txtCoolingTargetTemperature";
+            txtCoolingTargetTemperature.Size = new Size(120, 23);
+            txtCoolingTargetTemperature.TabIndex = 11;
+            // 
+            // lblCoolingTargetTemperature
+            // 
+            lblCoolingTargetTemperature.AutoSize = true;
+            lblCoolingTargetTemperature.Location = new Point(20, 203);
+            lblCoolingTargetTemperature.Name = "lblCoolingTargetTemperature";
+            lblCoolingTargetTemperature.Size = new Size(152, 15);
+            lblCoolingTargetTemperature.TabIndex = 10;
+            lblCoolingTargetTemperature.Text = "쿨링 목표 온도 (°C):";
+            // 
+            // txtVentTargetPressure
+            // 
+            txtVentTargetPressure.Location = new Point(230, 237);
+            txtVentTargetPressure.Name = "txtVentTargetPressure";
+            txtVentTargetPressure.Size = new Size(120, 23);
+            txtVentTargetPressure.TabIndex = 13;
+            // 
+            // lblVentTargetPressure
+            // 
+            lblVentTargetPressure.AutoSize = true;
+            lblVentTargetPressure.Location = new Point(20, 240);
+            lblVentTargetPressure.Name = "lblVentTargetPressure";
+            lblVentTargetPressure.Size = new Size(175, 15);
+            lblVentTargetPressure.TabIndex = 12;
+            lblVentTargetPressure.Text = "벤트 목표 압력 (kPa, ATM):";
+            // 
+            // lblTempNote
+            // 
+            lblTempNote.ForeColor = SystemColors.GrayText;
+            lblTempNote.Location = new Point(20, 280);
+            lblTempNote.Name = "lblTempNote";
+            lblTempNote.Size = new Size(400, 40);
+            lblTempNote.TabIndex = 14;
+            lblTempNote.Text = "※ CH2 온도는 칠러 PID가 자동 제어합니다.\r\n   (Main 탭 → 칠러 PID 설정에서 조정)";
+            // 
             // tabTime
             // 
             tabTime.Controls.Add(nudDataLoggingIntervalSeconds);
             tabTime.Controls.Add(lblDataLoggingInterval);
-            tabTime.Controls.Add(nudExperimentDurationHours);
             tabTime.Controls.Add(lblExperimentDuration);
+            tabTime.Controls.Add(nudExperimentHours);
+            tabTime.Controls.Add(lblExpHoursUnit);
+            tabTime.Controls.Add(nudExperimentMinutes);
+            tabTime.Controls.Add(lblExpMinutesUnit);
             tabTime.Location = new Point(4, 24);
             tabTime.Name = "tabTime";
             tabTime.Size = new Size(436, 430);
             tabTime.TabIndex = 2;
             tabTime.Text = "시간 설정";
             tabTime.UseVisualStyleBackColor = true;
+            // 
+            // lblExperimentDuration
+            // 
+            lblExperimentDuration.AutoSize = true;
+            lblExperimentDuration.Location = new Point(20, 22);
+            lblExperimentDuration.Name = "lblExperimentDuration";
+            lblExperimentDuration.Size = new Size(90, 15);
+            lblExperimentDuration.TabIndex = 0;
+            lblExperimentDuration.Text = "실험 지속 시간:";
+            // 
+            // nudExperimentHours
+            // 
+            nudExperimentHours.Location = new Point(150, 20);
+            nudExperimentHours.Maximum = new decimal(new int[] { 168, 0, 0, 0 });
+            nudExperimentHours.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            nudExperimentHours.Name = "nudExperimentHours";
+            nudExperimentHours.Size = new Size(60, 23);
+            nudExperimentHours.TabIndex = 1;
+            nudExperimentHours.Value = new decimal(new int[] { 24, 0, 0, 0 });
+            // 
+            // lblExpHoursUnit
+            // 
+            lblExpHoursUnit.AutoSize = true;
+            lblExpHoursUnit.Location = new Point(214, 22);
+            lblExpHoursUnit.Name = "lblExpHoursUnit";
+            lblExpHoursUnit.Size = new Size(30, 15);
+            lblExpHoursUnit.TabIndex = 2;
+            lblExpHoursUnit.Text = "시간";
+            // 
+            // nudExperimentMinutes
+            // 
+            nudExperimentMinutes.Location = new Point(250, 20);
+            nudExperimentMinutes.Maximum = new decimal(new int[] { 59, 0, 0, 0 });
+            nudExperimentMinutes.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            nudExperimentMinutes.Name = "nudExperimentMinutes";
+            nudExperimentMinutes.Size = new Size(60, 23);
+            nudExperimentMinutes.TabIndex = 3;
+            nudExperimentMinutes.Value = new decimal(new int[] { 0, 0, 0, 0 });
+            // 
+            // lblExpMinutesUnit
+            // 
+            lblExpMinutesUnit.AutoSize = true;
+            lblExpMinutesUnit.Location = new Point(314, 22);
+            lblExpMinutesUnit.Name = "lblExpMinutesUnit";
+            lblExpMinutesUnit.Size = new Size(15, 15);
+            lblExpMinutesUnit.TabIndex = 4;
+            lblExpMinutesUnit.Text = "분";
             // 
             // nudDataLoggingIntervalSeconds
             // 
@@ -334,7 +430,7 @@
             nudDataLoggingIntervalSeconds.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             nudDataLoggingIntervalSeconds.Name = "nudDataLoggingIntervalSeconds";
             nudDataLoggingIntervalSeconds.Size = new Size(100, 23);
-            nudDataLoggingIntervalSeconds.TabIndex = 3;
+            nudDataLoggingIntervalSeconds.TabIndex = 6;
             nudDataLoggingIntervalSeconds.Value = new decimal(new int[] { 60, 0, 0, 0 });
             // 
             // lblDataLoggingInterval
@@ -343,27 +439,8 @@
             lblDataLoggingInterval.Location = new Point(20, 62);
             lblDataLoggingInterval.Name = "lblDataLoggingInterval";
             lblDataLoggingInterval.Size = new Size(126, 15);
-            lblDataLoggingInterval.TabIndex = 2;
+            lblDataLoggingInterval.TabIndex = 5;
             lblDataLoggingInterval.Text = "데이터 로깅 간격 (초):";
-            // 
-            // nudExperimentDurationHours
-            // 
-            nudExperimentDurationHours.Location = new Point(230, 20);
-            nudExperimentDurationHours.Maximum = new decimal(new int[] { 168, 0, 0, 0 });
-            nudExperimentDurationHours.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
-            nudExperimentDurationHours.Name = "nudExperimentDurationHours";
-            nudExperimentDurationHours.Size = new Size(100, 23);
-            nudExperimentDurationHours.TabIndex = 1;
-            nudExperimentDurationHours.Value = new decimal(new int[] { 24, 0, 0, 0 });
-            // 
-            // lblExperimentDuration
-            // 
-            lblExperimentDuration.AutoSize = true;
-            lblExperimentDuration.Location = new Point(20, 22);
-            lblExperimentDuration.Name = "lblExperimentDuration";
-            lblExperimentDuration.Size = new Size(126, 15);
-            lblExperimentDuration.TabIndex = 0;
-            lblExperimentDuration.Text = "실험 지속 시간 (시간):";
             // 
             // tabTimeout
             // 
@@ -394,12 +471,12 @@
             // nudShutdownTimeout
             // 
             nudShutdownTimeout.Location = new Point(260, 280);
-            nudShutdownTimeout.Maximum = new decimal(new int[] { 1800, 0, 0, 0 });
-            nudShutdownTimeout.Minimum = new decimal(new int[] { 60, 0, 0, 0 });
+            nudShutdownTimeout.Maximum = new decimal(new int[] { 14400, 0, 0, 0 });
+            nudShutdownTimeout.Minimum = new decimal(new int[] { 1800, 0, 0, 0 });
             nudShutdownTimeout.Name = "nudShutdownTimeout";
             nudShutdownTimeout.Size = new Size(100, 23);
             nudShutdownTimeout.TabIndex = 15;
-            nudShutdownTimeout.Value = new decimal(new int[] { 600, 0, 0, 0 });
+            nudShutdownTimeout.Value = new decimal(new int[] { 7200, 0, 0, 0 });
             // 
             // lblShutdownTimeout
             // 
@@ -451,19 +528,19 @@
             // nudIonGaugeActivationTimeout
             // 
             nudIonGaugeActivationTimeout.Location = new Point(260, 175);
-            nudIonGaugeActivationTimeout.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
-            nudIonGaugeActivationTimeout.Minimum = new decimal(new int[] { 5, 0, 0, 0 });
+            nudIonGaugeActivationTimeout.Maximum = new decimal(new int[] { 1800, 0, 0, 0 });
+            nudIonGaugeActivationTimeout.Minimum = new decimal(new int[] { 30, 0, 0, 0 });
             nudIonGaugeActivationTimeout.Name = "nudIonGaugeActivationTimeout";
             nudIonGaugeActivationTimeout.Size = new Size(100, 23);
             nudIonGaugeActivationTimeout.TabIndex = 9;
-            nudIonGaugeActivationTimeout.Value = new decimal(new int[] { 30, 0, 0, 0 });
+            nudIonGaugeActivationTimeout.Value = new decimal(new int[] { 300, 0, 0, 0 });
             // 
             // lblIonGaugeActivationTimeout
             // 
             lblIonGaugeActivationTimeout.AutoSize = true;
             lblIonGaugeActivationTimeout.Location = new Point(20, 177);
             lblIonGaugeActivationTimeout.Name = "lblIonGaugeActivationTimeout";
-            lblIonGaugeActivationTimeout.Size = new Size(186, 15);
+            lblIonGaugeActivationTimeout.Size = new Size(193, 15);
             lblIonGaugeActivationTimeout.TabIndex = 8;
             lblIonGaugeActivationTimeout.Text = "이온게이지 활성화 타임아웃 (초):";
             // 
@@ -508,7 +585,7 @@
             // nudValveOperationTimeout
             // 
             nudValveOperationTimeout.Location = new Point(260, 70);
-            nudValveOperationTimeout.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
+            nudValveOperationTimeout.Maximum = new decimal(new int[] { 120, 0, 0, 0 });
             nudValveOperationTimeout.Minimum = new decimal(new int[] { 5, 0, 0, 0 });
             nudValveOperationTimeout.Name = "nudValveOperationTimeout";
             nudValveOperationTimeout.Size = new Size(100, 23);
@@ -520,7 +597,7 @@
             lblValveOperationTimeout.AutoSize = true;
             lblValveOperationTimeout.Location = new Point(20, 72);
             lblValveOperationTimeout.Name = "lblValveOperationTimeout";
-            lblValveOperationTimeout.Size = new Size(138, 15);
+            lblValveOperationTimeout.Size = new Size(162, 15);
             lblValveOperationTimeout.TabIndex = 2;
             lblValveOperationTimeout.Text = "밸브 작동 타임아웃 (초):";
             // 
@@ -539,7 +616,7 @@
             lblInitializationTimeout.AutoSize = true;
             lblInitializationTimeout.Location = new Point(20, 37);
             lblInitializationTimeout.Name = "lblInitializationTimeout";
-            lblInitializationTimeout.Size = new Size(122, 15);
+            lblInitializationTimeout.Size = new Size(126, 15);
             lblInitializationTimeout.TabIndex = 0;
             lblInitializationTimeout.Text = "초기화 타임아웃 (초):";
             // 
@@ -554,6 +631,7 @@
             tabMisc.Controls.Add(lblMaxRetryCount);
             tabMisc.Controls.Add(cmbRunMode);
             tabMisc.Controls.Add(lblRunMode);
+            tabMisc.Controls.Add(lblRunModeDesc);
             tabMisc.Location = new Point(4, 24);
             tabMisc.Name = "tabMisc";
             tabMisc.Size = new Size(436, 430);
@@ -561,14 +639,25 @@
             tabMisc.Text = "기타 설정";
             tabMisc.UseVisualStyleBackColor = true;
             // 
+            // lblRunModeDesc
+            // 
+            lblRunModeDesc.ForeColor = SystemColors.GrayText;
+            lblRunModeDesc.Location = new Point(20, 55);
+            lblRunModeDesc.Name = "lblRunModeDesc";
+            lblRunModeDesc.Size = new Size(400, 50);
+            lblRunModeDesc.TabIndex = 9;
+            lblRunModeDesc.Text = "· FullAuto: 모든 단계를 자동으로 연속 실행\r\n" +
+                "· StepByStep: 각 단계 완료 후 사용자 확인 대기\r\n" +
+                "· Simulation: 실제 장비 제어 없이 시퀀스 테스트";
+            // 
             // chkEnableAlarmOnError
             // 
             chkEnableAlarmOnError.AutoSize = true;
-            chkEnableAlarmOnError.Location = new Point(20, 230);
+            chkEnableAlarmOnError.Location = new Point(20, 255);
             chkEnableAlarmOnError.Name = "chkEnableAlarmOnError";
-            chkEnableAlarmOnError.Size = new Size(162, 19);
+            chkEnableAlarmOnError.Size = new Size(156, 19);
             chkEnableAlarmOnError.TabIndex = 8;
-            chkEnableAlarmOnError.Text = "오류 발생 시 알람 활성화";
+            chkEnableAlarmOnError.Text = "오류 시 알람 활성화";
             chkEnableAlarmOnError.UseVisualStyleBackColor = true;
             // 
             // chkEnableSafeShutdownOnFailure
@@ -576,27 +665,29 @@
             chkEnableSafeShutdownOnFailure.AutoSize = true;
             chkEnableSafeShutdownOnFailure.Checked = true;
             chkEnableSafeShutdownOnFailure.CheckState = CheckState.Checked;
-            chkEnableSafeShutdownOnFailure.Location = new Point(20, 200);
+            chkEnableSafeShutdownOnFailure.Location = new Point(20, 225);
             chkEnableSafeShutdownOnFailure.Name = "chkEnableSafeShutdownOnFailure";
-            chkEnableSafeShutdownOnFailure.Size = new Size(190, 19);
+            chkEnableSafeShutdownOnFailure.Size = new Size(192, 19);
             chkEnableSafeShutdownOnFailure.TabIndex = 7;
-            chkEnableSafeShutdownOnFailure.Text = "오류 시 안전 종료 시퀀스 실행";
+            chkEnableSafeShutdownOnFailure.Text = "실패 시 안전 종료 활성화";
             chkEnableSafeShutdownOnFailure.UseVisualStyleBackColor = true;
             // 
             // chkEnableDetailedLogging
             // 
             chkEnableDetailedLogging.AutoSize = true;
-            chkEnableDetailedLogging.Location = new Point(20, 170);
+            chkEnableDetailedLogging.Checked = true;
+            chkEnableDetailedLogging.CheckState = CheckState.Checked;
+            chkEnableDetailedLogging.Location = new Point(20, 195);
             chkEnableDetailedLogging.Name = "chkEnableDetailedLogging";
-            chkEnableDetailedLogging.Size = new Size(118, 19);
+            chkEnableDetailedLogging.Size = new Size(132, 19);
             chkEnableDetailedLogging.TabIndex = 6;
             chkEnableDetailedLogging.Text = "상세 로깅 활성화";
             chkEnableDetailedLogging.UseVisualStyleBackColor = true;
             // 
             // nudRetryDelaySeconds
             // 
-            nudRetryDelaySeconds.Location = new Point(230, 100);
-            nudRetryDelaySeconds.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
+            nudRetryDelaySeconds.Location = new Point(230, 150);
+            nudRetryDelaySeconds.Maximum = new decimal(new int[] { 120, 0, 0, 0 });
             nudRetryDelaySeconds.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             nudRetryDelaySeconds.Name = "nudRetryDelaySeconds";
             nudRetryDelaySeconds.Size = new Size(100, 23);
@@ -606,16 +697,17 @@
             // lblRetryDelaySeconds
             // 
             lblRetryDelaySeconds.AutoSize = true;
-            lblRetryDelaySeconds.Location = new Point(20, 102);
+            lblRetryDelaySeconds.Location = new Point(20, 152);
             lblRetryDelaySeconds.Name = "lblRetryDelaySeconds";
-            lblRetryDelaySeconds.Size = new Size(126, 15);
+            lblRetryDelaySeconds.Size = new Size(132, 15);
             lblRetryDelaySeconds.TabIndex = 4;
             lblRetryDelaySeconds.Text = "재시도 대기 시간 (초):";
             // 
             // nudMaxRetryCount
             // 
-            nudMaxRetryCount.Location = new Point(230, 60);
+            nudMaxRetryCount.Location = new Point(230, 115);
             nudMaxRetryCount.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            nudMaxRetryCount.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
             nudMaxRetryCount.Name = "nudMaxRetryCount";
             nudMaxRetryCount.Size = new Size(100, 23);
             nudMaxRetryCount.TabIndex = 3;
@@ -624,17 +716,17 @@
             // lblMaxRetryCount
             // 
             lblMaxRetryCount.AutoSize = true;
-            lblMaxRetryCount.Location = new Point(20, 62);
+            lblMaxRetryCount.Location = new Point(20, 117);
             lblMaxRetryCount.Name = "lblMaxRetryCount";
-            lblMaxRetryCount.Size = new Size(118, 15);
+            lblMaxRetryCount.Size = new Size(120, 15);
             lblMaxRetryCount.TabIndex = 2;
-            lblMaxRetryCount.Text = "오류 시 재시도 횟수:";
+            lblMaxRetryCount.Text = "최대 재시도 횟수:";
             // 
             // cmbRunMode
             // 
             cmbRunMode.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbRunMode.FormattingEnabled = true;
-            cmbRunMode.Location = new Point(230, 20);
+            cmbRunMode.Location = new Point(230, 25);
             cmbRunMode.Name = "cmbRunMode";
             cmbRunMode.Size = new Size(150, 23);
             cmbRunMode.TabIndex = 1;
@@ -642,7 +734,7 @@
             // lblRunMode
             // 
             lblRunMode.AutoSize = true;
-            lblRunMode.Location = new Point(20, 23);
+            lblRunMode.Location = new Point(20, 28);
             lblRunMode.Name = "lblRunMode";
             lblRunMode.Size = new Size(62, 15);
             lblRunMode.TabIndex = 0;
@@ -650,9 +742,9 @@
             // 
             // panelButtons
             // 
+            panelButtons.Controls.Add(btnLoadDefault);
             panelButtons.Controls.Add(btnCancel);
             panelButtons.Controls.Add(btnOk);
-            panelButtons.Controls.Add(btnLoadDefault);
             panelButtons.Dock = DockStyle.Bottom;
             panelButtons.Location = new Point(0, 458);
             panelButtons.Name = "panelButtons";
@@ -712,7 +804,8 @@
             tabTime.ResumeLayout(false);
             tabTime.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)nudDataLoggingIntervalSeconds).EndInit();
-            ((System.ComponentModel.ISupportInitialize)nudExperimentDurationHours).EndInit();
+            ((System.ComponentModel.ISupportInitialize)nudExperimentHours).EndInit();
+            ((System.ComponentModel.ISupportInitialize)nudExperimentMinutes).EndInit();
             tabTimeout.ResumeLayout(false);
             tabTimeout.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)nudShutdownTimeout).EndInit();
@@ -733,6 +826,7 @@
 
         #endregion
 
+        // 탭 컨트롤
         private System.Windows.Forms.TabControl tabControl1;
         private System.Windows.Forms.TabPage tabPressure;
         private System.Windows.Forms.TabPage tabTemperature;
@@ -745,30 +839,39 @@
         private System.Windows.Forms.Button btnLoadDefault;
 
         // 압력 설정 컨트롤
-        private System.Windows.Forms.TextBox txtTargetPressureForTurboPump;
-        private System.Windows.Forms.Label lblTargetPressureForTurboPump;
-        private System.Windows.Forms.TextBox txtTargetPressureForIonGauge;
-        private System.Windows.Forms.Label lblTargetPressureForIonGauge;
-        private System.Windows.Forms.TextBox txtTargetPressureForHeater;
-        private System.Windows.Forms.Label lblTargetPressureForHeater;
+        private System.Windows.Forms.Label lblPressureInfo;
         private System.Windows.Forms.TextBox txtMaxPressureDuringExperiment;
         private System.Windows.Forms.Label lblMaxPressureDuringExperiment;
-        private System.Windows.Forms.Label lblPressureInfo;
+        private System.Windows.Forms.TextBox txtTargetPressureForHeater;
+        private System.Windows.Forms.Label lblTargetPressureForHeater;
+        private System.Windows.Forms.TextBox txtTargetPressureForIonGauge;
+        private System.Windows.Forms.Label lblTargetPressureForIonGauge;
+        private System.Windows.Forms.TextBox txtTargetPressureForTurboPump;
+        private System.Windows.Forms.Label lblTargetPressureForTurboPump;
 
         // 온도 설정 컨트롤
         private System.Windows.Forms.TextBox txtChillerSetTemperature;
         private System.Windows.Forms.Label lblChillerSetTemperature;
         private System.Windows.Forms.TextBox txtHeaterCh1SetTemperature;
         private System.Windows.Forms.Label lblHeaterCh1SetTemperature;
-        private System.Windows.Forms.TextBox txtHeaterCh2SetTemperature;
-        private System.Windows.Forms.Label lblHeaterCh2SetTemperature;
         private System.Windows.Forms.TextBox txtHeaterRampUpRate;
         private System.Windows.Forms.Label lblHeaterRampUpRate;
         private System.Windows.Forms.TextBox txtTemperatureStabilityTolerance;
         private System.Windows.Forms.Label lblTemperatureStabilityTolerance;
+        private System.Windows.Forms.Label lblTempNote;
+
+        // 종료 시퀀스 설정 컨트롤 (온도 탭 내)
+        private System.Windows.Forms.Label lblShutdownTempHeader;
+        private System.Windows.Forms.TextBox txtCoolingTargetTemperature;
+        private System.Windows.Forms.Label lblCoolingTargetTemperature;
+        private System.Windows.Forms.TextBox txtVentTargetPressure;
+        private System.Windows.Forms.Label lblVentTargetPressure;
 
         // 시간 설정 컨트롤
-        private System.Windows.Forms.NumericUpDown nudExperimentDurationHours;
+        private System.Windows.Forms.NumericUpDown nudExperimentHours;
+        private System.Windows.Forms.Label lblExpHoursUnit;
+        private System.Windows.Forms.NumericUpDown nudExperimentMinutes;
+        private System.Windows.Forms.Label lblExpMinutesUnit;
         private System.Windows.Forms.Label lblExperimentDuration;
         private System.Windows.Forms.NumericUpDown nudDataLoggingIntervalSeconds;
         private System.Windows.Forms.Label lblDataLoggingInterval;
@@ -794,6 +897,7 @@
         // 기타 설정 컨트롤
         private System.Windows.Forms.ComboBox cmbRunMode;
         private System.Windows.Forms.Label lblRunMode;
+        private System.Windows.Forms.Label lblRunModeDesc;
         private System.Windows.Forms.NumericUpDown nudMaxRetryCount;
         private System.Windows.Forms.Label lblMaxRetryCount;
         private System.Windows.Forms.NumericUpDown nudRetryDelaySeconds;

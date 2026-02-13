@@ -170,7 +170,7 @@
             // 
             // btnApply  ★ 위치 조정: 3개 버튼 배치
             // 
-            this.btnApply.Location = new System.Drawing.Point(192+30, 53);
+            this.btnApply.Location = new System.Drawing.Point(232, 53);
             this.btnApply.Size = new System.Drawing.Size(52, 25);
             this.btnApply.Text = "적용";
             this.btnApply.TabIndex = 8;
@@ -181,7 +181,7 @@
             // 
             // btnReset
             // 
-            this.btnReset.Location = new System.Drawing.Point(248+30, 53);
+            this.btnReset.Location = new System.Drawing.Point(288, 53);
             this.btnReset.Name = "btnReset";
             this.btnReset.Size = new System.Drawing.Size(60, 25);
             this.btnReset.TabIndex = 15;
@@ -193,7 +193,7 @@
             // 
             // btnRefresh  ★ 위치 조정
             // 
-            this.btnRefresh.Location = new System.Drawing.Point(312 + 30, 53);
+            this.btnRefresh.Location = new System.Drawing.Point(352, 53);
             this.btnRefresh.Name = "btnRefresh";
             this.btnRefresh.Size = new System.Drawing.Size(75, 25);
             this.btnRefresh.TabIndex = 9;

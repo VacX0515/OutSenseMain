@@ -46,11 +46,6 @@ namespace VacX_OutSense.Core.AutoRun
         public double HeaterCh1SetTemperature { get; set; } = 100.0;
 
         /// <summary>
-        /// 히터 CH2 설정 온도 (°C)
-        /// </summary>
-        public double HeaterCh2SetTemperature { get; set; } = 100.0;
-
-        /// <summary>
         /// 히터 램프 업 속도 (°C/min)
         /// </summary>
         public double HeaterRampUpRate { get; set; } = 5.0;
@@ -65,9 +60,9 @@ namespace VacX_OutSense.Core.AutoRun
         #region 시간 설정
 
         /// <summary>
-        /// 실험 지속 시간 (시간)
+        /// 실험 지속 시간 (분) — 기본값 1440분 (24시간)
         /// </summary>
-        public int ExperimentDurationHours { get; set; } = 24;
+        public int ExperimentDurationMinutes { get; set; } = 1440;
 
         /// <summary>
         /// 데이터 로깅 간격 (초)
@@ -114,9 +109,19 @@ namespace VacX_OutSense.Core.AutoRun
         public int HeaterStartTimeout { get; set; } = 60;
 
         /// <summary>
-        /// 종료 시퀀스 타임아웃 (초)
+        /// 종료 시퀀스 타임아웃 (초) — 쿨링 대기 포함, 기본 7200초 (2시간)
         /// </summary>
-        public int ShutdownTimeout { get; set; } = 600; // 10분
+        public int ShutdownTimeout { get; set; } = 7200; // 2시간
+
+        /// <summary>
+        /// 종료 시 CH1 쿨링 목표 온도 (°C) — 이 온도 이하로 내려가면 벤트/배기 밸브 닫기
+        /// </summary>
+        public double CoolingTargetTemperature { get; set; } = 40.0;
+
+        /// <summary>
+        /// 벤트 후 배기 밸브 오픈 기준 압력 (kPa) — ATM 스위치 기준
+        /// </summary>
+        public double VentTargetPressure_kPa { get; set; } = 80.0;
 
         #endregion
 
@@ -151,6 +156,44 @@ namespace VacX_OutSense.Core.AutoRun
         /// 오류 발생 시 알람 활성화
         /// </summary>
         public bool EnableAlarmOnError { get; set; } = false;
+
+        #endregion
+
+        #region XML 하위호환 (기존 설정 파일 로드용)
+
+        /// <summary>
+        /// [하위호환] 기존 ExperimentDurationHours 로드 시 분으로 변환
+        /// </summary>
+        [XmlElement("ExperimentDurationHours")]
+        public int ExperimentDurationHoursCompat
+        {
+            get => 0; // 저장 시 0 → XML에 포함 안 됨 (ShouldSerialize로 제어)
+            set
+            {
+                if (value > 0)
+                    ExperimentDurationMinutes = value * 60;
+            }
+        }
+
+        /// <summary>
+        /// ExperimentDurationHoursCompat는 저장하지 않음
+        /// </summary>
+        public bool ShouldSerializeExperimentDurationHoursCompat() => false;
+
+        /// <summary>
+        /// [하위호환] 기존 HeaterCh2SetTemperature 로드 시 무시
+        /// </summary>
+        [XmlElement("HeaterCh2SetTemperature")]
+        public double HeaterCh2SetTemperatureCompat
+        {
+            get => 0;
+            set { /* 무시 — CH2는 칠러 PID가 제어 */ }
+        }
+
+        /// <summary>
+        /// HeaterCh2SetTemperatureCompat는 저장하지 않음
+        /// </summary>
+        public bool ShouldSerializeHeaterCh2SetTemperatureCompat() => false;
 
         #endregion
 
@@ -210,12 +253,11 @@ namespace VacX_OutSense.Core.AutoRun
             // 온도 설정
             ChillerSetTemperature = defaultConfig.ChillerSetTemperature;
             HeaterCh1SetTemperature = defaultConfig.HeaterCh1SetTemperature;
-            HeaterCh2SetTemperature = defaultConfig.HeaterCh2SetTemperature;
             HeaterRampUpRate = defaultConfig.HeaterRampUpRate;
             TemperatureStabilityTolerance = defaultConfig.TemperatureStabilityTolerance;
 
             // 시간 설정
-            ExperimentDurationHours = defaultConfig.ExperimentDurationHours;
+            ExperimentDurationMinutes = defaultConfig.ExperimentDurationMinutes;
             DataLoggingIntervalSeconds = defaultConfig.DataLoggingIntervalSeconds;
 
             // 타임아웃 설정
@@ -227,6 +269,8 @@ namespace VacX_OutSense.Core.AutoRun
             HighVacuumTimeout = defaultConfig.HighVacuumTimeout;
             HeaterStartTimeout = defaultConfig.HeaterStartTimeout;
             ShutdownTimeout = defaultConfig.ShutdownTimeout;
+            CoolingTargetTemperature = defaultConfig.CoolingTargetTemperature;
+            VentTargetPressure_kPa = defaultConfig.VentTargetPressure_kPa;
 
             // 기타 설정
             RunMode = defaultConfig.RunMode;
@@ -234,6 +278,7 @@ namespace VacX_OutSense.Core.AutoRun
             RetryDelaySeconds = defaultConfig.RetryDelaySeconds;
             EnableDetailedLogging = defaultConfig.EnableDetailedLogging;
             EnableSafeShutdownOnFailure = defaultConfig.EnableSafeShutdownOnFailure;
+            EnableAlarmOnError = defaultConfig.EnableAlarmOnError;
         }
 
         #endregion

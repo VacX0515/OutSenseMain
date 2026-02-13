@@ -146,10 +146,6 @@ namespace VacX_OutSense.Forms.UserControls
                 "HeaterCh1Temp", 0, 300, 1, _config.HeaterCh1SetTemperature,
                 "채널 1 히터의 목표 온도입니다.");
 
-            AddNumericControl(tab, "히터 CH2 설정 온도 (°C):", ref y,
-                "HeaterCh2Temp", 0, 300, 1, _config.HeaterCh2SetTemperature,
-                "채널 2 히터의 목표 온도입니다.");
-
             AddNumericControl(tab, "히터 램프 속도 (°C/min):", ref y,
                 "HeaterRampRate", 0.5, 20, 1, _config.HeaterRampUpRate,
                 "온도 상승 속도입니다.");
@@ -157,6 +153,15 @@ namespace VacX_OutSense.Forms.UserControls
             AddNumericControl(tab, "온도 안정성 허용 범위 (±°C):", ref y,
                 "TempTolerance", 0.1, 5, 1, _config.TemperatureStabilityTolerance,
                 "설정 온도에서 허용되는 편차 범위입니다.");
+
+            // CH2 안내문
+            y += 10;
+            var lblCh2Note = new Label();
+            lblCh2Note.Text = "※ CH2 온도는 칠러 PID가 자동 제어합니다. (Main 탭 → 칠러 PID 설정에서 조정)";
+            lblCh2Note.ForeColor = SystemColors.GrayText;
+            lblCh2Note.Location = new Point(20, y);
+            lblCh2Note.Size = new Size(500, 20);
+            tab.Controls.Add(lblCh2Note);
         }
 
         private void CreateTimeControls(TabPage tab)
@@ -170,9 +175,51 @@ namespace VacX_OutSense.Forms.UserControls
             tab.Controls.Add(lblTitle);
             y += 40;
 
-            AddNumericControl(tab, "실험 시간 (시간):", ref y,
-                "ExperimentHours", 1, 168, 0, _config.ExperimentDurationHours,
-                "설정 온도 도달 후 유지할 시간입니다. (최대 7일)");
+            // 실험 시간 (시간 + 분)
+            var lblExpTime = new Label();
+            lblExpTime.Text = "실험 시간:";
+            lblExpTime.Location = new Point(20, y);
+            lblExpTime.Size = new Size(100, 20);
+            tab.Controls.Add(lblExpTime);
+
+            var nudExpHours = new NumericUpDown();
+            nudExpHours.Name = "ExperimentHours";
+            nudExpHours.Location = new Point(130, y);
+            nudExpHours.Size = new Size(60, 23);
+            nudExpHours.Minimum = 0;
+            nudExpHours.Maximum = 168;
+            nudExpHours.Value = _config.ExperimentDurationMinutes / 60;
+            tab.Controls.Add(nudExpHours);
+
+            var lblHUnit = new Label();
+            lblHUnit.Text = "시간";
+            lblHUnit.Location = new Point(194, y);
+            lblHUnit.Size = new Size(30, 20);
+            tab.Controls.Add(lblHUnit);
+
+            var nudExpMins = new NumericUpDown();
+            nudExpMins.Name = "ExperimentMinutes";
+            nudExpMins.Location = new Point(230, y);
+            nudExpMins.Size = new Size(60, 23);
+            nudExpMins.Minimum = 0;
+            nudExpMins.Maximum = 59;
+            nudExpMins.Value = _config.ExperimentDurationMinutes % 60;
+            tab.Controls.Add(nudExpMins);
+
+            var lblMUnit = new Label();
+            lblMUnit.Text = "분";
+            lblMUnit.Location = new Point(294, y);
+            lblMUnit.Size = new Size(20, 20);
+            tab.Controls.Add(lblMUnit);
+
+            var lblExpDesc = new Label();
+            lblExpDesc.Text = "설정 온도 도달 후 유지할 시간입니다. (최대 7일)";
+            lblExpDesc.ForeColor = SystemColors.GrayText;
+            lblExpDesc.Location = new Point(130, y + 25);
+            lblExpDesc.Size = new Size(350, 15);
+            lblExpDesc.Font = new Font("맑은 고딕", 8);
+            tab.Controls.Add(lblExpDesc);
+            y += 55;
 
             AddNumericControl(tab, "데이터 로깅 간격 (초):", ref y,
                 "LoggingInterval", 1, 300, 0, _config.DataLoggingIntervalSeconds,
@@ -235,7 +282,19 @@ namespace VacX_OutSense.Forms.UserControls
             cmbMode.Items.AddRange(new[] { "전체 자동", "단계별 확인", "시뮬레이션" });
             cmbMode.SelectedIndex = (int)_config.RunMode;
             tab.Controls.Add(cmbMode);
-            y += 40;
+            y += 25;
+
+            // 실행 모드 설명
+            var lblModeDesc = new Label();
+            lblModeDesc.Text = "· 전체 자동: 모든 단계를 자동으로 연속 실행\r\n" +
+                "· 단계별 확인: 각 단계 완료 후 사용자 확인 대기\r\n" +
+                "· 시뮬레이션: 실제 장비 제어 없이 시퀀스 테스트";
+            lblModeDesc.ForeColor = SystemColors.GrayText;
+            lblModeDesc.Font = new Font("맑은 고딕", 8);
+            lblModeDesc.Location = new Point(180, y);
+            lblModeDesc.Size = new Size(350, 45);
+            tab.Controls.Add(lblModeDesc);
+            y += 55;
 
             // 재시도 설정
             AddNumericControl(tab, "오류 시 재시도 횟수:", ref y,
@@ -311,12 +370,12 @@ namespace VacX_OutSense.Forms.UserControls
             // 온도 설정
             SetNumericValue("ChillerTemp", _config.ChillerSetTemperature);
             SetNumericValue("HeaterCh1Temp", _config.HeaterCh1SetTemperature);
-            SetNumericValue("HeaterCh2Temp", _config.HeaterCh2SetTemperature);
             SetNumericValue("HeaterRampRate", _config.HeaterRampUpRate);
             SetNumericValue("TempTolerance", _config.TemperatureStabilityTolerance);
 
-            // 시간 설정
-            SetNumericValue("ExperimentHours", _config.ExperimentDurationHours);
+            // 시간 설정 (총 분 → 시간 + 분)
+            SetNumericValue("ExperimentHours", _config.ExperimentDurationMinutes / 60);
+            SetNumericValue("ExperimentMinutes", _config.ExperimentDurationMinutes % 60);
             SetNumericValue("LoggingInterval", _config.DataLoggingIntervalSeconds);
 
             // 타임아웃 설정
@@ -382,21 +441,23 @@ namespace VacX_OutSense.Forms.UserControls
 
         private void BtnOk_Click(object sender, EventArgs e)
         {
-            // 설정 저장
+            // 압력 설정
             _config.TargetPressureForTurboPump = GetNumericValue("TurboPumpPressure");
             _config.TargetPressureForIonGauge = GetNumericValue("IonGaugePressure");
             _config.TargetPressureForHeater = GetNumericValue("HeaterPressure");
             _config.MaxPressureDuringExperiment = GetNumericValue("MaxExperimentPressure");
 
+            // 온도 설정
             _config.ChillerSetTemperature = GetNumericValue("ChillerTemp");
             _config.HeaterCh1SetTemperature = GetNumericValue("HeaterCh1Temp");
-            _config.HeaterCh2SetTemperature = GetNumericValue("HeaterCh2Temp");
             _config.HeaterRampUpRate = GetNumericValue("HeaterRampRate");
             _config.TemperatureStabilityTolerance = GetNumericValue("TempTolerance");
 
-            _config.ExperimentDurationHours = (int)GetNumericValue("ExperimentHours");
+            // 시간 설정 (시간 + 분 → 총 분)
+            _config.ExperimentDurationMinutes = (int)GetNumericValue("ExperimentHours") * 60 + (int)GetNumericValue("ExperimentMinutes");
             _config.DataLoggingIntervalSeconds = (int)GetNumericValue("LoggingInterval");
 
+            // 타임아웃 설정
             _config.InitializationTimeout = (int)GetNumericValue("InitTimeout");
             _config.ValveOperationTimeout = (int)GetNumericValue("ValveTimeout");
             _config.DryPumpStartTimeout = (int)GetNumericValue("DryPumpTimeout");
@@ -404,6 +465,7 @@ namespace VacX_OutSense.Forms.UserControls
             _config.HighVacuumTimeout = (int)(GetNumericValue("HighVacuumTimeout") * 60);
             _config.ShutdownTimeout = (int)(GetNumericValue("ShutdownTimeout") * 60);
 
+            // 기타 설정
             _config.RunMode = (AutoRunMode)GetComboValue("RunMode");
             _config.MaxRetryCount = (int)GetNumericValue("RetryCount");
             _config.RetryDelaySeconds = (int)GetNumericValue("RetryDelay");

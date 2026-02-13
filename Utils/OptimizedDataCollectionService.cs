@@ -242,52 +242,36 @@ namespace VacX_OutSense.Utils
 
             try
             {
-                _mainForm._ioModule.CommunicationManager.DiscardInBuffer();
-                await Task.Delay(10);
-
-                // AI 값 읽기 (압력 센서 + 추가 AI)
+                // ★ DiscardInBuffer + Delay 제거 — 채널이 자동 처리
                 var aiData = await _mainForm._ioModule.ReadAnalogInputsAsync();
-                if (aiData != null && IsValidAIData(aiData))
+
+                if (aiData != null)
                 {
                     _latestData["AI_Data"] = aiData;
-                    _errorCounts["IOModule"] = 0;
 
-                    // ★ 추가 AI 고정밀 읽기 (Floating-point)
-                    double additionalAIValue = aiData.AdditionalAIValue;  // 기본값 (Integer)
-
-                    var floatValue = await _mainForm._ioModule.ReadAIChannelFloatAsync(
-                        _mainForm._ioModule.AdditionalAIChannel);
-
-                    if (floatValue.HasValue)
+                    // 추가 AI 값 처리 (기존 코드 유지)
+                    if (!double.IsNaN(aiData.AdditionalAIValue))
                     {
-                        additionalAIValue = floatValue.Value;
-                        aiData.AdditionalAIValueFloat = floatValue.Value;
-                    }
-
-                    // 값 저장
-                    _latestData["AdditionalAI_Value"] = additionalAIValue;
-                    _latestData["AdditionalAI_Timestamp"] = aiData.Timestamp;
-
-                    // 값 변경 시 로깅
-                    if (Math.Abs(_lastAdditionalAIValue - additionalAIValue) > 0.0001 ||
-                        double.IsNaN(_lastAdditionalAIValue))
-                    {
-                        LoggerService.Instance.LogDebug(
-                            $"추가 AI (CH{aiData.AdditionalAIChannelIndex + 1}): {additionalAIValue:F6}V");
-                        _lastAdditionalAIValue = additionalAIValue;
+                        _latestData["AdditionalAI_Value"] = aiData.AdditionalAIValue;
                     }
                 }
                 else
                 {
+                    // 압력 데이터는 크리티컬이지만 자주 실패하면 별도 처리
                     IncrementErrorCount("IOModule");
                 }
 
-                // AO 값 읽기
+                // AO 데이터도 수집 (기존 코드 유지)
                 var aoData = await _mainForm._ioModule.ReadAnalogOutputsAsync();
                 if (aoData != null)
                 {
                     _latestData["AO_Data"] = aoData;
                 }
+            }
+            catch (Exception ex)
+            {
+                IncrementErrorCount("IOModule");
+                LoggerService.Instance.LogDebug($"IOModule 압력 수집 오류: {ex.Message}");
             }
             finally
             {
@@ -317,29 +301,42 @@ namespace VacX_OutSense.Utils
         /// </summary>
         private async Task CollectDeviceDataAsync(string deviceName, Func<Task> collectFunc)
         {
+            // ★ 채널이 끊겨있으면 수집 시도 자체를 건너뛰기
+            // (SerialPortChannel이 재연결 중일 수 있으므로 명령 큐에 쌓이지 않도록)
+            if (!ShouldCollect(deviceName))
+                return;
+
             var semaphore = _deviceLocks[deviceName];
             if (!await semaphore.WaitAsync(100)) return;
 
             try
             {
                 await collectFunc();
-                _errorCounts[deviceName] = 0;
+                _errorCounts[deviceName] = 0; // 성공 시 리셋
             }
             catch (Exception ex)
             {
                 IncrementErrorCount(deviceName);
                 LoggerService.Instance.LogDebug($"{deviceName} 수집 오류: {ex.Message}");
 
-                // 추가: 연속 오류 시 연결 끊김으로 판단
                 if (_errorCounts.TryGetValue(deviceName, out int errorCount) && errorCount >= MAX_ERROR_COUNT)
                 {
-                    LoggerService.Instance.LogWarning($"{deviceName} 통신 오류 다수 발생 - 연결 상태 확인 필요");
+                    LoggerService.Instance.LogWarning($"{deviceName} 통신 오류 다수 발생 — 연결 상태 확인 필요");
 
-                    // 메인폼에 통신 오류 알림
-                    _mainForm.BeginInvoke(new Action(() =>
+                    // ★ HandleDeviceCommunicationError 호출
+                    // 하지만 새 아키텍처에서는 SerialPortChannel이 이미 끊김을 감지했을 가능성이 높음
+                    // 이 코드는 추가 안전장치 역할
+                    try
                     {
-                        _mainForm.HandleDeviceCommunicationError(deviceName);
-                    }));
+                        _mainForm.BeginInvoke(new Action(() =>
+                        {
+                            _mainForm.HandleDeviceCommunicationError(deviceName);
+                        }));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Form이 이미 닫힌 경우 무시
+                    }
                 }
             }
             finally
@@ -350,37 +347,57 @@ namespace VacX_OutSense.Utils
 
         private async Task CollectDryPumpData()
         {
-            if (_mainForm._dryPump?.IsConnected == true)
-            {
-                _mainForm._dryPump.CommunicationManager.DiscardInBuffer();
-                await Task.Delay(10);
+            if (_mainForm._dryPump?.IsConnected != true)
+                return;
 
-                await _mainForm._dryPump.UpdateStatusAsync();
+            // ★ DiscardInBuffer 제거 — ChannelCommunicationManager가 자동 처리
+            // _mainForm._dryPump.CommunicationManager.DiscardInBuffer();
+            // await Task.Delay(10);  ← 불필요 (채널이 원자적으로 처리)
+
+            bool success = await _mainForm._dryPump.UpdateStatusAsync();
+            if (success)
+            {
                 _latestData["DryPump"] = _mainForm._dryPump.Status;
+            }
+            else
+            {
+                // ★ 실패 시 예외 throw → CollectDeviceDataAsync의 catch에서 에러 카운터 증가
+                throw new IOException("DryPump 상태 업데이트 실패");
             }
         }
 
         private async Task CollectTurboPumpData()
         {
-            if (_mainForm._turboPump?.IsConnected == true)
-            {
-                _mainForm._turboPump.CommunicationManager.DiscardInBuffer();
-                await Task.Delay(10);
+            if (_mainForm._turboPump?.IsConnected != true)
+                return;
 
-                await _mainForm._turboPump.UpdateStatusAsync();
+            bool success = await _mainForm._turboPump.UpdateStatusAsync();
+            if (success)
+            {
                 _latestData["TurboPump"] = _mainForm._turboPump.Status;
+            }
+            else
+            {
+                throw new IOException("TurboPump 상태 업데이트 실패");
             }
         }
 
         private async Task CollectBathCirculatorData()
         {
-            if (_mainForm._bathCirculator?.IsConnected == true)
-            {
-                _mainForm._bathCirculator.CommunicationManager.DiscardInBuffer();
-                await Task.Delay(10);
+            if (_mainForm._bathCirculator?.IsConnected != true)
+                return;
 
-                await _mainForm._bathCirculator.UpdateStatusAsync();
+            await _mainForm._bathCirculator.UpdateStatusAsync();
+
+            // BathCirculator.UpdateStatusAsync()는 void 반환이므로
+            // Status가 갱신되었는지로 판단
+            if (_mainForm._bathCirculator.Status != null)
+            {
                 _latestData["BathCirculator"] = _mainForm._bathCirculator.Status;
+            }
+            else
+            {
+                throw new IOException("BathCirculator 상태 업데이트 실패");
             }
         }
 
@@ -390,13 +407,18 @@ namespace VacX_OutSense.Utils
         /// </summary>
         private async Task CollectTempControllerData()
         {
-            if (_mainForm._tempController?.IsConnected == true)
-            {
-                _mainForm._tempController.CommunicationManager.DiscardInBuffer();
-                await Task.Delay(10);
+            if (_mainForm._tempController?.IsConnected != true)
+                return;
 
-                await _mainForm._tempController.UpdateStatusAsync();
+            await _mainForm._tempController.UpdateStatusAsync();
+
+            if (_mainForm._tempController.Status != null)
+            {
                 _latestData["TempController"] = _mainForm._tempController.Status;
+            }
+            else
+            {
+                throw new IOException("TempController 상태 업데이트 실패");
             }
         }
 

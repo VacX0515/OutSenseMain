@@ -149,17 +149,28 @@ namespace VacX_OutSense.Core.Devices.Base
         /// </summary>
         private void CommunicationManager_StatusChanged(object sender, CommunicationStatusEventArgs e)
         {
-            // 통신 관리자 연결 상태가 변경되면 장치 연결 상태도 업데이트
             if (!e.IsConnected && IsConnected)
             {
+                // ★ 연결 끊김 감지됨
                 IsConnected = false;
-                OnStatusChanged(new DeviceStatusEventArgs(false, DeviceId, $"통신 상태 변경: {e.StatusMessage}", DeviceStatusCode.Disconnected));
-            }
 
-            // 통신 오류가 발생하면 오류 이벤트 발생
-            if (!e.IsConnected && e.Exception != null)
+                // PropertyChanged 명시적 발생 (UI 바인딩 업데이트 보장)
+                OnPropertyChanged(nameof(IsConnected));
+
+                OnStatusChanged(new DeviceStatusEventArgs(false, DeviceId,
+                    $"통신 상태 변경: {e.StatusMessage}", DeviceStatusCode.Disconnected));
+
+                OnErrorOccurred($"{DeviceName} 연결 끊김: {e.StatusMessage}");
+            }
+            else if (e.IsConnected && !IsConnected)
             {
-                OnErrorOccurred(e.StatusMessage);
+                // ★ 재연결 감지됨 (SerialPortChannel의 자동 재연결 성공 시)
+                IsConnected = true;
+
+                OnPropertyChanged(nameof(IsConnected));
+
+                OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                    $"재연결됨: {e.StatusMessage}", DeviceStatusCode.Connected));
             }
         }
 
@@ -353,7 +364,7 @@ namespace VacX_OutSense.Core.Devices.Base
                 throw new ObjectDisposedException(DeviceName);
 
             if (!IsConnected)
-                MessageBox.Show($"{DeviceName}이(가) 연결되지 않았습니다.", "Error", MessageBoxButtons.OK);
+                throw new InvalidOperationException($"{DeviceName}이(가) 연결되지 않았습니다.");
         }
 
         /// <summary>

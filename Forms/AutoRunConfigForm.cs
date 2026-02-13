@@ -32,12 +32,14 @@ namespace VacX_OutSense.Forms
             // 온도 설정
             txtChillerSetTemperature.Text = _config.ChillerSetTemperature.ToString("F1");
             txtHeaterCh1SetTemperature.Text = _config.HeaterCh1SetTemperature.ToString("F1");
-            txtHeaterCh2SetTemperature.Text = _config.HeaterCh2SetTemperature.ToString("F1");
             txtHeaterRampUpRate.Text = _config.HeaterRampUpRate.ToString("F1");
             txtTemperatureStabilityTolerance.Text = _config.TemperatureStabilityTolerance.ToString("F1");
+            txtCoolingTargetTemperature.Text = _config.CoolingTargetTemperature.ToString("F1");
+            txtVentTargetPressure.Text = _config.VentTargetPressure_kPa.ToString("F1");
 
-            // 시간 설정
-            nudExperimentDurationHours.Value = _config.ExperimentDurationHours;
+            // 시간 설정 (총 분 → 시간 + 분)
+            nudExperimentHours.Value = _config.ExperimentDurationMinutes / 60;
+            nudExperimentMinutes.Value = _config.ExperimentDurationMinutes % 60;
             nudDataLoggingIntervalSeconds.Value = _config.DataLoggingIntervalSeconds;
 
             // 타임아웃 설정
@@ -48,9 +50,10 @@ namespace VacX_OutSense.Forms
             nudIonGaugeActivationTimeout.Value = _config.IonGaugeActivationTimeout;
             nudHighVacuumTimeout.Value = _config.HighVacuumTimeout;
             nudHeaterStartTimeout.Value = _config.HeaterStartTimeout;
-            nudShutdownTimeout.Value = _config.ShutdownTimeout;
+            nudShutdownTimeout.Value = Math.Max(nudShutdownTimeout.Minimum, Math.Min(nudShutdownTimeout.Maximum, _config.ShutdownTimeout));
 
             // 기타 설정
+            cmbRunMode.Items.Clear();
             cmbRunMode.Items.AddRange(Enum.GetNames(typeof(AutoRunMode)));
             cmbRunMode.SelectedIndex = (int)_config.RunMode;
             nudMaxRetryCount.Value = _config.MaxRetryCount;
@@ -73,12 +76,13 @@ namespace VacX_OutSense.Forms
                 // 온도 설정
                 _config.ChillerSetTemperature = double.Parse(txtChillerSetTemperature.Text);
                 _config.HeaterCh1SetTemperature = double.Parse(txtHeaterCh1SetTemperature.Text);
-                _config.HeaterCh2SetTemperature = double.Parse(txtHeaterCh2SetTemperature.Text);
                 _config.HeaterRampUpRate = double.Parse(txtHeaterRampUpRate.Text);
                 _config.TemperatureStabilityTolerance = double.Parse(txtTemperatureStabilityTolerance.Text);
+                _config.CoolingTargetTemperature = double.Parse(txtCoolingTargetTemperature.Text);
+                _config.VentTargetPressure_kPa = double.Parse(txtVentTargetPressure.Text);
 
-                // 시간 설정
-                _config.ExperimentDurationHours = (int)nudExperimentDurationHours.Value;
+                // 시간 설정 (시간 + 분 → 총 분)
+                _config.ExperimentDurationMinutes = (int)nudExperimentHours.Value * 60 + (int)nudExperimentMinutes.Value;
                 _config.DataLoggingIntervalSeconds = (int)nudDataLoggingIntervalSeconds.Value;
 
                 // 타임아웃 설정

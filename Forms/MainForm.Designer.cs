@@ -65,6 +65,9 @@ namespace VacX_OutSense
             chkChillerPIDEnabled = new CheckBox();
             rampSettingControl1 = new UI.Controls.RampSettingControl();
             grpCh1Timer = new GroupBox();
+            label43 = new Label();
+            numCh1Tolerance = new NumericUpDown();
+            label44 = new Label();
             btnHoldSettings = new Button();
             btnBakeoutSettings = new Button();
             numCh1ReachCount = new NumericUpDown();
@@ -227,6 +230,7 @@ namespace VacX_OutSense
             ((System.ComponentModel.ISupportInitialize)numChillerBase).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh2Target).BeginInit();
             grpCh1Timer.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numCh1Tolerance).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh1ReachCount).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numVentTargetTemp).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Seconds).BeginInit();
@@ -667,6 +671,9 @@ namespace VacX_OutSense
             // 
             // grpCh1Timer
             // 
+            grpCh1Timer.Controls.Add(label43);
+            grpCh1Timer.Controls.Add(numCh1Tolerance);
+            grpCh1Timer.Controls.Add(label44);
             grpCh1Timer.Controls.Add(btnHoldSettings);
             grpCh1Timer.Controls.Add(btnBakeoutSettings);
             grpCh1Timer.Controls.Add(numCh1ReachCount);
@@ -693,6 +700,35 @@ namespace VacX_OutSense
             grpCh1Timer.TabIndex = 50;
             grpCh1Timer.TabStop = false;
             grpCh1Timer.Text = "CH1 자동 시작/정지 타이머";
+            // 
+            // label43
+            // 
+            label43.AutoSize = true;
+            label43.Location = new Point(341, 47);
+            label43.Name = "label43";
+            label43.Size = new Size(20, 15);
+            label43.TabIndex = 23;
+            label43.Text = "°C";
+            // 
+            // numCh1Tolerance
+            // 
+            numCh1Tolerance.DecimalPlaces = 1;
+            numCh1Tolerance.Location = new Point(265, 45);
+            numCh1Tolerance.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
+            numCh1Tolerance.Name = "numCh1Tolerance";
+            numCh1Tolerance.Size = new Size(70, 23);
+            numCh1Tolerance.TabIndex = 22;
+            numCh1Tolerance.TextAlign = HorizontalAlignment.Center;
+            numCh1Tolerance.ValueChanged += numCh1Tolerance_ValueChanged;
+            // 
+            // label44
+            // 
+            label44.AutoSize = true;
+            label44.Location = new Point(265, 19);
+            label44.Name = "label44";
+            label44.Size = new Size(87, 15);
+            label44.TabIndex = 21;
+            label44.Text = "허용 오차 온도";
             // 
             // btnHoldSettings
             // 
@@ -777,7 +813,7 @@ namespace VacX_OutSense
             // lblVentTempUnit
             // 
             lblVentTempUnit.AutoSize = true;
-            lblVentTempUnit.Location = new Point(393, 49);
+            lblVentTempUnit.Location = new Point(445, 47);
             lblVentTempUnit.Name = "lblVentTempUnit";
             lblVentTempUnit.Size = new Size(20, 15);
             lblVentTempUnit.TabIndex = 11;
@@ -786,7 +822,7 @@ namespace VacX_OutSense
             // numVentTargetTemp
             // 
             numVentTargetTemp.DecimalPlaces = 1;
-            numVentTargetTemp.Location = new Point(317, 47);
+            numVentTargetTemp.Location = new Point(369, 45);
             numVentTargetTemp.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
             numVentTargetTemp.Name = "numVentTargetTemp";
             numVentTargetTemp.Size = new Size(70, 23);
@@ -797,7 +833,7 @@ namespace VacX_OutSense
             // lblVentTargetTemp
             // 
             lblVentTargetTemp.AutoSize = true;
-            lblVentTargetTemp.Location = new Point(317, 22);
+            lblVentTargetTemp.Location = new Point(369, 19);
             lblVentTargetTemp.Name = "lblVentTargetTemp";
             lblVentTargetTemp.Size = new Size(90, 15);
             lblVentTargetTemp.TabIndex = 9;
@@ -2470,6 +2506,7 @@ namespace VacX_OutSense
             ((System.ComponentModel.ISupportInitialize)numCh2Target).EndInit();
             grpCh1Timer.ResumeLayout(false);
             grpCh1Timer.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numCh1Tolerance).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCh1ReachCount).EndInit();
             ((System.ComponentModel.ISupportInitialize)numVentTargetTemp).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Seconds).EndInit();
@@ -2694,5 +2731,8 @@ namespace VacX_OutSense
         private Forms.UserControls.SimpleRampControl simpleRampControl1;
         private Button btnBakeoutSettings;
         private Button btnHoldSettings;
+        private Label label43;
+        private NumericUpDown numCh1Tolerance;
+        private Label label44;
     }
 }
