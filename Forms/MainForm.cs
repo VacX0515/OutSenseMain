@@ -26,6 +26,11 @@ namespace VacX_OutSense
     {
         #region 필드 및 속성
 
+        #region 포트 자동 감지
+        private PortAutoDetectionService _portDetectionService;
+        private PortAutoDetectionService.DetectionResult _detectionResult;
+        #endregion
+
         #region AutoRun 관련 필드
         private AutoRunService _autoRunService;
         private AutoRunConfiguration _autoRunConfig;
@@ -106,7 +111,7 @@ namespace VacX_OutSense
         #region 통신 설정
         private readonly CommunicationSettings _defaultSettings = new CommunicationSettings
         {
-            BaudRate = 9600,
+            BaudRate = 19200,
             DataBits = 8,
             Parity = System.IO.Ports.Parity.None,
             StopBits = System.IO.Ports.StopBits.One,
@@ -242,99 +247,111 @@ namespace VacX_OutSense
 
         private async Task InitializeCommunicationAsync()
         {
-            await Task.Run(() =>
+            _channelManager = SerialPortChannelManager.Instance;
+
+            // ── 포트 자동 감지 ──
+            _portDetectionService = new PortAutoDetectionService();
+            _portDetectionService.ProgressUpdated += (s, msg) => LogInfo($"[포트감지] {msg}");
+            _detectionResult = await _portDetectionService.DetectAllDevicesAsync();
+
+            // ── 감지 결과로 ChannelCommunicationManager 생성 ──
+            foreach (var kvp in _detectionResult.DeviceMap)
             {
-                _channelManager = SerialPortChannelManager.Instance;
+                var device = kvp.Value;
+                var commManager = _channelManager.CreateCommunicationManager(
+                    device.PortName,
+                    device.Settings,
+                    defaultExpectedResponseLength: device.ExpectedResponseLength,
+                    defaultTimeoutMs: device.TimeoutMs);
 
-                // COM1: TurboPump (USS, 19200, Even) — 고정 14바이트 응답
-                _commManagers["COM1"] = _channelManager.CreateCommunicationManager(
-                    "COM1", _turboPumpDefaultSettings,
-                    defaultExpectedResponseLength: 14,
-                    defaultTimeoutMs: 500);
+                // ★ 핵심: 키를 장치 이름으로 저장 (COM 번호가 매번 바뀌므로)
+                _commManagers[device.DeviceName] = commManager;
+                LogInfo($"포트 매핑: {device.DeviceName} → {device.PortName} " +
+                        $"({device.Settings.BaudRate}/{device.Settings.Parity})");
+            }
 
-                // COM3: DryPump (Modbus RTU, 38400, Even)
-                _commManagers["COM3"] = _channelManager.CreateCommunicationManager(
-                    "COM3", _dryPumpDefaultSettings,
-                    defaultExpectedResponseLength: 0,
-                    defaultTimeoutMs: 500);
+            foreach (var name in _detectionResult.UndetectedDevices)
+                LogWarning($"포트 매핑 실패: {name} (장치 전원 또는 연결 상태 확인 필요)");
 
-                // COM4: IO_Module (Modbus RTU, 9600, None)
-                _commManagers["COM4"] = _channelManager.CreateCommunicationManager(
-                    "COM4", _defaultSettings,
-                    defaultExpectedResponseLength: 0,
-                    defaultTimeoutMs: 300);
-
-                // COM5: BathCirculator (Modbus RTU, 9600, Even)
-                _commManagers["COM5"] = _channelManager.CreateCommunicationManager(
-                    "COM5", _bathCirculatorDefaultSettings,
-                    defaultExpectedResponseLength: 0,
-                    defaultTimeoutMs: 500);
-
-                // COM6: TempController (Modbus RTU, 9600, None) — 메인+확장 공유
-                _commManagers["COM6"] = _channelManager.CreateCommunicationManager(
-                    "COM6", _tempControllerDefaultSettings,
-                    defaultExpectedResponseLength: 0,
-                    defaultTimeoutMs: 500);
-
-                // 중앙 연결 상태 모니터링 등록
-                _channelManager.PortConnectionChanged += ChannelManager_PortConnectionChanged;
-            });
+            _channelManager.PortConnectionChanged += ChannelManager_PortConnectionChanged;
         }
 
+        // ★ 새 코드:
         private async Task CreateDevicesAsync()
         {
             await Task.Run(() =>
             {
-                _ioModule = new IO_Module(_commManagers["COM4"], 1);
-                _dryPump = new DryPump(_commManagers["COM3"], "ECODRY 25 plus", 1);
-                _turboPump = new TurboPump(_commManagers["COM1"], "MAG W 1300", 1);
-                _bathCirculator = new BathCirculator(_commManagers["COM5"], "LK-1000", 1);
+                if (_commManagers.ContainsKey(PortAutoDetectionService.DEVICE_IO_MODULE))
+                    _ioModule = new IO_Module(_commManagers[PortAutoDetectionService.DEVICE_IO_MODULE], 1);
 
-                _tempController = new TempController(
-                    _commManagers["COM6"],
-                    deviceAddress: 1,
-                    numChannels: 2,
-                    expansionSlaveAddress: 2,
-                    expansionChannels: 3);
+                if (_commManagers.ContainsKey(PortAutoDetectionService.DEVICE_DRY_PUMP))
+                    _dryPump = new DryPump(_commManagers[PortAutoDetectionService.DEVICE_DRY_PUMP], "ECODRY 25 plus", 1);
+
+                if (_commManagers.ContainsKey(PortAutoDetectionService.DEVICE_TURBO_PUMP))
+                    _turboPump = new TurboPump(_commManagers[PortAutoDetectionService.DEVICE_TURBO_PUMP], "MAG W 1300", 1);
+
+                if (_commManagers.ContainsKey(PortAutoDetectionService.DEVICE_BATH_CIRCULATOR))
+                    _bathCirculator = new BathCirculator(_commManagers[PortAutoDetectionService.DEVICE_BATH_CIRCULATOR], "LK-1000", 1);
+
+                if (_commManagers.ContainsKey(PortAutoDetectionService.DEVICE_TEMP_CONTROLLER))
+                {
+                    _tempController = new TempController(
+                        _commManagers[PortAutoDetectionService.DEVICE_TEMP_CONTROLLER],
+                        deviceAddress: 1, numChannels: 2,
+                        expansionSlaveAddress: 2, expansionChannels: 3);
+                }
 
                 _atmSwitch = new ATMswitch();
                 _piraniGauge = new PiraniGauge();
                 _ionGauge = new IonGauge();
 
-                _deviceList.AddRange(new IDevice[]
-                {
-                    _ioModule, _dryPump, _turboPump, _bathCirculator, _tempController
-                });
+                if (_ioModule != null) _deviceList.Add(_ioModule);
+                if (_dryPump != null) _deviceList.Add(_dryPump);
+                if (_turboPump != null) _deviceList.Add(_turboPump);
+                if (_bathCirculator != null) _deviceList.Add(_bathCirculator);
+                if (_tempController != null) _deviceList.Add(_tempController);
             });
 
             SetupDataBindings();
         }
 
+        // ★ 새 코드:
         private async Task ConnectDevicesAsync()
         {
-            var tasks = new List<Task<bool>>
+            var connectTasks = new List<(IDevice device, string portName, Task<bool> task)>();
+
+            foreach (var kvp in _detectionResult.DeviceMap)
             {
-                Task.Run(() => _ioModule.Connect("COM4", _defaultSettings)),
-                Task.Run(() => _dryPump.Connect("COM3", _dryPumpDefaultSettings)),
-                Task.Run(() => _turboPump.Connect("COM1", _turboPumpDefaultSettings)),
-                Task.Run(() => _bathCirculator.Connect("COM5", _bathCirculatorDefaultSettings)),
-                Task.Run(() => _tempController.Connect("COM6", _tempControllerDefaultSettings))
-            };
+                var info = kvp.Value;
+                IDevice device = kvp.Key switch
+                {
+                    PortAutoDetectionService.DEVICE_IO_MODULE => _ioModule,
+                    PortAutoDetectionService.DEVICE_DRY_PUMP => _dryPump,
+                    PortAutoDetectionService.DEVICE_TURBO_PUMP => _turboPump,
+                    PortAutoDetectionService.DEVICE_BATH_CIRCULATOR => _bathCirculator,
+                    PortAutoDetectionService.DEVICE_TEMP_CONTROLLER => _tempController,
+                    _ => null
+                };
 
-            var results = await Task.WhenAll(tasks);
+                if (device != null)
+                {
+                    var task = Task.Run(() => device.Connect(info.PortName, info.Settings));
+                    connectTasks.Add((device, info.PortName, task));
+                }
+            }
 
-            for (int i = 0; i < _deviceList.Count; i++)
+            await Task.WhenAll(connectTasks.Select(t => t.task));
+
+            foreach (var (device, portName, task) in connectTasks)
             {
-                var device = _deviceList[i];
-                var connected = results[i];
-                LogInfo($"{device.DeviceName} 연결 {(connected ? "성공" : "실패")}");
-
+                bool connected = task.Result;
+                LogInfo($"{device.DeviceName} 연결 {(connected ? "성공" : "실패")} ({portName})");
                 if (!connected)
                     LogWarning($"{device.DeviceName} 연결 실패 — 재연결은 자동으로 시도됩니다.");
             }
 
             // 추가 AI 채널 초기화
-            if (_ioModule.IsConnected)
+            if (_ioModule?.IsConnected == true)
             {
                 _ioModule.AdditionalAIChannel = 5;
                 bool success = await _ioModule.InitializeAdditionalAIChannelAsync();
@@ -344,30 +361,52 @@ namespace VacX_OutSense
                     LogWarning("추가 AI 레인지 설정 실패 - 소프트웨어 변환만 적용");
             }
 
-            if (_tempController.HasExpansion)
+            if (_tempController?.HasExpansion == true)
                 LogInfo($"TM4-N2SE 확장 모듈 통합됨 (총 {_tempController.TotalChannelCount}채널)");
-        }
 
+            // 미감지 장치 알림
+            if (_detectionResult.UndetectedDevices.Count > 0)
+            {
+                string msg = "다음 장치를 감지하지 못했습니다:\n\n" +
+                             string.Join("\n", _detectionResult.UndetectedDevices.Select(d => $"  • {d}")) +
+                             "\n\n장치 전원과 케이블 연결 상태를 확인하세요.";
+                MessageBox.Show(msg, "장치 감지 실패", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
         private void SetupDataBindings()
         {
             try
             {
-                connectionIndicator_iomodule.DataSource = _ioModule;
-                connectionIndicator_iomodule.DataMember = "IsConnected";
-                connectionIndicator_drypump.DataSource = _dryPump;
-                connectionIndicator_drypump.DataMember = "IsConnected";
-                connectionIndicator_turbopump.DataSource = _turboPump;
-                connectionIndicator_turbopump.DataMember = "IsConnected";
-                connectionIndicator_bathcirculator.DataSource = _bathCirculator;
-                connectionIndicator_bathcirculator.DataMember = "IsConnected";
-                connectionIndicator_tempcontroller.DataSource = _tempController;
-                connectionIndicator_tempcontroller.DataMember = "IsConnected";
-
-                _ioModule.PropertyChanged += Device_PropertyChanged;
-                _dryPump.PropertyChanged += Device_PropertyChanged;
-                _turboPump.PropertyChanged += Device_PropertyChanged;
-                _bathCirculator.PropertyChanged += Device_PropertyChanged;
-                _tempController.PropertyChanged += Device_PropertyChanged;
+                if (_ioModule != null)
+                {
+                    connectionIndicator_iomodule.DataSource = _ioModule;
+                    connectionIndicator_iomodule.DataMember = "IsConnected";
+                    _ioModule.PropertyChanged += Device_PropertyChanged;
+                }
+                if (_dryPump != null)
+                {
+                    connectionIndicator_drypump.DataSource = _dryPump;
+                    connectionIndicator_drypump.DataMember = "IsConnected";
+                    _dryPump.PropertyChanged += Device_PropertyChanged;
+                }
+                if (_turboPump != null)
+                {
+                    connectionIndicator_turbopump.DataSource = _turboPump;
+                    connectionIndicator_turbopump.DataMember = "IsConnected";
+                    _turboPump.PropertyChanged += Device_PropertyChanged;
+                }
+                if (_bathCirculator != null)
+                {
+                    connectionIndicator_bathcirculator.DataSource = _bathCirculator;
+                    connectionIndicator_bathcirculator.DataMember = "IsConnected";
+                    _bathCirculator.PropertyChanged += Device_PropertyChanged;
+                }
+                if (_tempController != null)
+                {
+                    connectionIndicator_tempcontroller.DataSource = _tempController;
+                    connectionIndicator_tempcontroller.DataMember = "IsConnected";
+                    _tempController.PropertyChanged += Device_PropertyChanged;
+                }
             }
             catch (Exception ex)
             {
@@ -508,15 +547,7 @@ namespace VacX_OutSense
 
         private string GetDeviceNameByPort(string portName)
         {
-            switch (portName?.ToUpper())
-            {
-                case "COM1": return "TurboPump";
-                case "COM3": return "DryPump";
-                case "COM4": return "IOModule";
-                case "COM5": return "BathCirculator";
-                case "COM6": return "TempController";
-                default: return null;
-            }
+            return _detectionResult?.GetDeviceName(portName);
         }
 
         #endregion
