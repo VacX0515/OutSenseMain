@@ -524,11 +524,13 @@ namespace VacX_OutSense.Core.Devices.BathCirculator
         /// <returns>성공 여부</returns>
         private bool WriteRunStopCommand(ushort command)
         {
-            // 트리거 타입 명령이므로, 1을 써서 명령을 실행합니다.
-            // 필요에 따라 장치가 자동으로 0으로 리셋할 수 있습니다.
-            bool result = WriteSingleRegister(REG_COMM_RS, command);
+            // 0/1 Trigger: 0→1 전이를 보장하기 위해 먼저 0을 씀
+            WriteSingleRegister(REG_COMM_RS, 0);
+            Thread.Sleep(100);  // 장치가 0을 인식할 시간
 
-            // 트리거 타입 명령이므로 잠시 대기
+            // 1을 써서 0→1 트리거 발생
+            bool result = WriteSingleRegister(REG_COMM_RS, 1);
+
             if (result)
             {
                 Thread.Sleep(300);
