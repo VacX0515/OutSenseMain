@@ -138,9 +138,6 @@ namespace VacX_OutSense.Forms.UserControls
             tab.Controls.Add(lblTitle);
             y += 40;
 
-            AddNumericControl(tab, "칠러 설정 온도 (°C):", ref y,
-                "ChillerTemp", -20, 50, 1, _config.ChillerSetTemperature,
-                "터보펌프 냉각을 위한 칠러 온도입니다.");
 
             AddNumericControl(tab, "히터 CH1 설정 온도 (°C):", ref y,
                 "HeaterCh1Temp", 0, 300, 1, _config.HeaterCh1SetTemperature,
@@ -368,7 +365,6 @@ namespace VacX_OutSense.Forms.UserControls
             SetNumericValue("MaxExperimentPressure", _config.MaxPressureDuringExperiment);
 
             // 온도 설정
-            SetNumericValue("ChillerTemp", _config.ChillerSetTemperature);
             SetNumericValue("HeaterCh1Temp", _config.HeaterCh1SetTemperature);
             SetNumericValue("HeaterRampRate", _config.HeaterRampUpRate);
             SetNumericValue("TempTolerance", _config.TemperatureStabilityTolerance);
@@ -448,7 +444,6 @@ namespace VacX_OutSense.Forms.UserControls
             _config.MaxPressureDuringExperiment = GetNumericValue("MaxExperimentPressure");
 
             // 온도 설정
-            _config.ChillerSetTemperature = GetNumericValue("ChillerTemp");
             _config.HeaterCh1SetTemperature = GetNumericValue("HeaterCh1Temp");
             _config.HeaterRampUpRate = GetNumericValue("HeaterRampRate");
             _config.TemperatureStabilityTolerance = GetNumericValue("TempTolerance");

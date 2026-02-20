@@ -47,8 +47,6 @@
             lblTempNote = new Label();
             txtHeaterCh1SetTemperature = new TextBox();
             lblHeaterCh1SetTemperature = new Label();
-            txtChillerSetTemperature = new TextBox();
-            lblChillerSetTemperature = new Label();
             lblShutdownTempHeader = new Label();
             txtCoolingTargetTemperature = new TextBox();
             lblCoolingTargetTemperature = new Label();
@@ -231,8 +229,6 @@
             tabTemperature.Controls.Add(lblHeaterRampUpRate);
             tabTemperature.Controls.Add(txtHeaterCh1SetTemperature);
             tabTemperature.Controls.Add(lblHeaterCh1SetTemperature);
-            tabTemperature.Controls.Add(txtChillerSetTemperature);
-            tabTemperature.Controls.Add(lblChillerSetTemperature);
             tabTemperature.Controls.Add(lblShutdownTempHeader);
             tabTemperature.Controls.Add(txtCoolingTargetTemperature);
             tabTemperature.Controls.Add(lblCoolingTargetTemperature);
@@ -279,35 +275,19 @@
             // 
             // txtHeaterCh1SetTemperature
             // 
-            txtHeaterCh1SetTemperature.Location = new Point(230, 57);
+            txtHeaterCh1SetTemperature.Location = new Point(230, 20);
             txtHeaterCh1SetTemperature.Name = "txtHeaterCh1SetTemperature";
             txtHeaterCh1SetTemperature.Size = new Size(120, 23);
-            txtHeaterCh1SetTemperature.TabIndex = 3;
+            txtHeaterCh1SetTemperature.TabIndex = 1;
             // 
             // lblHeaterCh1SetTemperature
             // 
             lblHeaterCh1SetTemperature.AutoSize = true;
-            lblHeaterCh1SetTemperature.Location = new Point(20, 60);
+            lblHeaterCh1SetTemperature.Location = new Point(20, 23);
             lblHeaterCh1SetTemperature.Name = "lblHeaterCh1SetTemperature";
             lblHeaterCh1SetTemperature.Size = new Size(146, 15);
-            lblHeaterCh1SetTemperature.TabIndex = 2;
+            lblHeaterCh1SetTemperature.TabIndex = 0;
             lblHeaterCh1SetTemperature.Text = "히터 CH1 설정 온도 (°C):";
-            // 
-            // txtChillerSetTemperature
-            // 
-            txtChillerSetTemperature.Location = new Point(230, 20);
-            txtChillerSetTemperature.Name = "txtChillerSetTemperature";
-            txtChillerSetTemperature.Size = new Size(120, 23);
-            txtChillerSetTemperature.TabIndex = 1;
-            // 
-            // lblChillerSetTemperature
-            // 
-            lblChillerSetTemperature.AutoSize = true;
-            lblChillerSetTemperature.Location = new Point(20, 23);
-            lblChillerSetTemperature.Name = "lblChillerSetTemperature";
-            lblChillerSetTemperature.Size = new Size(115, 15);
-            lblChillerSetTemperature.TabIndex = 0;
-            lblChillerSetTemperature.Text = "칠러 설정 온도 (°C):";
             // 
             // lblShutdownTempHeader
             // 
@@ -850,8 +830,6 @@
         private System.Windows.Forms.Label lblTargetPressureForTurboPump;
 
         // 온도 설정 컨트롤
-        private System.Windows.Forms.TextBox txtChillerSetTemperature;
-        private System.Windows.Forms.Label lblChillerSetTemperature;
         private System.Windows.Forms.TextBox txtHeaterCh1SetTemperature;
         private System.Windows.Forms.Label lblHeaterCh1SetTemperature;
         private System.Windows.Forms.TextBox txtHeaterRampUpRate;

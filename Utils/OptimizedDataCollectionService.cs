@@ -542,7 +542,7 @@ namespace VacX_OutSense.Utils
                     snapshot.AtmPressure = _mainForm._atmSwitch?.ConvertVoltageToPressureInkPa(aiData.ExpansionVoltageValues[0]) ?? 0;
                     snapshot.PiraniPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
                     snapshot.IonPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]) ?? 0;
-                    snapshot.IonGaugeStatus = _mainForm._ionGauge?.CheckGaugeStatus(aiData.ExpansionVoltageValues[2], aiData.ExpansionVoltageValues[3]).ToString() ?? "N/A";
+                    snapshot.IonGaugeStatus = _mainForm._ionGauge?.DetermineGaugeState(aiData.ExpansionVoltageValues[2], aiData.ExpansionVoltageValues[3]).ToString() ?? "N/A";
 
                     // ★ 수정: Float 값 우선 사용
                     if (_latestData.TryGetValue("AdditionalAI_Value", out var floatVal) && floatVal is double dVal)

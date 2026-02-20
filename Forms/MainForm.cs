@@ -47,6 +47,8 @@ namespace VacX_OutSense
         private Label lblAutoRunElapsedTime;
         private Label lblAutoRunRemainingTime;
         private Label _lblAutoRunBanner;
+        private Panel[] _stepPanels;
+        private Label[] _stepLabels;
         #endregion
 
         #region 베이크 아웃 관련 필드
@@ -61,6 +63,7 @@ namespace VacX_OutSense
         private DateTime _ch1StartTime;
         private TimeSpan _ch1Duration;
         private double _ch1TargetTolerance = 1.0;
+        private double _ch1FinalTargetTemp = 0;  // 타이머 시작 시 저장된 최종 목표 온도
         private double _ch1VentTargetTemp = 50.0;
 
         // 자동 시작 관련 필드
@@ -69,6 +72,7 @@ namespace VacX_OutSense
         private double _ch1TargetPressure = 1E-5;
         private int _ch1PressureReachCount = 0;
         private int _ch1RequiredReachCount = 3;
+        private bool _igAutoActivating = false;  // IG 자동 활성화 진행 중 플래그
         #endregion
 
         #region 서비스
@@ -479,17 +483,26 @@ namespace VacX_OutSense
                 return;
             }
 
+            string deviceName = GetDeviceNameByPort(e.PortName);
+
             if (e.IsConnected)
             {
                 LogInfo($"[{e.PortName}] {e.Message}");
+                if (deviceName != null)
+                    SetConnectionStatus(deviceName, true);
             }
             else
             {
                 LogWarning($"[{e.PortName}] {e.Message}");
 
-                string deviceName = GetDeviceNameByPort(e.PortName);
                 if (deviceName != null)
+                {
+                    // LED 빨강으로 변경
+                    SetConnectionStatus(deviceName, false);
+
+                    // 데이터 로깅 중단
                     StopDeviceDataLogging(deviceName);
+                }
             }
         }
 
@@ -546,7 +559,7 @@ namespace VacX_OutSense
             {
                 Text = "AutoRun 상태",
                 Location = new Point(10, 10),
-                Size = new Size(760, 200)
+                Size = new Size(760, 170)
             };
             panelAutoRun.Controls.Add(groupBoxStatus);
 
@@ -574,7 +587,7 @@ namespace VacX_OutSense
             {
                 Text = "제어",
                 Location = new Point(520, 25),
-                Size = new Size(230, 160)
+                Size = new Size(230, 130)
             };
 
             btnAutoRunStart = new Button { Location = new Point(10, 25), Size = new Size(100, 30), Text = "시작" };
@@ -594,18 +607,59 @@ namespace VacX_OutSense
             });
             groupBoxStatus.Controls.Add(groupBoxControl);
 
+            // ── 시퀀스 진행 표시 ──
+            GroupBox groupBoxSequence = new GroupBox
+            {
+                Text = "시퀀스 진행",
+                Location = new Point(10, 185),
+                Size = new Size(760, 70)
+            };
+            panelAutoRun.Controls.Add(groupBoxSequence);
+
+            string[] stepNames = { "초기화", "진공준비", "드라이", "터보", "IG", "고진공", "히터", "실험", "종료" };
+            _stepPanels = new Panel[9];
+            _stepLabels = new Label[9];
+
+            int stepWidth = 72;
+            int gap = 8;
+            int startX = 10;
+            int stepY = 22;
+
+            for (int i = 0; i < 9; i++)
+            {
+                // 단계 패널
+                _stepPanels[i] = new Panel
+                {
+                    Location = new Point(startX + i * (stepWidth + gap), stepY),
+                    Size = new Size(stepWidth, 36),
+                    BackColor = Color.FromArgb(230, 230, 230),
+                    BorderStyle = BorderStyle.FixedSingle
+                };
+
+                _stepLabels[i] = new Label
+                {
+                    Dock = DockStyle.Fill,
+                    Text = $"{i + 1}. {stepNames[i]}",
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Font = new Font("맑은 고딕", 8F),
+                    ForeColor = Color.Gray
+                };
+                _stepPanels[i].Controls.Add(_stepLabels[i]);
+                groupBoxSequence.Controls.Add(_stepPanels[i]);
+            }
+
             // 로그 그룹
             GroupBox groupBoxLog = new GroupBox
             {
                 Text = "실행 로그",
-                Location = new Point(10, 220),
-                Size = new Size(760, 320)
+                Location = new Point(10, 260),
+                Size = new Size(760, 280)
             };
 
             listViewAutoRunLog = new ListView
             {
                 Location = new Point(10, 25),
-                Size = new Size(740, 285),
+                Size = new Size(740, 245),
                 View = View.Details,
                 FullRowSelect = true,
                 GridLines = true
@@ -660,7 +714,6 @@ namespace VacX_OutSense
             }
 
             _lblAutoRunBanner.Visible = true;
-            var state = _autoRunService.CurrentState;
             var elapsed = TimeSpan.FromSeconds(_autoRunElapsedSeconds);
 
             string stateText;
@@ -697,11 +750,19 @@ namespace VacX_OutSense
                     bannerColor = Color.FromArgb(180, 60, 0);
                     break;
                 case AutoRunState.RunningExperiment:
-                    var expElapsed = TimeSpan.FromSeconds(_experimentElapsedSeconds);
-                    var expRemaining = TimeSpan.FromSeconds(
-                        Math.Max(0, _autoRunConfig.ExperimentDurationMinutes * 60 - _experimentElapsedSeconds));
-                    stateText = $"▶ 실험 진행 중  [{expElapsed:hh\\:mm\\:ss} / {TimeSpan.FromMinutes(_autoRunConfig.ExperimentDurationMinutes):hh\\:mm\\:ss}]  남은: {expRemaining:hh\\:mm\\:ss}";
-                    bannerColor = Color.FromArgb(0, 120, 60);
+                    if (_autoRunService.IsExperimentTimerRunning)
+                    {
+                        var expElapsed = TimeSpan.FromSeconds(_experimentElapsedSeconds);
+                        var expRemaining = TimeSpan.FromSeconds(
+                            Math.Max(0, _autoRunConfig.ExperimentDurationMinutes * 60 - _experimentElapsedSeconds));
+                        stateText = $"▶ 실험 진행 중  [{expElapsed:hh\\:mm\\:ss} / {TimeSpan.FromMinutes(_autoRunConfig.ExperimentDurationMinutes):hh\\:mm\\:ss}]  남은: {expRemaining:hh\\:mm\\:ss}";
+                        bannerColor = Color.FromArgb(0, 120, 60);
+                    }
+                    else
+                    {
+                        stateText = $"▶ 목표 온도 대기 중...  [{elapsed:hh\\:mm\\:ss}]";
+                        bannerColor = Color.FromArgb(180, 100, 0);
+                    }
                     break;
                 case AutoRunState.ShuttingDown:
                     stateText = "▶ AutoRun — 종료 시퀀스 진행 중...";
@@ -852,12 +913,17 @@ namespace VacX_OutSense
             // AutoRun 배너 업데이트
             UpdateAutoRunBanner();
 
-            if (_autoRunService.CurrentState == AutoRunState.RunningExperiment)
+            if (_autoRunService.CurrentState == AutoRunState.RunningExperiment
+                && _autoRunService.IsExperimentTimerRunning)
             {
                 _experimentElapsedSeconds++;
                 var remaining = TimeSpan.FromSeconds(
                     Math.Max(0, _autoRunConfig.ExperimentDurationMinutes * 60 - _experimentElapsedSeconds));
                 lblAutoRunRemainingTime.Text = $"남은 시간: {remaining:hh\\:mm\\:ss}";
+            }
+            else if (_autoRunService.CurrentState == AutoRunState.RunningExperiment)
+            {
+                lblAutoRunRemainingTime.Text = "남은 시간: 온도 대기중...";
             }
         }
 
@@ -877,6 +943,7 @@ namespace VacX_OutSense
                 _experimentElapsedSeconds = 0;
             }
 
+            UpdateStepSequenceDisplay(e.CurrentState);
             UpdateAutoRunUI();
         }
 
@@ -913,6 +980,7 @@ namespace VacX_OutSense
             }
             _autoRunTimer.Stop();
             StopExperimentDataLogger(e.IsSuccess ? "정상 완료" : "중단됨");
+            UpdateStepSequenceDisplay(e.IsSuccess ? AutoRunState.Completed : AutoRunState.Aborted);
 
             AddAutoRunLog("COMPLETE",
                 e.IsSuccess ? "정상 완료" : "중단됨",
@@ -961,6 +1029,85 @@ namespace VacX_OutSense
             listViewAutoRunLog.Items.Insert(0, item);
             while (listViewAutoRunLog.Items.Count > 100)
                 listViewAutoRunLog.Items.RemoveAt(listViewAutoRunLog.Items.Count - 1);
+        }
+
+        private void UpdateStepSequenceDisplay(AutoRunState currentState)
+        {
+            if (_stepPanels == null || _stepLabels == null) return;
+
+            // State → Step 번호 매핑 (1-based, 0 = 비활성)
+            int currentStep = currentState switch
+            {
+                AutoRunState.Initializing => 1,
+                AutoRunState.PreparingVacuum => 2,
+                AutoRunState.StartingDryPump => 3,
+                AutoRunState.StartingTurboPump => 4,
+                AutoRunState.ActivatingIonGauge => 5,
+                AutoRunState.WaitingHighVacuum => 6,
+                AutoRunState.StartingHeater => 7,
+                AutoRunState.RunningExperiment => 8,
+                AutoRunState.ShuttingDown => 9,
+                AutoRunState.Completed => 10,  // 모든 단계 완료
+                AutoRunState.Aborted or AutoRunState.Error => -1,  // 에러
+                _ => 0
+            };
+
+            for (int i = 0; i < 9; i++)
+            {
+                int stepNum = i + 1;
+
+                if (currentStep == -1)
+                {
+                    // 에러/중단 — 현재 서비스의 단계번호 기준으로 표시
+                    int failedAt = _autoRunService?.CurrentStepNumber ?? 0;
+                    if (stepNum < failedAt)
+                    {
+                        _stepPanels[i].BackColor = Color.FromArgb(200, 230, 200);
+                        _stepLabels[i].ForeColor = Color.DarkGreen;
+                        _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                    }
+                    else if (stepNum == failedAt)
+                    {
+                        _stepPanels[i].BackColor = Color.FromArgb(255, 180, 180);
+                        _stepLabels[i].ForeColor = Color.DarkRed;
+                        _stepLabels[i].Font = new Font("맑은 고딕", 8F, FontStyle.Bold);
+                    }
+                    else
+                    {
+                        _stepPanels[i].BackColor = Color.FromArgb(230, 230, 230);
+                        _stepLabels[i].ForeColor = Color.Gray;
+                        _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                    }
+                }
+                else if (currentStep == 0)
+                {
+                    // 대기/일시정지 — 모두 회색
+                    _stepPanels[i].BackColor = Color.FromArgb(230, 230, 230);
+                    _stepLabels[i].ForeColor = Color.Gray;
+                    _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                }
+                else if (stepNum < currentStep)
+                {
+                    // 완료
+                    _stepPanels[i].BackColor = Color.FromArgb(200, 230, 200);
+                    _stepLabels[i].ForeColor = Color.DarkGreen;
+                    _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                }
+                else if (stepNum == currentStep)
+                {
+                    // 현재 진행 중
+                    _stepPanels[i].BackColor = Color.FromArgb(180, 210, 255);
+                    _stepLabels[i].ForeColor = Color.DarkBlue;
+                    _stepLabels[i].Font = new Font("맑은 고딕", 8F, FontStyle.Bold);
+                }
+                else
+                {
+                    // 대기
+                    _stepPanels[i].BackColor = Color.FromArgb(230, 230, 230);
+                    _stepLabels[i].ForeColor = Color.Gray;
+                    _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                }
+            }
         }
 
         private string GetAutoRunStateText(AutoRunState state) => state switch
@@ -1372,8 +1519,8 @@ namespace VacX_OutSense
             try
             {
                 var indicator = GetConnectionIndicatorByName(deviceName);
-                if (indicator != null)
-                    indicator.BackColor = isConnected ? Color.Green : Color.Red;
+                if (indicator is Forms.UserControls.ConnectionIndicator ci)
+                    ci.IsConnected = isConnected;
             }
             catch { }
         }
@@ -2100,6 +2247,15 @@ namespace VacX_OutSense
             _ch1TimerActive = false;
             _ch1PressureReachCount = 0;
 
+            // 최종 목표 온도 저장 (컨트롤러의 현재 SV — 이미 설정되어 있어야 함)
+            if (_tempController?.Status?.ChannelStatus?.Length > 0)
+            {
+                var ch1 = _tempController.Status.ChannelStatus[0];
+                _ch1FinalTargetTemp = ch1.Dot > 0
+                    ? ch1.SetValue / Math.Pow(10, ch1.Dot)
+                    : ch1.SetValue;
+            }
+
             _ch1AutoStopTimer.Start();
             UpdateCh1TimerControls();
             lblCh1TimeRemainingValue.Text = "진공 대기중...";
@@ -2186,6 +2342,68 @@ namespace VacX_OutSense
 
         private void HandleVacuumWaitPhase()
         {
+            // ── 이온게이지 자동 활성화 ──
+            // IG가 꺼져 있고 피라니 압력이 활성화 임계값 이하이면 자동으로 켜기
+            bool igOn = _dataCollectionService?.GetLatestAOData()?.IsIonGaugeHVOn == true;
+
+            if (!igOn)
+            {
+                double piraniPressure = GetCurrentPiraniPressure();
+
+                if (piraniPressure > 0 && piraniPressure <= 1E-3 && !_igAutoActivating)
+                {
+                    _igAutoActivating = true;
+                    LogInfo($"피라니 압력 {piraniPressure:E2} Torr — 이온게이지 자동 활성화");
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            if (await _ioModule.ControlIonGaugeHVAsync(true))
+                            {
+                                // IG 안정화 대기 (3초)
+                                await Task.Delay(3000);
+                                RunOnUIThread(() => LogInfo("이온게이지 HV ON 성공 (자동)"));
+                            }
+                            else
+                            {
+                                RunOnUIThread(() => LogWarning("이온게이지 자동 활성화 실패 (명령 실패)"));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            RunOnUIThread(() => LogWarning($"이온게이지 자동 활성화 실패: {ex.Message}"));
+                        }
+                        finally
+                        {
+                            _igAutoActivating = false;
+                        }
+                    });
+
+                    // IG 안정화 대기 — 이번 틱에서는 압력 체크 스킵
+                    lblCh1TimeRemainingValue.Text = "이온게이지 활성화 중...";
+                    lblCh1TimeRemainingValue.ForeColor = Color.Cyan;
+                    return;
+                }
+                else if (_igAutoActivating)
+                {
+                    // IG 활성화 진행 중 (이전 틱에서 시작됨)
+                    lblCh1TimeRemainingValue.Text = "이온게이지 활성화 중...";
+                    lblCh1TimeRemainingValue.ForeColor = Color.Cyan;
+                    return;
+                }
+                else
+                {
+                    // IG 꺼져있고 피라니도 아직 높음 → 피라니 압력 표시
+                    string pressureText = piraniPressure > 0 ? $"{piraniPressure:E2}" : "N/A";
+                    lblCh1TimeRemainingValue.Text =
+                        $"진공 대기 ({pressureText} / {_ch1TargetPressure:E1} Torr) [IG OFF]";
+                    lblCh1TimeRemainingValue.ForeColor = Color.Purple;
+                    _ch1PressureReachCount = 0;
+                    return;
+                }
+            }
+
+            // ── IG가 켜져 있으면 이온게이지 압력으로 목표 확인 ──
             double currentPressure = GetCurrentIonGaugePressure();
 
             if (currentPressure > 0 && currentPressure <= _ch1TargetPressure)
@@ -2258,24 +2476,25 @@ namespace VacX_OutSense
 
             var ch1 = _tempController.Status.ChannelStatus[0];
             double pv = ch1.PresentValue;
-            double sv = ch1.SetValue;
             if (ch1.Dot > 0)
             {
                 pv /= Math.Pow(10, ch1.Dot);
-                sv /= Math.Pow(10, ch1.Dot);
             }
 
-            if (Math.Abs(pv - sv) <= _ch1TargetTolerance)
+            // 최종 목표 온도와 비교 (live SV가 아닌 저장된 값 사용 — 램프 중 SV 변동 무시)
+            double target = _ch1FinalTargetTemp;
+
+            if (target > 0 && Math.Abs(pv - target) <= _ch1TargetTolerance)
             {
                 _ch1WaitingForTargetTemp = false;
                 _ch1TimerActive = true;
                 _ch1StartTime = DateTime.Now;
                 lblCh1TimeRemainingValue.ForeColor = Color.Blue;
-                LogInfo($"CH1 목표 온도 도달 (PV:{pv:F1}°C, SV:{sv:F1}°C) - 타이머 시작");
+                LogInfo($"CH1 목표 온도 도달 (PV:{pv:F1}°C, 목표:{target:F1}°C) - 타이머 시작");
             }
             else
             {
-                lblCh1TimeRemainingValue.Text = $"온도 대기 ({pv:F1}/{sv:F1}°C)";
+                lblCh1TimeRemainingValue.Text = $"온도 대기 ({pv:F1}/{target:F1}°C)";
                 lblCh1TimeRemainingValue.ForeColor = Color.Orange;
             }
         }
@@ -2365,6 +2584,18 @@ namespace VacX_OutSense
             return -1;
         }
 
+        private double GetCurrentPiraniPressure()
+        {
+            try
+            {
+                var aiData = _dataCollectionService?.GetLatestAIData();
+                if (aiData != null && _piraniGauge != null)
+                    return _piraniGauge.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]);
+            }
+            catch { }
+            return -1;
+        }
+
         private void StartCh1Timer()
         {
             if (!chkCh1TimerEnabled.Checked) return;
@@ -2385,6 +2616,15 @@ namespace VacX_OutSense
             _ch1WaitingForTargetTemp = true;
             _ch1TimerActive = false;
 
+            // 최종 목표 온도 저장 (컨트롤러의 현재 SV — 램프 시작 전)
+            if (_tempController?.Status?.ChannelStatus?.Length > 0)
+            {
+                var ch1 = _tempController.Status.ChannelStatus[0];
+                _ch1FinalTargetTemp = ch1.Dot > 0
+                    ? ch1.SetValue / Math.Pow(10, ch1.Dot)
+                    : ch1.SetValue;
+            }
+
             _ch1AutoStopTimer.Start();
             UpdateCh1TimerControls();
             lblCh1TimeRemainingValue.Text = "온도 대기중...";
@@ -2398,6 +2638,7 @@ namespace VacX_OutSense
             _ch1TimerActive = false;
             _ch1WaitingForTargetTemp = false;
             _ch1WaitingForVacuum = false;
+            _igAutoActivating = false;
             _ch1AutoStopTimer.Stop();
 
             lblCh1TimeRemainingValue.Text = "00:00:00";

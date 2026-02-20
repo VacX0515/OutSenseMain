@@ -30,7 +30,6 @@ namespace VacX_OutSense.Forms
             txtMaxPressureDuringExperiment.Text = _config.MaxPressureDuringExperiment.ToString("E2");
 
             // 온도 설정
-            txtChillerSetTemperature.Text = _config.ChillerSetTemperature.ToString("F1");
             txtHeaterCh1SetTemperature.Text = _config.HeaterCh1SetTemperature.ToString("F1");
             txtHeaterRampUpRate.Text = _config.HeaterRampUpRate.ToString("F1");
             txtTemperatureStabilityTolerance.Text = _config.TemperatureStabilityTolerance.ToString("F1");
@@ -74,7 +73,6 @@ namespace VacX_OutSense.Forms
                 _config.MaxPressureDuringExperiment = double.Parse(txtMaxPressureDuringExperiment.Text);
 
                 // 온도 설정
-                _config.ChillerSetTemperature = double.Parse(txtChillerSetTemperature.Text);
                 _config.HeaterCh1SetTemperature = double.Parse(txtHeaterCh1SetTemperature.Text);
                 _config.HeaterRampUpRate = double.Parse(txtHeaterRampUpRate.Text);
                 _config.TemperatureStabilityTolerance = double.Parse(txtTemperatureStabilityTolerance.Text);

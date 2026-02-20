@@ -70,5 +70,66 @@ namespace VacX_OutSense.Core.Devices.Gauges
 
             return Status;
         }
+
+        public enum GaugeState
+        {
+            HvOff,             // HV 꺼짐 (대기)
+            HvOnNotIgnited,    // HV ON, 방전 미점화
+            Measuring,         // 정상 측정 중
+            BelowRange,        // 측정 하한 미만 (< 3×10⁻⁹ mbar)
+            SensorFault        // 센서 이상
+        }
+
+        public GaugeState State { get; private set; }
+
+        /// <summary>
+        /// 게이지 상태 판별 (Pin 3 측정 신호 + Pin 6 상태 출력 기반)
+        /// </summary>
+        /// <param name="signalVoltage">측정 신호 전압 Pin 3 (V)</param>
+        /// <param name="statusVoltage">상태 출력 전압 Pin 6 (V)</param>
+        /// <returns>판별된 게이지 상태</returns>
+        public GaugeState DetermineGaugeState(double signalVoltage, double statusVoltage)
+        {
+            bool isStatusHigh = statusVoltage > 10.0;
+            bool isNotIgnited = Math.Abs(signalVoltage - NotIgnitedVoltage) < 0.1;
+            bool isInMeasureRange = signalVoltage >= BaseVoltage && signalVoltage <= 10.0;
+
+            if (isStatusHigh && signalVoltage > 10.0)
+            {
+                // 문서 Troubleshooting: "measurement signal always > 10V" → 센서 단락
+                State = GaugeState.SensorFault;
+                Status = "센서 이상 – 세척 필요 (출력 과다)";
+            }
+            else if (isStatusHigh && isInMeasureRange)
+            {
+                State = GaugeState.Measuring;
+                Status = $"정상 측정 중 ({signalVoltage:F2}V)";
+            }
+            else if (isStatusHigh && signalVoltage < BaseVoltage)
+            {
+                // 문서: p < 3×10⁻⁹ 이하에서도 status HIGH 유지
+                State = GaugeState.BelowRange;
+                Status = "측정 하한 미만 (< 3×10⁻⁹ mbar)";
+            }
+            else if (!isStatusHigh && isNotIgnited)
+            {
+                // 상태 Low + 0.4V → HV ON이지만 방전 미점화
+                State = GaugeState.HvOnNotIgnited;
+                Status = "HV ON – 방전 미점화";
+            }
+            else if (!isStatusHigh && signalVoltage < 0.1)
+            {
+                // 상태 Low + 신호 거의 없음 → HV OFF 대기
+                State = GaugeState.HvOff;
+                Status = "HV OFF – 대기 중";
+            }
+            else
+            {
+                State = GaugeState.SensorFault;
+                Status = $"상태 불명 (신호: {signalVoltage:F2}V, 상태: {statusVoltage:F2}V)";
+            }
+
+            return State;
+        }
     }
 }

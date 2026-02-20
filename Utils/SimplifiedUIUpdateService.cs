@@ -114,7 +114,7 @@ namespace VacX_OutSense.Utils
                 UpdateTemperatureData(snapshot);
 
                 //// 연결 상태
-                //UpdateConnectionStatus(snapshot);
+                UpdateConnectionStatus(snapshot);
 
                 // 버튼 상태
                 UpdateButtonStates(snapshot);

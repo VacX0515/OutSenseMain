@@ -22,6 +22,7 @@ namespace VacX_OutSense.Core.AutoRun
         private readonly Stopwatch _stopwatch = new Stopwatch();
         private DateTime _startTime;
         private DateTime _experimentStartTime;
+        private bool _isExperimentTimerRunning = false;
 
         private AutoRunState _currentState = AutoRunState.Idle;
         private bool _isRunning = false;
@@ -74,6 +75,16 @@ namespace VacX_OutSense.Core.AutoRun
         /// 실험 시작 시간 (온도 도달 후 카운트 시작 시점)
         /// </summary>
         public DateTime ExperimentStartTime => _experimentStartTime;
+
+        /// <summary>
+        /// 실험 타이머가 실제 카운트 중인지 (온도 도달 후)
+        /// </summary>
+        public bool IsExperimentTimerRunning => _isExperimentTimerRunning;
+
+        /// <summary>
+        /// 현재 실행 중인 단계 번호 (1~9)
+        /// </summary>
+        public int CurrentStepNumber => _currentStepNumber;
 
         #endregion
 
@@ -159,6 +170,7 @@ namespace VacX_OutSense.Core.AutoRun
                 _cancellationTokenSource.Cancel();
                 _isRunning = false;
                 _isPaused = false;
+                _isExperimentTimerRunning = false;
             }
 
             // NOTE: _runningTask?.Wait()를 사용하지 않음
@@ -384,9 +396,29 @@ namespace VacX_OutSense.Core.AutoRun
                     if (result != StepResult.Success) goto Cleanup;
                 }
 
-                // 단계 7을 건너뛴 경우 (히터가 이미 작동 중) → 칠러 PID 시작
+                // 단계 7을 건너뛴 경우 (히터가 이미 작동 중) → 온도 재설정 + 칠러 PID 시작
                 if (startFromStep > 7)
                 {
+                    // 설정 변경 후 재시작일 수 있으므로 새 목표 온도를 컨트롤러에 전송
+                    if (_mainForm._tempController?.IsConnected == true)
+                    {
+                        await _mainForm._tempController.UpdateStatusAsync();
+                        var ch1Status = _mainForm._tempController.Status.ChannelStatus[0];
+
+                        short ch1SetValue = ch1Status.Dot == 1
+                            ? (short)(_config.HeaterCh1SetTemperature * 10)
+                            : (short)_config.HeaterCh1SetTemperature;
+
+                        double currentSV = ch1Status.Dot == 1
+                            ? ch1Status.SetValue / 10.0 : ch1Status.SetValue;
+
+                        if (Math.Abs(currentSV - _config.HeaterCh1SetTemperature) > 0.5)
+                        {
+                            _mainForm._tempController.SetTemperature(1, ch1SetValue);
+                            LogInfo($"히터 CH1 온도 재설정: {currentSV:F1}°C → {_config.HeaterCh1SetTemperature:F1}°C");
+                        }
+                    }
+
                     StartChillerPID();
                 }
 
@@ -424,6 +456,7 @@ namespace VacX_OutSense.Core.AutoRun
                 {
                     _isRunning = false;
                     _isPaused = false;
+                    _isExperimentTimerRunning = false;
                 }
 
                 var completedArgs = new AutoRunCompletedEventArgs(
@@ -449,6 +482,7 @@ namespace VacX_OutSense.Core.AutoRun
                 {
                     _isRunning = false;
                     _isPaused = false;
+                    _isExperimentTimerRunning = false;
                 }
             }
         }
@@ -568,40 +602,19 @@ namespace VacX_OutSense.Core.AutoRun
                     await Task.Delay(2000, cancellationToken);
                 }
 
-                // 칠러 온도 설정 (응답 검증 실패해도 실제 설정은 성공하는 경우가 있음)
-                UpdateProgress("칠러 온도 설정 중...", 50);
-                _mainForm._bathCirculator.SetTemperature(_config.ChillerSetTemperature);
-
-                // 설정 후 실제 상태를 읽어서 확인
-                await Task.Delay(500, cancellationToken);
-                _mainForm._bathCirculator.UpdateStatus();
-
-                double actualSetTemp = _mainForm._bathCirculator.Status.SetTemperature;
-                double targetTemp = _config.ChillerSetTemperature;
-                double tolerance = 0.5;
-
-                if (Math.Abs(actualSetTemp - targetTemp) <= tolerance)
+                // 칠러 온도는 PID가 제어 — PID 베이스 온도를 초기값으로 설정
+                var pidService = _mainForm.ChillerPIDService;
+                if (pidService != null)
                 {
-                    LogInfo($"칠러 온도 설정 확인: 목표={targetTemp}°C, 실제 SV={actualSetTemp}°C");
+                    double baseTemp = pidService.ChillerBaseTemperature;
+                    UpdateProgress($"칠러 초기 온도 설정 중 (PID 베이스: {baseTemp}°C)...", 50);
+                    _mainForm._bathCirculator.SetTemperature(baseTemp);
+                    await Task.Delay(500, cancellationToken);
+                    LogInfo($"칠러 초기 온도 = PID 베이스 {baseTemp}°C (이후 PID가 자동 제어)");
                 }
                 else
                 {
-                    LogWarning($"칠러 온도 불일치 (목표={targetTemp}°C, 실제 SV={actualSetTemp}°C) — 재시도...");
-                    await Task.Delay(500, cancellationToken);
-                    _mainForm._bathCirculator.SetTemperature(_config.ChillerSetTemperature);
-                    await Task.Delay(500, cancellationToken);
-                    _mainForm._bathCirculator.UpdateStatus();
-
-                    actualSetTemp = _mainForm._bathCirculator.Status.SetTemperature;
-                    if (Math.Abs(actualSetTemp - targetTemp) <= tolerance)
-                    {
-                        LogInfo($"칠러 온도 설정 확인 (재시도 성공): SV={actualSetTemp}°C");
-                    }
-                    else
-                    {
-                        LogError($"칠러 온도 설정 실패: 목표={targetTemp}°C, 실제 SV={actualSetTemp}°C");
-                        return false;
-                    }
+                    LogWarning("칠러 PID 서비스 미초기화 — 칠러 온도를 현재 설정값으로 유지");
                 }
             }
             else
@@ -813,6 +826,7 @@ namespace VacX_OutSense.Core.AutoRun
 
             int speedWaitCount = 0;
             int targetSpeed = 620;
+            bool igActivatedDuringAccel = false;
 
             while (speedWaitCount < 600)
             {
@@ -821,6 +835,31 @@ namespace VacX_OutSense.Core.AutoRun
 
                 var currentSpeed = _mainForm._turboPump.Status?.CurrentSpeed ?? 0;
                 UpdateProgress($"터보펌프 가속 중... ({currentSpeed} RPM)", 50 + (currentSpeed * 50 / targetSpeed));
+
+                // ── 가속 중 이온게이지 조기 활성화 ──
+                // 터보펌프 가속 도중 압력이 IG 활성화 임계값 이하로 내려가면 미리 켬
+                if (!igActivatedDuringAccel && _mainForm._ioModule?.IsConnected == true)
+                {
+                    var aoData = _mainForm._ioModule.LastValidAOValues;
+                    if (aoData?.IsIonGaugeHVOn != true)
+                    {
+                        var currentMeasurements = await GetCurrentMeasurementsAsync();
+                        if (currentMeasurements.CurrentPressure > 0 &&
+                            currentMeasurements.CurrentPressure <= _config.TargetPressureForIonGauge)
+                        {
+                            LogInfo($"터보펌프 가속 중 IG 활성화 압력 도달 ({currentMeasurements.CurrentPressure:E2} Torr) — 이온게이지 조기 활성화");
+                            if (await _mainForm._ioModule.ControlIonGaugeHVAsync(true))
+                            {
+                                igActivatedDuringAccel = true;
+                                LogInfo("이온게이지 HV ON 성공 (터보 가속 중)");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        igActivatedDuringAccel = true; // 이미 켜져 있음
+                    }
+                }
 
                 if (currentSpeed >= targetSpeed * 0.95)
                 {
@@ -843,6 +882,15 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         private async Task<bool> ActivateIonGaugeAsync(CancellationToken cancellationToken)
         {
+            // 이미 활성화되어 있으면 스킵 (터보펌프 가속 중 조기 활성화된 경우)
+            var aoCheck = _mainForm._ioModule?.LastValidAOValues;
+            if (aoCheck?.IsIonGaugeHVOn == true)
+            {
+                LogInfo("이온게이지 이미 활성화 상태 — 단계 스킵");
+                UpdateProgress("이온게이지 활성화 완료 (이미 ON)", 100);
+                return true;
+            }
+
             UpdateProgress("이온게이지 활성화 조건 확인 중...", 0);
 
             var measurements = await GetCurrentMeasurementsAsync();
@@ -1033,8 +1081,8 @@ namespace VacX_OutSense.Core.AutoRun
         {
             UpdateProgress("온도 도달 대기 중...", 0);
 
-            // ── 1단계: CH1 설정 온도 도달 대기 ──
-            LogInfo("CH1 설정 온도 도달 대기 중...");
+            // ── 1단계: CH1 설정 온도 이상 도달 대기 ──
+            LogInfo($"CH1 설정 온도({_config.HeaterCh1SetTemperature:F1}°C) 이상 도달 대기 중...");
             bool temperatureReached = false;
             var waitStartTime = DateTime.Now;
 
@@ -1042,18 +1090,19 @@ namespace VacX_OutSense.Core.AutoRun
             {
                 var measurements = await GetCurrentMeasurementsAsync();
 
-                var ch1Diff = Math.Abs(measurements.HeaterCh1Temperature - _config.HeaterCh1SetTemperature);
                 var waitElapsed = DateTime.Now - waitStartTime;
+                double progressRatio = _config.HeaterCh1SetTemperature > 0
+                    ? Math.Min(measurements.HeaterCh1Temperature / _config.HeaterCh1SetTemperature * 10, 10)
+                    : 0;
 
                 UpdateProgress($"온도 상승 중  CH1: {measurements.HeaterCh1Temperature:F1}°C → {_config.HeaterCh1SetTemperature:F1}°C  |  " +
                     $"압력: {measurements.CurrentPressure:E2} Torr  |  대기: {waitElapsed:mm\\:ss}",
-                    Math.Min(ch1Diff <= _config.TemperatureStabilityTolerance ? 10 :
-                        measurements.HeaterCh1Temperature / _config.HeaterCh1SetTemperature * 10, 10));
+                    progressRatio);
 
-                if (ch1Diff <= _config.TemperatureStabilityTolerance)
+                if (measurements.HeaterCh1Temperature >= _config.HeaterCh1SetTemperature)
                 {
                     temperatureReached = true;
-                    LogInfo($"CH1 설정 온도 도달 확인: {measurements.HeaterCh1Temperature:F1}°C (목표: {_config.HeaterCh1SetTemperature:F1}°C, 대기: {waitElapsed:mm\\:ss})");
+                    LogInfo($"CH1 설정 온도 도달: {measurements.HeaterCh1Temperature:F1}°C ≥ {_config.HeaterCh1SetTemperature:F1}°C (대기: {waitElapsed:mm\\:ss})");
                 }
 
                 await Task.Delay(5000, cancellationToken);
@@ -1067,6 +1116,7 @@ namespace VacX_OutSense.Core.AutoRun
 
             // ── 2단계: 실험 시간 카운트 시작 (온도 도달 후부터) ──
             _experimentStartTime = DateTime.Now;
+            _isExperimentTimerRunning = true;
             var experimentDuration = TimeSpan.FromMinutes(_config.ExperimentDurationMinutes);
 
             LogInfo($"★ 실험 진행 시작 — 목표: {_config.ExperimentDurationMinutes}분 ({_config.ExperimentDurationMinutes / 60}시간 {_config.ExperimentDurationMinutes % 60}분)");
@@ -1176,8 +1226,17 @@ namespace VacX_OutSense.Core.AutoRun
             }
             await Task.Delay(2000, cancellationToken);
 
-            // 5. 벤트 밸브 열기 → ATM 스위치 목표 압력 도달 대기
-            UpdateProgress("벤트 밸브 여는 중...", 25);
+            // 5. 드라이펌프 정지 (벤트 전에 반드시 정지 — 대기압 역류 방지)
+            if (_mainForm._dryPump?.IsConnected == true && _mainForm._dryPump.Status?.IsRunning == true)
+            {
+                UpdateProgress("드라이펌프 정지 중...", 24);
+                _mainForm._dryPump.Stop();
+                await Task.Delay(3000, cancellationToken);
+                LogInfo("드라이펌프 정지 완료");
+            }
+
+            // 6. 벤트 밸브 열기 → ATM 스위치 목표 압력 도달 대기
+            UpdateProgress("벤트 밸브 여는 중...", 27);
             if (!await _mainForm._ioModule.ControlVentValveAsync(true))
             {
                 LogWarning("벤트 밸브 열기 실패");
@@ -1284,14 +1343,8 @@ namespace VacX_OutSense.Core.AutoRun
             await Task.Delay(1000, cancellationToken);
             LogInfo("배기 밸브 닫힘");
 
-            // 9. 드라이펌프 정지
-            if (_mainForm._dryPump?.IsConnected == true && _mainForm._dryPump.Status?.IsRunning == true)
-            {
-                UpdateProgress("드라이펌프 정지 중...", 90);
-                _mainForm._dryPump.Stop();
-                await Task.Delay(3000, cancellationToken);
-                LogInfo("드라이펌프 정지 완료");
-            }
+            // 9. 칠러 PID 정지
+            StopChillerPID();
 
             // 10. 최종 상태 확인
             UpdateProgress("최종 상태 확인 중...", 95);

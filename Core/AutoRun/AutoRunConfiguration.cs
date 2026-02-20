@@ -36,11 +36,6 @@ namespace VacX_OutSense.Core.AutoRun
         #region 온도 설정
 
         /// <summary>
-        /// 칠러 설정 온도 (°C)
-        /// </summary>
-        public double ChillerSetTemperature { get; set; } = 20.0;
-
-        /// <summary>
         /// 히터 CH1 설정 온도 (°C)
         /// </summary>
         public double HeaterCh1SetTemperature { get; set; } = 100.0;
@@ -195,6 +190,21 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         public bool ShouldSerializeHeaterCh2SetTemperatureCompat() => false;
 
+        /// <summary>
+        /// [하위호환] 기존 XML에 ChillerSetTemperature가 있으면 읽기만 함 (PID가 제어하므로 불필요)
+        /// </summary>
+        [XmlElement("ChillerSetTemperature")]
+        public double ChillerSetTemperatureCompat
+        {
+            get => 0;
+            set { /* 무시 — 칠러 온도는 PID가 제어 */ }
+        }
+
+        /// <summary>
+        /// ChillerSetTemperatureCompat는 저장하지 않음
+        /// </summary>
+        public bool ShouldSerializeChillerSetTemperatureCompat() => false;
+
         #endregion
 
         #region 메서드
@@ -251,7 +261,6 @@ namespace VacX_OutSense.Core.AutoRun
             MaxPressureDuringExperiment = defaultConfig.MaxPressureDuringExperiment;
 
             // 온도 설정
-            ChillerSetTemperature = defaultConfig.ChillerSetTemperature;
             HeaterCh1SetTemperature = defaultConfig.HeaterCh1SetTemperature;
             HeaterRampUpRate = defaultConfig.HeaterRampUpRate;
             TemperatureStabilityTolerance = defaultConfig.TemperatureStabilityTolerance;
