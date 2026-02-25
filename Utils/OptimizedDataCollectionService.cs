@@ -231,7 +231,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 압력 데이터 수집 (IO 충돌 방지) - ★ 추가 AI 포함
+        /// 압력 + IO 데이터 수집 (DI/DO/AI)
         /// </summary>
         private async Task CollectPressureData()
         {
@@ -242,43 +242,61 @@ namespace VacX_OutSense.Utils
 
             try
             {
-                // ★ DiscardInBuffer + Delay 제거 — 채널이 자동 처리
-                var aiData = await _mainForm._ioModule.ReadAnalogInputsAsync();
+                // 1. DI 읽기 (게이트 밸브 리드 스위치 등)
+                var diData = await _mainForm._ioModule.ReadDigitalInputsAsync();
+                if (diData != null)
+                {
+                    _latestData["DI_Data"] = diData;
+                    _errorCounts["IOModule"] = 0;
 
-                if (aiData != null)
+                    // 게이트 밸브 상태 로깅
+                    string gvPosition = _mainForm._ioModule.GateValvePosition;
+                    if (gvPosition == "Error")
+                    {
+                        LoggerService.Instance.LogWarning("게이트 밸브 센서 이상: 양쪽 센서 모두 ON");
+                    }
+                }
+                else
+                {
+                    IncrementErrorCount("IOModule");
+                }
+
+                await Task.Delay(20); // 통신 간격
+
+                // 2. DO 상태 읽기 (밸브 상태 확인용)
+                var doData = await _mainForm._ioModule.ReadDigitalOutputsAsync();
+                if (doData != null)
+                {
+                    _latestData["DO_Data"] = doData;
+                }
+
+                await Task.Delay(20);
+
+                // 3. AI 읽기 (확장 모듈 - 압력 센서)
+                var aiData = await _mainForm._ioModule.ReadAnalogInputsAsync();
+                if (aiData != null && IsValidAIData(aiData))
                 {
                     _latestData["AI_Data"] = aiData;
 
-                    // 추가 AI 값 처리 (기존 코드 유지)
+                    // 추가 AI 값 처리
                     if (!double.IsNaN(aiData.AdditionalAIValue))
                     {
                         _latestData["AdditionalAI_Value"] = aiData.AdditionalAIValue;
                     }
                 }
-                else
-                {
-                    // 압력 데이터는 크리티컬이지만 자주 실패하면 별도 처리
-                    IncrementErrorCount("IOModule");
-                }
 
-                // AO 데이터도 수집 (기존 코드 유지)
-                var aoData = await _mainForm._ioModule.ReadAnalogOutputsAsync();
-                if (aoData != null)
-                {
-                    _latestData["AO_Data"] = aoData;
-                }
+                // ★ AO 읽기 제거 (AXAX8080G 마스터에 AO 없음)
             }
             catch (Exception ex)
             {
                 IncrementErrorCount("IOModule");
-                LoggerService.Instance.LogDebug($"IOModule 압력 수집 오류: {ex.Message}");
+                LoggerService.Instance.LogDebug($"IOModule 수집 오류: {ex.Message}");
             }
             finally
             {
                 semaphore.Release();
             }
         }
-
         /// <summary>
         /// AI 데이터 유효성 검사 (0값 체크)
         /// </summary>
@@ -286,7 +304,6 @@ namespace VacX_OutSense.Utils
         {
             if (data == null) return false;
 
-            // 최소한 하나의 채널은 0이 아닌 값을 가져야 함
             for (int i = 0; i < 8; i++)
             {
                 if (Math.Abs(data.ExpansionVoltageValues[i]) > 0.001)
@@ -295,14 +312,12 @@ namespace VacX_OutSense.Utils
 
             return false;
         }
-
         /// <summary>
         /// 장치 데이터 수집 (락 사용)
         /// </summary>
         private async Task CollectDeviceDataAsync(string deviceName, Func<Task> collectFunc)
         {
             // ★ 채널이 끊겨있으면 수집 시도 자체를 건너뛰기
-            // (SerialPortChannel이 재연결 중일 수 있으므로 명령 큐에 쌓이지 않도록)
             if (!ShouldCollect(deviceName))
                 return;
 
@@ -323,9 +338,6 @@ namespace VacX_OutSense.Utils
                 {
                     LoggerService.Instance.LogWarning($"{deviceName} 통신 오류 다수 발생 — 연결 상태 확인 필요");
 
-                    // ★ HandleDeviceCommunicationError 호출
-                    // 하지만 새 아키텍처에서는 SerialPortChannel이 이미 끊김을 감지했을 가능성이 높음
-                    // 이 코드는 추가 안전장치 역할
                     try
                     {
                         _mainForm.BeginInvoke(new Action(() =>
@@ -350,10 +362,6 @@ namespace VacX_OutSense.Utils
             if (_mainForm._dryPump?.IsConnected != true)
                 return;
 
-            // ★ DiscardInBuffer 제거 — ChannelCommunicationManager가 자동 처리
-            // _mainForm._dryPump.CommunicationManager.DiscardInBuffer();
-            // await Task.Delay(10);  ← 불필요 (채널이 원자적으로 처리)
-
             bool success = await _mainForm._dryPump.UpdateStatusAsync();
             if (success)
             {
@@ -361,7 +369,6 @@ namespace VacX_OutSense.Utils
             }
             else
             {
-                // ★ 실패 시 예외 throw → CollectDeviceDataAsync의 catch에서 에러 카운터 증가
                 throw new IOException("DryPump 상태 업데이트 실패");
             }
         }
@@ -389,8 +396,6 @@ namespace VacX_OutSense.Utils
 
             await _mainForm._bathCirculator.UpdateStatusAsync();
 
-            // BathCirculator.UpdateStatusAsync()는 void 반환이므로
-            // Status가 갱신되었는지로 판단
             if (_mainForm._bathCirculator.Status != null)
             {
                 _latestData["BathCirculator"] = _mainForm._bathCirculator.Status;
@@ -403,7 +408,6 @@ namespace VacX_OutSense.Utils
 
         /// <summary>
         /// 온도 컨트롤러 데이터 수집 (메인 + 확장 모듈 통합)
-        /// UpdateStatusAsync() 하나로 메인 + 확장 모듈 모두 처리됨
         /// </summary>
         private async Task CollectTempControllerData()
         {
@@ -438,10 +442,8 @@ namespace VacX_OutSense.Utils
             if (!_errorCounts.TryGetValue(deviceName, out int errorCount))
                 return true;
 
-            // 오류가 많으면 수집 빈도 줄이기
             if (errorCount >= MAX_ERROR_COUNT)
             {
-                // 10번에 1번만 수집 시도
                 return DateTime.Now.Second % 10 == 0;
             }
 
@@ -490,10 +492,10 @@ namespace VacX_OutSense.Utils
                 ProcessIOModuleData(snapshot, aiData, null);
             }
 
-            // AO 데이터 처리
-            if (_latestData.TryGetValue("AO_Data", out var aoObj) && aoObj is AnalogOutputValues aoData)
+            // ★ DO 데이터 처리 (기존 AO → DO)
+            if (_latestData.TryGetValue("DO_Data", out var doObj) && doObj is DigitalOutputValues doData)
             {
-                ProcessIOModuleData(snapshot, null, aoData);
+                ProcessIOModuleData(snapshot, null, doData);
             }
 
             // 드라이펌프 데이터
@@ -530,9 +532,11 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// IO 모듈 데이터 처리 - ★ 추가 AI 포함
+        /// IO 모듈 데이터 처리
+        /// ★ AO(AnalogOutputValues) → DO(DigitalOutputValues) 변경
+        /// ★ MasterCurrentValues → GateValvePosition(DI 기반) 변경
         /// </summary>
-        private void ProcessIOModuleData(UIDataSnapshot snapshot, AnalogInputValues aiData, AnalogOutputValues aoData)
+        private void ProcessIOModuleData(UIDataSnapshot snapshot, AnalogInputValues aiData, DigitalOutputValues doData)
         {
             try
             {
@@ -555,20 +559,16 @@ namespace VacX_OutSense.Utils
                     }
                     snapshot.AdditionalAITimestamp = aiData.Timestamp;
 
-                    // 밸브 상태 계산
-                    string gateValvePhysical = "";
-                    if (aiData.MasterCurrentValues[3] > 1) gateValvePhysical = "Opened";
-                    else if (aiData.MasterCurrentValues[0] > 1) gateValvePhysical = "Closed";
-                    else gateValvePhysical = "Moving";
-
-                    snapshot.GateValveStatus = gateValvePhysical;
+                    // ★ 게이트 밸브 상태: DI 기반 리드 스위치 (기존 MasterCurrentValues → GateValvePosition)
+                    snapshot.GateValveStatus = _mainForm._ioModule?.GateValvePosition ?? "Unknown";
                 }
 
-                if (aoData != null)
+                // ★ DO 기반으로 밸브/IG 상태 확인 (기존 AO → DO)
+                if (doData != null)
                 {
-                    snapshot.VentValveStatus = aoData.IsVentValveOpen ? "Opened" : "Closed";
-                    snapshot.ExhaustValveStatus = aoData.IsExhaustValveOpen ? "Opened" : "Closed";
-                    snapshot.IonGaugeHVStatus = aoData.IsIonGaugeHVOn ? "HV on" : "HV off";
+                    snapshot.VentValveStatus = doData.IsVentValveOn ? "Opened" : "Closed";
+                    snapshot.ExhaustValveStatus = doData.IsExhaustValveOn ? "Opened" : "Closed";
+                    snapshot.IonGaugeHVStatus = doData.IsIonGaugeHVOn ? "HV on" : "HV off";
                 }
             }
             catch (Exception ex)
@@ -791,13 +791,13 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 최신 AO 데이터 가져오기
+        /// ★ 최신 DO 데이터 가져오기 (기존 GetLatestAOData → GetLatestDOData)
         /// </summary>
-        public AnalogOutputValues GetLatestAOData()
+        public DigitalOutputValues GetLatestDOData()
         {
-            if (_latestData.TryGetValue("AO_Data", out var aoObj) && aoObj is AnalogOutputValues aoData)
+            if (_latestData.TryGetValue("DO_Data", out var doObj) && doObj is DigitalOutputValues doData)
             {
-                return aoData;
+                return doData;
             }
             return null;
         }
@@ -842,28 +842,23 @@ namespace VacX_OutSense.Utils
 
         /// <summary>
         /// 게이트 밸브 상태 가져오기
+        /// ★ DI 기반 리드 스위치로 변경 (기존 MasterCurrentValues → GateValvePosition)
         /// </summary>
         public string GetGateValveStatus()
         {
-            var aiData = GetLatestAIData();
-            if (aiData != null)
-            {
-                if (aiData.MasterCurrentValues[3] > 1) return "Opened";
-                else if (aiData.MasterCurrentValues[0] > 1) return "Closed";
-                else return "Moving";
-            }
-            return "Unknown";
+            return _mainForm._ioModule?.GateValvePosition ?? "Unknown";
         }
 
         /// <summary>
         /// 모든 밸브 상태 가져오기
+        /// ★ DO 기반으로 변경 (기존 AO → DO)
         /// </summary>
         public (bool ventOpen, bool exhaustOpen, bool ionGaugeHV) GetValveStates()
         {
-            var aoData = GetLatestAOData();
-            if (aoData != null)
+            var doData = GetLatestDOData();
+            if (doData != null)
             {
-                return (aoData.IsVentValveOpen, aoData.IsExhaustValveOpen, aoData.IsIonGaugeHVOn);
+                return (doData.IsVentValveOn, doData.IsExhaustValveOn, doData.IsIonGaugeHVOn);
             }
             return (false, false, false);
         }

@@ -223,23 +223,16 @@ namespace VacX_OutSense.Core.AutoRun
                     (_mainForm._tempController?.IsConnected == true);
 
                 // 2. 밸브 상태
-                var aiData = _mainForm._ioModule?.LastValidAIValues;
-                var aoData = _mainForm._ioModule?.LastValidAOValues;
+                // ★ DI/DO 기반으로 변경 (기존 AI/AO → DI/DO)
+                var doData = _mainForm._ioModule?.LastValidDOValues;
 
-                if (aiData != null)
-                {
-                    if (aiData.MasterCurrentValues[3] > 1)
-                        assessment.GateValveStatus = "Opened";
-                    else if (aiData.MasterCurrentValues[0] > 1)
-                        assessment.GateValveStatus = "Closed";
-                    else
-                        assessment.GateValveStatus = "Moving";
-                }
+                // 게이트 밸브: DI 기반 리드 스위치로 확인
+                assessment.GateValveStatus = _mainForm._ioModule?.GateValvePosition ?? "Unknown";
 
-                if (aoData != null)
+                if (doData != null)
                 {
-                    assessment.VentValveStatus = aoData.IsVentValveOpen ? "Opened" : "Closed";
-                    assessment.ExhaustValveStatus = aoData.IsExhaustValveOpen ? "Opened" : "Closed";
+                    assessment.VentValveStatus = doData.IsVentValveOn ? "Opened" : "Closed";
+                    assessment.ExhaustValveStatus = doData.IsExhaustValveOn ? "Opened" : "Closed";
                 }
 
                 assessment.ValvesReady =
@@ -255,10 +248,11 @@ namespace VacX_OutSense.Core.AutoRun
                 assessment.TurboPumpAtSpeed = _mainForm._turboPump?.Status?.IsRunning == true
                     && assessment.TurboPumpSpeed >= 590;
 
-                // 5. 이온게이지
-                assessment.IonGaugeActive = aoData?.IsIonGaugeHVOn == true;
+                // 5. 이온게이지 — DO 기반
+                assessment.IonGaugeActive = doData?.IsIonGaugeHVOn == true;
 
                 // 6. 압력
+                var aiData = _mainForm._ioModule?.LastValidAIValues;
                 if (aiData != null)
                 {
                     assessment.CurrentPressure =
@@ -679,9 +673,10 @@ namespace VacX_OutSense.Core.AutoRun
 
             await Task.Delay(1000, cancellationToken);
 
+            // ★ DO 기반으로 밸브 상태 확인 (기존 ReadAnalogOutputsAsync → ReadDigitalOutputsAsync)
             UpdateProgress("밸브 상태 최종 확인...", 90);
-            var aoData = await _mainForm._ioModule.ReadAnalogOutputsAsync();
-            if (aoData == null)
+            var doData = await _mainForm._ioModule.ReadDigitalOutputsAsync();
+            if (doData == null)
             {
                 LogError("밸브 상태 읽기 실패");
                 return false;
@@ -837,11 +832,11 @@ namespace VacX_OutSense.Core.AutoRun
                 UpdateProgress($"터보펌프 가속 중... ({currentSpeed} RPM)", 50 + (currentSpeed * 50 / targetSpeed));
 
                 // ── 가속 중 이온게이지 조기 활성화 ──
-                // 터보펌프 가속 도중 압력이 IG 활성화 임계값 이하로 내려가면 미리 켬
+                // ★ DO 기반으로 IG HV 상태 확인 (기존 AO → DO)
                 if (!igActivatedDuringAccel && _mainForm._ioModule?.IsConnected == true)
                 {
-                    var aoData = _mainForm._ioModule.LastValidAOValues;
-                    if (aoData?.IsIonGaugeHVOn != true)
+                    var doData = _mainForm._ioModule.LastValidDOValues;
+                    if (doData?.IsIonGaugeHVOn != true)
                     {
                         var currentMeasurements = await GetCurrentMeasurementsAsync();
                         if (currentMeasurements.CurrentPressure > 0 &&
@@ -878,13 +873,14 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// 단계 5: 이온게이지 활성화
         /// - 압력 미도달 시 대기 후 활성화
-        /// - AO 상태로 HV ON 확인
+        /// - ★ DO 상태로 HV ON 확인 (기존 AO → DO)
         /// </summary>
         private async Task<bool> ActivateIonGaugeAsync(CancellationToken cancellationToken)
         {
+            // ★ DO 기반으로 IG HV 상태 확인 (기존 AO → DO)
             // 이미 활성화되어 있으면 스킵 (터보펌프 가속 중 조기 활성화된 경우)
-            var aoCheck = _mainForm._ioModule?.LastValidAOValues;
-            if (aoCheck?.IsIonGaugeHVOn == true)
+            var doCheck = _mainForm._ioModule?.LastValidDOValues;
+            if (doCheck?.IsIonGaugeHVOn == true)
             {
                 LogInfo("이온게이지 이미 활성화 상태 — 단계 스킵");
                 UpdateProgress("이온게이지 활성화 완료 (이미 ON)", 100);
@@ -937,12 +933,13 @@ namespace VacX_OutSense.Core.AutoRun
             LogInfo("이온게이지 HV ON 명령 성공 — 안정화 대기 중...");
             await Task.Delay(3000, cancellationToken);
 
+            // ★ DO 기반으로 HV ON 확인 (기존 AO → DO)
             UpdateProgress("이온게이지 상태 확인 중...", 85);
 
             for (int i = 0; i < 5; i++)
             {
-                var aoData = _mainForm._ioModule?.LastValidAOValues;
-                if (aoData?.IsIonGaugeHVOn == true)
+                var doData = _mainForm._ioModule?.LastValidDOValues;
+                if (doData?.IsIonGaugeHVOn == true)
                 {
                     LogInfo("이온게이지 HV ON 확인 완료");
                     UpdateProgress("이온게이지 활성화 완료", 100);
@@ -951,7 +948,7 @@ namespace VacX_OutSense.Core.AutoRun
                 await Task.Delay(1000, cancellationToken);
             }
 
-            LogWarning("이온게이지 HV ON 명령은 성공했으나 AO 상태 확인 실패 — 계속 진행합니다.");
+            LogWarning("이온게이지 HV ON 명령은 성공했으나 DO 상태 확인 실패 — 계속 진행합니다.");
             UpdateProgress("이온게이지 활성화 완료 (상태 미확인)", 100);
             return true;
         }
@@ -1416,6 +1413,7 @@ namespace VacX_OutSense.Core.AutoRun
 
         /// <summary>
         /// 현재 측정값 가져오기
+        /// ★ AO/MasterCurrentValues 기반 → DO/DI(GateValvePosition) 기반으로 변경
         /// </summary>
         private async Task<AutoRunMeasurements> GetCurrentMeasurementsAsync()
         {
@@ -1426,14 +1424,16 @@ namespace VacX_OutSense.Core.AutoRun
                 if (_mainForm._ioModule?.IsConnected == true)
                 {
                     var aiData = _mainForm._ioModule.LastValidAIValues;
-                    var aoData = _mainForm._ioModule.LastValidAOValues;
+                    // ★ DO 기반으로 변경 (기존 AO → DO)
+                    var doData = _mainForm._ioModule.LastValidDOValues;
 
                     if (aiData != null)
                     {
                         measurements.AtmPressure = _mainForm._atmSwitch?.ConvertVoltageToPressureInkPa(aiData.ExpansionVoltageValues[0]) ?? 0;
                         measurements.CurrentPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
 
-                        if (aoData?.IsIonGaugeHVOn == true && measurements.CurrentPressure < 1E-3)
+                        // ★ IG HV 상태: DO 기반
+                        if (doData?.IsIonGaugeHVOn == true && measurements.CurrentPressure < 1E-3)
                         {
                             var ionPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]) ?? 0;
                             if (ionPressure > 0 && ionPressure < measurements.CurrentPressure)
@@ -1441,19 +1441,16 @@ namespace VacX_OutSense.Core.AutoRun
                                 measurements.CurrentPressure = ionPressure;
                             }
                         }
-
-                        if (aiData.MasterCurrentValues[3] > 1)
-                            measurements.GateValveStatus = "Opened";
-                        else if (aiData.MasterCurrentValues[0] > 1)
-                            measurements.GateValveStatus = "Closed";
-                        else
-                            measurements.GateValveStatus = "Moving";
                     }
 
-                    if (aoData != null)
+                    // ★ 게이트 밸브: DI 기반 리드 스위치 (기존 MasterCurrentValues → GateValvePosition)
+                    measurements.GateValveStatus = _mainForm._ioModule.GateValvePosition ?? "Unknown";
+
+                    // ★ VV/EV 상태: DO 기반 (기존 AO IsVentValveOpen → DO IsVentValveOn)
+                    if (doData != null)
                     {
-                        measurements.VentValveStatus = aoData.IsVentValveOpen ? "Opened" : "Closed";
-                        measurements.ExhaustValveStatus = aoData.IsExhaustValveOpen ? "Opened" : "Closed";
+                        measurements.VentValveStatus = doData.IsVentValveOn ? "Opened" : "Closed";
+                        measurements.ExhaustValveStatus = doData.IsExhaustValveOn ? "Opened" : "Closed";
                     }
                 }
 

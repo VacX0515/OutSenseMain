@@ -2374,8 +2374,8 @@ namespace VacX_OutSense
         private void HandleVacuumWaitPhase()
         {
             // ── 이온게이지 자동 활성화 ──
-            // IG가 꺼져 있고 피라니 압력이 활성화 임계값 이하이면 자동으로 켜기
-            bool igOn = _dataCollectionService?.GetLatestAOData()?.IsIonGaugeHVOn == true;
+            // ★ DO 기반으로 IG HV 상태 확인 (기존 AO → DO 변경)
+            bool igOn = _ioModule?.LastValidDOValues?.IsIonGaugeHVOn == true;
 
             if (!igOn)
             {
@@ -2709,13 +2709,11 @@ namespace VacX_OutSense
                 needDryPumpStop = _dryPump?.IsConnected == true
                     && _dryPump.Status?.IsRunning == true;
 
-                if (_dataCollectionService != null)
-                {
-                    var (ventOpen, exhaustOpen, ionGaugeHV) = _dataCollectionService.GetValveStates();
-                    needIonGaugeOff = ionGaugeHV;
-                    needVentValvesOpen = !ventOpen || !exhaustOpen;
-                    needGateValveClose = _dataCollectionService.GetGateValveStatus() != "Closed";
-                }
+                // ★ DI/DO 기반으로 밸브 상태 확인 (기존 AO → DI/DO 변경)
+                var doValues = _ioModule?.LastValidDOValues;
+                needIonGaugeOff = doValues?.IsIonGaugeHVOn == true;
+                needVentValvesOpen = !(doValues?.IsVentValveOn == true) || !(doValues?.IsExhaustValveOn == true);
+                needGateValveClose = _ioModule?.GateValvePosition != "Closed";
 
                 LogInfo($"[종료 시퀀스] 상태 판단: CH1정지={needCh1Stop}, IG OFF={needIonGaugeOff}, " +
                         $"터보정지={needTurboPumpStop}, 드라이정지={needDryPumpStop}, " +
@@ -2758,8 +2756,8 @@ namespace VacX_OutSense
                         bool r = await _ioModule.ControlIonGaugeHVAsync(false);
                         if (!r) return false;
                         await Task.Delay(1000);
-                        var (_, _, hv) = _dataCollectionService.GetValveStates();
-                        return !hv;
+                        // ★ DO 기반으로 IG HV 상태 확인
+                        return _ioModule?.LastValidDOValues?.IsIonGaugeHVOn != true;
                     }, btn_iongauge, 3, 1000);
                 }
                 catch (Exception ex) { LogError($"[종료 시퀀스] 이온게이지 OFF 실패: {ex.Message}"); }
@@ -2795,7 +2793,8 @@ namespace VacX_OutSense
                         bool r = await _ioModule.ControlGateValveAsync(false);
                         if (!r) return false;
                         await Task.Delay(3000);
-                        return _dataCollectionService.GetGateValveStatus() == "Closed";
+                        // ★ DI 기반으로 게이트 밸브 상태 확인
+                        return _ioModule?.GateValvePosition == "Closed";
                     }, btn_GV, 3, 2000);
                 }
                 catch (Exception ex) { LogError($"[종료 시퀀스] 게이트 밸브 닫기 실패: {ex.Message}"); }
@@ -2821,7 +2820,10 @@ namespace VacX_OutSense
             {
                 try
                 {
-                    var (vo, eo, _) = _dataCollectionService.GetValveStates();
+                    // ★ DO 기반으로 밸브 상태 확인
+                    var curDO = _ioModule?.LastValidDOValues;
+                    bool vo = curDO?.IsVentValveOn == true;
+                    bool eo = curDO?.IsExhaustValveOn == true;
 
                     // 벤트 밸브 먼저 열기
                     if (!vo)
@@ -2871,27 +2873,25 @@ namespace VacX_OutSense
             // ── 9단계: 벤트 밸브 닫기 ──
             try
             {
-                if (_dataCollectionService != null)
+                // ★ DO 기반으로 밸브 상태 확인
+                var finalDO = _ioModule?.LastValidDOValues;
+                if (finalDO?.IsVentValveOn == true)
                 {
-                    var (fvo, feo, _) = _dataCollectionService.GetValveStates();
-                    if (fvo)
+                    await ExecuteWithRetry("VV 닫기", async () =>
                     {
-                        await ExecuteWithRetry("VV 닫기", async () =>
-                        {
-                            bool r = await _ioModule.ControlVentValveAsync(false);
-                            await Task.Delay(1000);
-                            return r;
-                        }, btn_VV, 3, 1000);
-                    }
-                    if (feo)
+                        bool r = await _ioModule.ControlVentValveAsync(false);
+                        await Task.Delay(1000);
+                        return r;
+                    }, btn_VV, 3, 1000);
+                }
+                if (finalDO?.IsExhaustValveOn == true)
+                {
+                    await ExecuteWithRetry("EV 닫기", async () =>
                     {
-                        await ExecuteWithRetry("EV 닫기", async () =>
-                        {
-                            bool r = await _ioModule.ControlExhaustValveAsync(false);
-                            await Task.Delay(1000);
-                            return r;
-                        }, btn_EV, 3, 1000);
-                    }
+                        bool r = await _ioModule.ControlExhaustValveAsync(false);
+                        await Task.Delay(1000);
+                        return r;
+                    }, btn_EV, 3, 1000);
                 }
             }
             catch (Exception ex) { LogWarning($"[종료 시퀀스] 벤트 밸브 닫기 실패: {ex.Message}"); }
