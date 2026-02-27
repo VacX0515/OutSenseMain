@@ -54,6 +54,13 @@ namespace VacX_OutSense
         private Label _lblAutoRunBanner;
         private Panel[] _stepPanels;
         private Label[] _stepLabels;
+
+        // 실시간 측정값 라벨
+        private GroupBox _groupBoxMeasurements;
+        private Label _lblMeasPressure;
+        private Label _lblMeasCH1;
+        private Label _lblMeasSample;
+        private Label _lblMeasPump;
         #endregion
 
         #region 베이크 아웃 관련 필드
@@ -582,67 +589,116 @@ namespace VacX_OutSense
 
         private void InitializeAutoRunUI()
         {
-            Panel panelAutoRun = new Panel { Dock = DockStyle.Fill };
+            Panel panelAutoRun = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
             tabPageAutoRun.Controls.Add(panelAutoRun);
 
-            // 상태 그룹
+            // ── 상태 그룹 (좌측) ──
             GroupBox groupBoxStatus = new GroupBox
             {
                 Text = "AutoRun 상태",
                 Location = new Point(10, 10),
-                Size = new Size(760, 170)
+                Size = new Size(500, 110)
             };
             panelAutoRun.Controls.Add(groupBoxStatus);
 
             lblAutoRunStatus = new Label
             {
-                Location = new Point(10, 25),
-                Size = new Size(200, 20),
+                Location = new Point(10, 22),
+                Size = new Size(480, 20),
                 Text = "상태: 대기 중",
                 Font = new Font("맑은 고딕", 10F, FontStyle.Bold)
             };
-            lblAutoRunStep = new Label { Location = new Point(10, 50), Size = new Size(400, 20), Text = "단계: -" };
-            lblAutoRunProgress = new Label { Location = new Point(10, 75), Size = new Size(200, 20), Text = "진행률: 0%" };
-            progressBarAutoRun = new ProgressBar { Location = new Point(10, 100), Size = new Size(500, 25), Style = ProgressBarStyle.Continuous };
-            lblAutoRunElapsedTime = new Label { Location = new Point(10, 135), Size = new Size(200, 20), Text = "경과 시간: 00:00:00" };
-            lblAutoRunRemainingTime = new Label { Location = new Point(220, 135), Size = new Size(200, 20), Text = "남은 시간: --:--:--" };
+            lblAutoRunStep = new Label
+            {
+                Location = new Point(10, 45),
+                Size = new Size(480, 20),
+                Text = "단계: -",
+                Font = new Font("맑은 고딕", 9F)
+            };
+            progressBarAutoRun = new ProgressBar { Location = new Point(10, 68), Size = new Size(400, 18), Style = ProgressBarStyle.Continuous };
+            lblAutoRunProgress = new Label { Location = new Point(415, 68), Size = new Size(75, 18), Text = "0%", TextAlign = ContentAlignment.MiddleLeft };
+            lblAutoRunElapsedTime = new Label { Location = new Point(10, 90), Size = new Size(180, 18), Text = "경과: 00:00:00" };
+            lblAutoRunRemainingTime = new Label { Location = new Point(200, 90), Size = new Size(200, 18), Text = "남은: --:--:--" };
 
             groupBoxStatus.Controls.AddRange(new Control[]
             {
-                lblAutoRunStatus, lblAutoRunStep, lblAutoRunProgress,
-                progressBarAutoRun, lblAutoRunElapsedTime, lblAutoRunRemainingTime
+                lblAutoRunStatus, lblAutoRunStep, progressBarAutoRun,
+                lblAutoRunProgress, lblAutoRunElapsedTime, lblAutoRunRemainingTime
             });
 
-            // 제어 그룹
+            // ── 제어 그룹 (우측, 독립) ──
             GroupBox groupBoxControl = new GroupBox
             {
                 Text = "제어",
-                Location = new Point(520, 25),
-                Size = new Size(230, 130)
+                Location = new Point(520, 10),
+                Size = new Size(250, 110)
             };
+            panelAutoRun.Controls.Add(groupBoxControl);
 
-            btnAutoRunStart = new Button { Location = new Point(10, 25), Size = new Size(100, 30), Text = "시작" };
+            btnAutoRunStart = new Button { Location = new Point(10, 22), Size = new Size(110, 28), Text = "시작" };
             btnAutoRunStart.Click += BtnAutoRunStart_Click;
-            btnAutoRunStop = new Button { Location = new Point(120, 25), Size = new Size(100, 30), Text = "중지", Enabled = false };
+            btnAutoRunStop = new Button { Location = new Point(130, 22), Size = new Size(110, 28), Text = "중지", Enabled = false };
             btnAutoRunStop.Click += BtnAutoRunStop_Click;
-            btnAutoRunPause = new Button { Location = new Point(10, 65), Size = new Size(100, 30), Text = "일시정지", Enabled = false };
+            btnAutoRunPause = new Button { Location = new Point(10, 55), Size = new Size(110, 28), Text = "일시정지", Enabled = false };
             btnAutoRunPause.Click += BtnAutoRunPause_Click;
-            btnAutoRunResume = new Button { Location = new Point(120, 65), Size = new Size(100, 30), Text = "재개", Enabled = false };
+            btnAutoRunResume = new Button { Location = new Point(130, 55), Size = new Size(110, 28), Text = "재개", Enabled = false };
             btnAutoRunResume.Click += BtnAutoRunResume_Click;
-            btnAutoRunConfig = new Button { Location = new Point(65, 105), Size = new Size(100, 30), Text = "설정" };
+            btnAutoRunConfig = new Button { Location = new Point(70, 86), Size = new Size(110, 22), Text = "설정", Font = new Font("맑은 고딕", 8F) };
             btnAutoRunConfig.Click += BtnAutoRunConfig_Click;
 
             groupBoxControl.Controls.AddRange(new Control[]
             {
                 btnAutoRunStart, btnAutoRunStop, btnAutoRunPause, btnAutoRunResume, btnAutoRunConfig
             });
-            groupBoxStatus.Controls.Add(groupBoxControl);
+
+            // ── 실시간 측정값 그룹 ──
+            _groupBoxMeasurements = new GroupBox
+            {
+                Text = "실시간 측정값",
+                Location = new Point(10, 125),
+                Size = new Size(760, 62),
+                Visible = false
+            };
+            panelAutoRun.Controls.Add(_groupBoxMeasurements);
+
+            _lblMeasPressure = new Label
+            {
+                Location = new Point(10, 18),
+                Size = new Size(360, 18),
+                Text = "압력: --",
+                Font = new Font("맑은 고딕", 9F)
+            };
+            _lblMeasCH1 = new Label
+            {
+                Location = new Point(380, 18),
+                Size = new Size(370, 18),
+                Text = "CH1: --",
+                Font = new Font("맑은 고딕", 9F)
+            };
+            _lblMeasPump = new Label
+            {
+                Location = new Point(10, 38),
+                Size = new Size(360, 18),
+                Text = "펌프: --",
+                Font = new Font("맑은 고딕", 9F)
+            };
+            _lblMeasSample = new Label
+            {
+                Location = new Point(380, 38),
+                Size = new Size(370, 18),
+                Text = "샘플: --",
+                Font = new Font("맑은 고딕", 9F)
+            };
+            _groupBoxMeasurements.Controls.AddRange(new Control[]
+            {
+                _lblMeasPressure, _lblMeasCH1, _lblMeasPump, _lblMeasSample
+            });
 
             // ── 시퀀스 진행 표시 ──
             GroupBox groupBoxSequence = new GroupBox
             {
                 Text = "시퀀스 진행",
-                Location = new Point(10, 185),
+                Location = new Point(10, 192),
                 Size = new Size(760, 70)
             };
             panelAutoRun.Controls.Add(groupBoxSequence);
@@ -658,7 +714,6 @@ namespace VacX_OutSense
 
             for (int i = 0; i < 9; i++)
             {
-                // 단계 패널
                 _stepPanels[i] = new Panel
                 {
                     Location = new Point(startX + i * (stepWidth + gap), stepY),
@@ -679,18 +734,18 @@ namespace VacX_OutSense
                 groupBoxSequence.Controls.Add(_stepPanels[i]);
             }
 
-            // 로그 그룹
+            // ── 로그 그룹 ──
             GroupBox groupBoxLog = new GroupBox
             {
                 Text = "실행 로그",
-                Location = new Point(10, 260),
-                Size = new Size(760, 280)
+                Location = new Point(10, 267),
+                Size = new Size(760, 270)
             };
 
             listViewAutoRunLog = new ListView
             {
-                Location = new Point(10, 25),
-                Size = new Size(740, 245),
+                Location = new Point(10, 22),
+                Size = new Size(740, 240),
                 View = View.Details,
                 FullRowSelect = true,
                 GridLines = true
@@ -732,7 +787,6 @@ namespace VacX_OutSense
             var state = _autoRunService?.CurrentState ?? AutoRunState.Idle;
             bool isRunning = _autoRunService?.IsRunning ?? false;
 
-            // 실행 중이 아니거나 터미널 상태이면 배너 숨기기
             if (!isRunning || state == AutoRunState.Idle || state == AutoRunState.Completed
                            || state == AutoRunState.Aborted || state == AutoRunState.Error)
             {
@@ -746,71 +800,131 @@ namespace VacX_OutSense
 
             _lblAutoRunBanner.Visible = true;
             var elapsed = TimeSpan.FromSeconds(_autoRunElapsedSeconds);
+            int stepNum = _autoRunService?.CurrentStepNumber ?? 0;
+            string stepTag = stepNum > 0 ? $"[{stepNum}/9] " : "";
 
             string stateText;
             Color bannerColor;
 
+            bool isBakeout = _autoRunConfig.ExperimentType == ExperimentType.Bakeout;
+            string modeLabel = isBakeout ? "베이크아웃" : "AutoRun";
+
+            // 배너용 센서 요약 (가벼운 읽기 — 타이머에서 이미 갱신된 값 재사용)
+            string sensorSuffix = GetBannerSensorSuffix(state, isBakeout);
+
             switch (state)
             {
                 case AutoRunState.Initializing:
-                    stateText = "▶ AutoRun — 초기화 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}초기화 중...";
                     bannerColor = Color.FromArgb(60, 60, 60);
                     break;
                 case AutoRunState.PreparingVacuum:
-                    stateText = "▶ AutoRun — 진공 준비 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}진공 준비 중...{sensorSuffix}";
                     bannerColor = Color.FromArgb(60, 60, 60);
                     break;
                 case AutoRunState.StartingDryPump:
-                    stateText = "▶ AutoRun — 드라이펌프 시작 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}드라이펌프 시작 중...{sensorSuffix}";
                     bannerColor = Color.FromArgb(0, 100, 150);
                     break;
                 case AutoRunState.StartingTurboPump:
-                    stateText = "▶ AutoRun — 터보펌프 가속 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}터보펌프 가속 중...{sensorSuffix}";
                     bannerColor = Color.FromArgb(0, 100, 150);
                     break;
                 case AutoRunState.ActivatingIonGauge:
-                    stateText = "▶ AutoRun — 이온게이지 활성화 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}이온게이지 활성화 중...{sensorSuffix}";
                     bannerColor = Color.FromArgb(0, 100, 150);
                     break;
                 case AutoRunState.WaitingHighVacuum:
-                    stateText = "▶ AutoRun — 고진공 대기 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}고진공 대기 중...{sensorSuffix}";
                     bannerColor = Color.FromArgb(130, 80, 0);
                     break;
                 case AutoRunState.StartingHeater:
-                    stateText = "▶ AutoRun — 히터 시작 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}히터 시작 중...{sensorSuffix}";
                     bannerColor = Color.FromArgb(180, 60, 0);
                     break;
                 case AutoRunState.RunningExperiment:
+                    int totalMinutes = isBakeout
+                        ? _autoRunConfig.BakeoutHoldTimeMinutes
+                        : _autoRunConfig.ExperimentDurationMinutes;
+                    string expLabel = isBakeout ? "베이크아웃" : "실험";
+
                     if (_autoRunService.IsExperimentTimerRunning)
                     {
                         var expElapsed = TimeSpan.FromSeconds(_experimentElapsedSeconds);
                         var expRemaining = TimeSpan.FromSeconds(
-                            Math.Max(0, _autoRunConfig.ExperimentDurationMinutes * 60 - _experimentElapsedSeconds));
-                        stateText = $"▶ 실험 진행 중  [{expElapsed:hh\\:mm\\:ss} / {TimeSpan.FromMinutes(_autoRunConfig.ExperimentDurationMinutes):hh\\:mm\\:ss}]  남은: {expRemaining:hh\\:mm\\:ss}";
+                            Math.Max(0, totalMinutes * 60 - _experimentElapsedSeconds));
+                        stateText = $"▶ {expLabel} {stepTag}유지 중  [{expElapsed:hh\\:mm\\:ss} / {TimeSpan.FromMinutes(totalMinutes):hh\\:mm\\:ss}]  남은: {expRemaining:hh\\:mm\\:ss}{sensorSuffix}";
                         bannerColor = Color.FromArgb(0, 120, 60);
                     }
                     else
                     {
-                        stateText = $"▶ 목표 온도 대기 중...  [{elapsed:hh\\:mm\\:ss}]";
+                        stateText = $"▶ {expLabel} {stepTag}승온 중...  [{elapsed:hh\\:mm\\:ss}]{sensorSuffix}";
                         bannerColor = Color.FromArgb(180, 100, 0);
                     }
                     break;
                 case AutoRunState.ShuttingDown:
-                    stateText = "▶ AutoRun — 종료 시퀀스 진행 중...";
+                    stateText = $"▶ {modeLabel} {stepTag}종료 시퀀스 진행 중...{sensorSuffix}";
                     bannerColor = Color.FromArgb(60, 60, 60);
                     break;
                 case AutoRunState.Paused:
-                    stateText = $"⏸ AutoRun 일시정지  [{elapsed:hh\\:mm\\:ss}]";
+                    stateText = $"⏸ {modeLabel} 일시정지  [{elapsed:hh\\:mm\\:ss}]{sensorSuffix}";
                     bannerColor = Color.FromArgb(180, 130, 0);
                     break;
                 default:
-                    stateText = $"▶ AutoRun 실행 중  [{elapsed:hh\\:mm\\:ss}]";
+                    stateText = $"▶ {modeLabel} {stepTag}실행 중  [{elapsed:hh\\:mm\\:ss}]";
                     bannerColor = Color.FromArgb(0, 100, 150);
                     break;
             }
 
             _lblAutoRunBanner.Text = stateText;
             tableLayoutPanel3.BackColor = bannerColor;
+        }
+
+        private string GetBannerSensorSuffix(AutoRunState state, bool isBakeout)
+        {
+            try
+            {
+                var parts = new System.Collections.Generic.List<string>();
+
+                // 실험 진행 중: 온도 정보 추가
+                if (state == AutoRunState.RunningExperiment || state == AutoRunState.StartingHeater)
+                {
+                    if (isBakeout && _tempController?.IsConnected == true)
+                    {
+                        int monCh = _autoRunConfig.BakeoutMonitorChannel;
+                        if (monCh >= 1 && monCh <= 4)
+                        {
+                            var chSt = _tempController.Status.ChannelStatus[monCh - 1];
+                            double pv = chSt.Dot == 1 ? chSt.PresentValue / 10.0 : chSt.PresentValue;
+                            parts.Add($"CH{monCh}: {pv:F1}°C");
+                        }
+                    }
+                    else if (!isBakeout && _tempController?.IsConnected == true)
+                    {
+                        var ch1St = _tempController.Status.ChannelStatus[0];
+                        double ch1PV = ch1St.Dot == 1 ? ch1St.PresentValue / 10.0 : ch1St.PresentValue;
+                        parts.Add($"CH1: {ch1PV:F1}°C");
+                    }
+                }
+
+                // 펌프 단계: 터보 속도
+                if (state == AutoRunState.StartingTurboPump && _turboPump?.IsConnected == true)
+                {
+                    int speed = _turboPump.Status?.CurrentSpeed ?? 0;
+                    parts.Add($"터보: {speed} RPM");
+                }
+
+                // 대부분의 단계: 압력
+                double pressure = _dataCollectionService?.GetLatestPressure() ?? 0;
+                if (pressure > 0)
+                    parts.Add($"{pressure:E1} Torr");
+
+                return parts.Count > 0 ? "  |  " + string.Join("  |  ", parts) : "";
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         private async void BtnAutoRunStart_Click(object sender, EventArgs e)
@@ -855,8 +969,26 @@ namespace VacX_OutSense
                 ? $"시작 단계: {startStep}단계 ({SystemStateAssessment.GetStepName(startStep)})"
                 : "시작 단계: 처음부터";
 
+            string experimentTypeInfo;
+            if (_autoRunConfig.ExperimentType == ExperimentType.Bakeout)
+            {
+                experimentTypeInfo = $"실험 유형: 베이크아웃\n" +
+                    $"목표 온도: {_autoRunConfig.BakeoutTargetTemperature}°C\n" +
+                    $"승온 속도: {_autoRunConfig.BakeoutRampRate:F0}°C/h\n" +
+                    $"모니터 채널: CH{_autoRunConfig.BakeoutMonitorChannel}\n" +
+                    $"CH1 안전 상한: {_autoRunConfig.BakeoutHeaterMaxTemperature}°C\n" +
+                    $"유지 시간: {_autoRunConfig.BakeoutHoldTimeMinutes}분\n" +
+                    $"종료 동작: {(_autoRunConfig.BakeoutEndAction == BakeoutEndAction.HeaterOff ? "히터 OFF (전체 셧다운)" : _autoRunConfig.BakeoutEndAction == BakeoutEndAction.MaintainTemperature ? "온도 유지" : "알림만")}";
+            }
+            else
+            {
+                experimentTypeInfo = $"실험 유형: 탈가스율 측정\n" +
+                    $"목표 온도: {_autoRunConfig.HeaterCh1SetTemperature}°C\n" +
+                    $"실험 시간: {_autoRunConfig.ExperimentDurationMinutes}분";
+            }
+
             if (MessageBox.Show(
-                $"AutoRun을 시작하시겠습니까?\n\n실험명: {experimentName}\n{startInfo}",
+                $"AutoRun을 시작하시겠습니까?\n\n실험명: {experimentName}\n{experimentTypeInfo}\n{startInfo}",
                 "AutoRun 시작 확인",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
@@ -939,7 +1071,10 @@ namespace VacX_OutSense
                 return;
 
             _autoRunElapsedSeconds++;
-            lblAutoRunElapsedTime.Text = $"경과 시간: {TimeSpan.FromSeconds(_autoRunElapsedSeconds):hh\\:mm\\:ss}";
+            lblAutoRunElapsedTime.Text = $"경과: {TimeSpan.FromSeconds(_autoRunElapsedSeconds):hh\\:mm\\:ss}";
+
+            // 실시간 측정값 업데이트
+            UpdateAutoRunMeasurements();
 
             // AutoRun 배너 업데이트
             UpdateAutoRunBanner();
@@ -948,13 +1083,16 @@ namespace VacX_OutSense
                 && _autoRunService.IsExperimentTimerRunning)
             {
                 _experimentElapsedSeconds++;
+                int totalExperimentMinutes = _autoRunConfig.ExperimentType == ExperimentType.Bakeout
+                    ? _autoRunConfig.BakeoutHoldTimeMinutes
+                    : _autoRunConfig.ExperimentDurationMinutes;
                 var remaining = TimeSpan.FromSeconds(
-                    Math.Max(0, _autoRunConfig.ExperimentDurationMinutes * 60 - _experimentElapsedSeconds));
-                lblAutoRunRemainingTime.Text = $"남은 시간: {remaining:hh\\:mm\\:ss}";
+                    Math.Max(0, totalExperimentMinutes * 60 - _experimentElapsedSeconds));
+                lblAutoRunRemainingTime.Text = $"남은: {remaining:hh\\:mm\\:ss}";
             }
             else if (_autoRunService.CurrentState == AutoRunState.RunningExperiment)
             {
-                lblAutoRunRemainingTime.Text = "남은 시간: 온도 대기중...";
+                lblAutoRunRemainingTime.Text = "남은: 승온 대기중...";
             }
         }
 
@@ -986,8 +1124,9 @@ namespace VacX_OutSense
                 return;
             }
             progressBarAutoRun.Value = (int)Math.Min(100, e.OverallProgress);
-            lblAutoRunProgress.Text = $"진행률: {e.OverallProgress:F1}%";
-            lblAutoRunStep.Text = $"단계: {e.Message}";
+            lblAutoRunProgress.Text = $"{e.OverallProgress:F0}%";
+            int step = _autoRunService?.CurrentStepNumber ?? 0;
+            lblAutoRunStep.Text = step > 0 ? $"[{step}/9] {e.Message}" : e.Message;
         }
 
         private void OnAutoRunErrorOccurred(object sender, AutoRunErrorEventArgs e)
@@ -1040,13 +1179,111 @@ namespace VacX_OutSense
             if (!isRunning)
             {
                 progressBarAutoRun.Value = 0;
-                lblAutoRunProgress.Text = "진행률: 0%";
+                lblAutoRunProgress.Text = "0%";
                 lblAutoRunStep.Text = "단계: -";
-                lblAutoRunRemainingTime.Text = "남은 시간: --:--:--";
+                lblAutoRunRemainingTime.Text = "남은: --:--:--";
+                _groupBoxMeasurements.Visible = false;
+            }
+            else
+            {
+                _groupBoxMeasurements.Visible = true;
             }
 
             // AutoRun 배너 업데이트
             UpdateAutoRunBanner();
+        }
+
+        private void UpdateAutoRunMeasurements()
+        {
+            if (_groupBoxMeasurements == null || !_groupBoxMeasurements.Visible) return;
+
+            try
+            {
+                // ── 압력 ──
+                double pressure = _dataCollectionService?.GetLatestPressure() ?? 0;
+                if (pressure > 0)
+                {
+                    _lblMeasPressure.Text = $"압력: {pressure:E2} Torr";
+                    _lblMeasPressure.ForeColor = pressure > (_autoRunConfig?.MaxPressureDuringExperiment ?? 1E-4)
+                        ? Color.OrangeRed : Color.Black;
+                }
+                else
+                {
+                    _lblMeasPressure.Text = "압력: --";
+                    _lblMeasPressure.ForeColor = Color.Gray;
+                }
+
+                // ── CH1 온도 (PV / SV) ──
+                if (_tempController?.IsConnected == true)
+                {
+                    var ch1 = _tempController.Status.ChannelStatus[0];
+                    double ch1PV = ch1.Dot == 1 ? ch1.PresentValue / 10.0 : ch1.PresentValue;
+                    double ch1SV = ch1.Dot == 1 ? ch1.SetValue / 10.0 : ch1.SetValue;
+                    bool ch1Running = ch1.IsRunning;
+                    _lblMeasCH1.Text = ch1Running
+                        ? $"CH1: {ch1PV:F1}°C (SV:{ch1SV:F1})"
+                        : $"CH1: {ch1PV:F1}°C (정지)";
+                    _lblMeasCH1.ForeColor = Color.Black;
+                }
+                else
+                {
+                    _lblMeasCH1.Text = "CH1: 미연결";
+                    _lblMeasCH1.ForeColor = Color.Gray;
+                }
+
+                // ── 샘플/칠러 온도 ──
+                bool isBakeout = _autoRunConfig?.ExperimentType == ExperimentType.Bakeout;
+                if (isBakeout && _tempController?.IsConnected == true)
+                {
+                    int monCh = _autoRunConfig.BakeoutMonitorChannel; // 2~4
+                    if (monCh >= 1 && monCh <= 4)
+                    {
+                        var chStatus = _tempController.Status.ChannelStatus[monCh - 1];
+                        double samplePV = chStatus.Dot == 1 ? chStatus.PresentValue / 10.0 : chStatus.PresentValue;
+                        double target = _autoRunConfig.BakeoutTargetTemperature;
+                        _lblMeasSample.Text = $"CH{monCh}(샘플): {samplePV:F1}°C (목표:{target:F1})";
+                        _lblMeasSample.ForeColor = Math.Abs(samplePV - target) > 5 ? Color.OrangeRed : Color.Black;
+                    }
+                }
+                else if (!isBakeout && _tempController?.IsConnected == true)
+                {
+                    var ch2 = _tempController.Status.ChannelStatus[1];
+                    double ch2PV = ch2.Dot == 1 ? ch2.PresentValue / 10.0 : ch2.PresentValue;
+                    _lblMeasSample.Text = $"칠러(CH2): {ch2PV:F1}°C";
+                    _lblMeasSample.ForeColor = Color.Black;
+                }
+                else
+                {
+                    _lblMeasSample.Text = isBakeout ? "샘플: 미연결" : "칠러: 미연결";
+                    _lblMeasSample.ForeColor = Color.Gray;
+                }
+
+                // ── 펌프 상태 ──
+                string pumpInfo = "";
+                if (_turboPump?.IsConnected == true)
+                {
+                    int speed = _turboPump.Status?.CurrentSpeed ?? 0;
+                    bool running = _turboPump.Status?.IsRunning ?? false;
+                    pumpInfo = running ? $"터보: {speed} RPM" : "터보: 정지";
+                }
+                else
+                {
+                    pumpInfo = "터보: 미연결";
+                }
+
+                if (_dryPump?.IsConnected == true)
+                {
+                    bool dpRunning = _dryPump.Status?.IsRunning ?? false;
+                    pumpInfo += dpRunning ? "  |  DP: 가동" : "  |  DP: 정지";
+                }
+
+                _lblMeasPump.Text = pumpInfo;
+                _lblMeasPump.ForeColor = Color.Black;
+            }
+            catch
+            {
+                // 측정값 읽기 실패 시 무시 (UI 안정성 유지)
+            }
         }
 
         private void AddAutoRunLog(string state, string message, Color? color = null)
@@ -1066,7 +1303,8 @@ namespace VacX_OutSense
         {
             if (_stepPanels == null || _stepLabels == null) return;
 
-            // State → Step 번호 매핑 (1-based, 0 = 비활성)
+            string[] stepNames = { "초기화", "진공준비", "드라이", "터보", "IG", "고진공", "히터", "실험", "종료" };
+
             int currentStep = currentState switch
             {
                 AutoRunState.Initializing => 1,
@@ -1078,65 +1316,68 @@ namespace VacX_OutSense
                 AutoRunState.StartingHeater => 7,
                 AutoRunState.RunningExperiment => 8,
                 AutoRunState.ShuttingDown => 9,
-                AutoRunState.Completed => 10,  // 모든 단계 완료
-                AutoRunState.Aborted or AutoRunState.Error => -1,  // 에러
+                AutoRunState.Completed => 10,
+                AutoRunState.Aborted or AutoRunState.Error => -1,
                 _ => 0
             };
 
             for (int i = 0; i < 9; i++)
             {
                 int stepNum = i + 1;
+                string name = stepNames[i];
 
                 if (currentStep == -1)
                 {
-                    // 에러/중단 — 현재 서비스의 단계번호 기준으로 표시
                     int failedAt = _autoRunService?.CurrentStepNumber ?? 0;
                     if (stepNum < failedAt)
                     {
                         _stepPanels[i].BackColor = Color.FromArgb(200, 230, 200);
                         _stepLabels[i].ForeColor = Color.DarkGreen;
                         _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                        _stepLabels[i].Text = $"\u2713 {name}";
                     }
                     else if (stepNum == failedAt)
                     {
                         _stepPanels[i].BackColor = Color.FromArgb(255, 180, 180);
                         _stepLabels[i].ForeColor = Color.DarkRed;
                         _stepLabels[i].Font = new Font("맑은 고딕", 8F, FontStyle.Bold);
+                        _stepLabels[i].Text = $"\u2717 {name}";
                     }
                     else
                     {
                         _stepPanels[i].BackColor = Color.FromArgb(230, 230, 230);
                         _stepLabels[i].ForeColor = Color.Gray;
                         _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                        _stepLabels[i].Text = $"{stepNum}. {name}";
                     }
                 }
                 else if (currentStep == 0)
                 {
-                    // 대기/일시정지 — 모두 회색
                     _stepPanels[i].BackColor = Color.FromArgb(230, 230, 230);
                     _stepLabels[i].ForeColor = Color.Gray;
                     _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                    _stepLabels[i].Text = $"{stepNum}. {name}";
                 }
                 else if (stepNum < currentStep)
                 {
-                    // 완료
                     _stepPanels[i].BackColor = Color.FromArgb(200, 230, 200);
                     _stepLabels[i].ForeColor = Color.DarkGreen;
                     _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                    _stepLabels[i].Text = $"\u2713 {name}";
                 }
                 else if (stepNum == currentStep)
                 {
-                    // 현재 진행 중
                     _stepPanels[i].BackColor = Color.FromArgb(180, 210, 255);
                     _stepLabels[i].ForeColor = Color.DarkBlue;
                     _stepLabels[i].Font = new Font("맑은 고딕", 8F, FontStyle.Bold);
+                    _stepLabels[i].Text = $"\u25B6 {name}";
                 }
                 else
                 {
-                    // 대기
                     _stepPanels[i].BackColor = Color.FromArgb(230, 230, 230);
                     _stepLabels[i].ForeColor = Color.Gray;
                     _stepLabels[i].Font = new Font("맑은 고딕", 8F);
+                    _stepLabels[i].Text = $"{stepNum}. {name}";
                 }
             }
         }

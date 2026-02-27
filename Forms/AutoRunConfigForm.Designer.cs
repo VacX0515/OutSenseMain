@@ -92,6 +92,8 @@
             btnCancel = new Button();
             btnOk = new Button();
             btnLoadDefault = new Button();
+            nudBakeoutHoldHours = new NumericUpDown();
+            nudBakeoutHoldMinutes = new NumericUpDown();
             tabControl1.SuspendLayout();
             tabPressure.SuspendLayout();
             tabTemperature.SuspendLayout();
@@ -99,6 +101,8 @@
             ((System.ComponentModel.ISupportInitialize)nudDataLoggingIntervalSeconds).BeginInit();
             ((System.ComponentModel.ISupportInitialize)nudExperimentHours).BeginInit();
             ((System.ComponentModel.ISupportInitialize)nudExperimentMinutes).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)nudBakeoutHoldHours).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)nudBakeoutHoldMinutes).BeginInit();
             tabTimeout.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)nudShutdownTimeout).BeginInit();
             ((System.ComponentModel.ISupportInitialize)nudHeaterStartTimeout).BeginInit();
@@ -113,16 +117,39 @@
             ((System.ComponentModel.ISupportInitialize)nudMaxRetryCount).BeginInit();
             panelButtons.SuspendLayout();
             SuspendLayout();
-            // 
+            //
+            // lblExperimentType
+            //
+            lblExperimentType = new Label();
+            lblExperimentType.AutoSize = true;
+            lblExperimentType.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
+            lblExperimentType.Location = new Point(15, 12);
+            lblExperimentType.Name = "lblExperimentType";
+            lblExperimentType.Size = new Size(62, 15);
+            lblExperimentType.TabIndex = 100;
+            lblExperimentType.Text = "실험 유형:";
+            //
+            // cmbExperimentType
+            //
+            cmbExperimentType = new ComboBox();
+            cmbExperimentType.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbExperimentType.FormattingEnabled = true;
+            cmbExperimentType.Items.AddRange(new object[] { "탈가스율 측정 (OutgassingRate)", "베이크 아웃 (Bakeout)" });
+            cmbExperimentType.Location = new Point(100, 8);
+            cmbExperimentType.Name = "cmbExperimentType";
+            cmbExperimentType.Size = new Size(230, 23);
+            cmbExperimentType.TabIndex = 101;
+            cmbExperimentType.SelectedIndexChanged += CmbExperimentType_SelectedIndexChanged;
+            //
             // tabControl1
-            // 
+            //
             tabControl1.Controls.Add(tabPressure);
             tabControl1.Controls.Add(tabTemperature);
             tabControl1.Controls.Add(tabTime);
             tabControl1.Controls.Add(tabTimeout);
             tabControl1.Controls.Add(tabMisc);
-            tabControl1.Dock = DockStyle.Fill;
-            tabControl1.Location = new Point(0, 0);
+            tabControl1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            tabControl1.Location = new Point(0, 38);
             tabControl1.Name = "tabControl1";
             tabControl1.SelectedIndex = 0;
             tabControl1.Size = new Size(444, 458);
@@ -219,9 +246,86 @@
             lblTargetPressureForTurboPump.Size = new Size(193, 15);
             lblTargetPressureForTurboPump.TabIndex = 0;
             lblTargetPressureForTurboPump.Text = "터보펌프 시작 목표 압력 (Torr):";
-            // 
+            //
+            // Bakeout temperature controls (same position as OutgassingRate controls)
+            //
+            txtBakeoutTargetTemp = new TextBox();
+            txtBakeoutTargetTemp.Location = new Point(230, 20);
+            txtBakeoutTargetTemp.Name = "txtBakeoutTargetTemp";
+            txtBakeoutTargetTemp.Size = new Size(120, 23);
+            txtBakeoutTargetTemp.TabIndex = 20;
+            txtBakeoutTargetTemp.Visible = false;
+            //
+            lblBakeoutTargetTemp = new Label();
+            lblBakeoutTargetTemp.AutoSize = true;
+            lblBakeoutTargetTemp.Location = new Point(20, 23);
+            lblBakeoutTargetTemp.Name = "lblBakeoutTargetTemp";
+            lblBakeoutTargetTemp.Size = new Size(146, 15);
+            lblBakeoutTargetTemp.TabIndex = 21;
+            lblBakeoutTargetTemp.Text = "목표 온도 (°C):";
+            lblBakeoutTargetTemp.Visible = false;
+            //
+            txtBakeoutRampRate = new TextBox();
+            txtBakeoutRampRate.Location = new Point(230, 57);
+            txtBakeoutRampRate.Name = "txtBakeoutRampRate";
+            txtBakeoutRampRate.Size = new Size(120, 23);
+            txtBakeoutRampRate.TabIndex = 22;
+            txtBakeoutRampRate.Visible = false;
+            //
+            lblBakeoutRampRate = new Label();
+            lblBakeoutRampRate.AutoSize = true;
+            lblBakeoutRampRate.Location = new Point(20, 60);
+            lblBakeoutRampRate.Name = "lblBakeoutRampRate";
+            lblBakeoutRampRate.Size = new Size(155, 15);
+            lblBakeoutRampRate.TabIndex = 23;
+            lblBakeoutRampRate.Text = "승온 속도 (°C/h):";
+            lblBakeoutRampRate.Visible = false;
+            //
+            // lblBakeoutMonitorChannel
+            //
+            lblBakeoutMonitorChannel = new Label();
+            lblBakeoutMonitorChannel.AutoSize = true;
+            lblBakeoutMonitorChannel.Location = new Point(20, 95);
+            lblBakeoutMonitorChannel.Name = "lblBakeoutMonitorChannel";
+            lblBakeoutMonitorChannel.Size = new Size(155, 15);
+            lblBakeoutMonitorChannel.TabIndex = 24;
+            lblBakeoutMonitorChannel.Text = "모니터 채널 (샘플 센서):";
+            lblBakeoutMonitorChannel.Visible = false;
+            //
+            // cmbBakeoutMonitorChannel
+            //
+            cmbBakeoutMonitorChannel = new ComboBox();
+            cmbBakeoutMonitorChannel.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbBakeoutMonitorChannel.FormattingEnabled = true;
+            cmbBakeoutMonitorChannel.Items.AddRange(new object[] { "CH2", "CH3", "CH4" });
+            cmbBakeoutMonitorChannel.Location = new Point(230, 92);
+            cmbBakeoutMonitorChannel.Name = "cmbBakeoutMonitorChannel";
+            cmbBakeoutMonitorChannel.Size = new Size(120, 23);
+            cmbBakeoutMonitorChannel.TabIndex = 25;
+            cmbBakeoutMonitorChannel.Visible = false;
+            //
+            // lblBakeoutHeaterMax
+            //
+            lblBakeoutHeaterMax = new Label();
+            lblBakeoutHeaterMax.AutoSize = true;
+            lblBakeoutHeaterMax.Location = new Point(20, 130);
+            lblBakeoutHeaterMax.Name = "lblBakeoutHeaterMax";
+            lblBakeoutHeaterMax.Size = new Size(155, 15);
+            lblBakeoutHeaterMax.TabIndex = 26;
+            lblBakeoutHeaterMax.Text = "CH1 안전 상한 (°C):";
+            lblBakeoutHeaterMax.Visible = false;
+            //
+            // txtBakeoutHeaterMax
+            //
+            txtBakeoutHeaterMax = new TextBox();
+            txtBakeoutHeaterMax.Location = new Point(230, 127);
+            txtBakeoutHeaterMax.Name = "txtBakeoutHeaterMax";
+            txtBakeoutHeaterMax.Size = new Size(120, 23);
+            txtBakeoutHeaterMax.TabIndex = 27;
+            txtBakeoutHeaterMax.Visible = false;
+            //
             // tabTemperature
-            // 
+            //
             tabTemperature.Controls.Add(lblTempNote);
             tabTemperature.Controls.Add(txtTemperatureStabilityTolerance);
             tabTemperature.Controls.Add(lblTemperatureStabilityTolerance);
@@ -229,6 +333,14 @@
             tabTemperature.Controls.Add(lblHeaterRampUpRate);
             tabTemperature.Controls.Add(txtHeaterCh1SetTemperature);
             tabTemperature.Controls.Add(lblHeaterCh1SetTemperature);
+            tabTemperature.Controls.Add(txtBakeoutTargetTemp);
+            tabTemperature.Controls.Add(lblBakeoutTargetTemp);
+            tabTemperature.Controls.Add(txtBakeoutRampRate);
+            tabTemperature.Controls.Add(lblBakeoutRampRate);
+            tabTemperature.Controls.Add(lblBakeoutMonitorChannel);
+            tabTemperature.Controls.Add(cmbBakeoutMonitorChannel);
+            tabTemperature.Controls.Add(lblBakeoutHeaterMax);
+            tabTemperature.Controls.Add(txtBakeoutHeaterMax);
             tabTemperature.Controls.Add(lblShutdownTempHeader);
             tabTemperature.Controls.Add(txtCoolingTargetTemperature);
             tabTemperature.Controls.Add(lblCoolingTargetTemperature);
@@ -236,7 +348,7 @@
             tabTemperature.Controls.Add(lblVentTargetPressure);
             tabTemperature.Location = new Point(4, 24);
             tabTemperature.Name = "tabTemperature";
-            tabTemperature.Size = new Size(436, 430);
+            tabTemperature.Size = new Size(436, 392);
             tabTemperature.TabIndex = 1;
             tabTemperature.Text = "온도 설정";
             tabTemperature.UseVisualStyleBackColor = true;
@@ -339,9 +451,74 @@
             lblTempNote.Size = new Size(400, 40);
             lblTempNote.TabIndex = 14;
             lblTempNote.Text = "※ CH2 온도는 칠러 PID가 자동 제어합니다.\r\n   (Main 탭 → 칠러 PID 설정에서 조정)";
-            // 
+            //
+            // Bakeout time controls
+            //
+            lblBakeoutHoldTime = new Label();
+            lblBakeoutHoldTime.AutoSize = true;
+            lblBakeoutHoldTime.Location = new Point(20, 22);
+            lblBakeoutHoldTime.Name = "lblBakeoutHoldTime";
+            lblBakeoutHoldTime.Size = new Size(90, 15);
+            lblBakeoutHoldTime.TabIndex = 30;
+            lblBakeoutHoldTime.Text = "유지 시간:";
+            lblBakeoutHoldTime.Visible = false;
+            //
+            nudBakeoutHoldHours.Location = new Point(150, 20);
+            nudBakeoutHoldHours.Maximum = new decimal(new int[] { 168, 0, 0, 0 });
+            nudBakeoutHoldHours.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            nudBakeoutHoldHours.Name = "nudBakeoutHoldHours";
+            nudBakeoutHoldHours.Size = new Size(60, 23);
+            nudBakeoutHoldHours.TabIndex = 31;
+            nudBakeoutHoldHours.Visible = false;
+            //
+            lblBakeoutHoldHUnit = new Label();
+            lblBakeoutHoldHUnit.AutoSize = true;
+            lblBakeoutHoldHUnit.Location = new Point(214, 22);
+            lblBakeoutHoldHUnit.Name = "lblBakeoutHoldHUnit";
+            lblBakeoutHoldHUnit.Size = new Size(30, 15);
+            lblBakeoutHoldHUnit.TabIndex = 32;
+            lblBakeoutHoldHUnit.Text = "시간";
+            lblBakeoutHoldHUnit.Visible = false;
+            //
+            nudBakeoutHoldMinutes.Location = new Point(250, 20);
+            nudBakeoutHoldMinutes.Maximum = new decimal(new int[] { 59, 0, 0, 0 });
+            nudBakeoutHoldMinutes.Minimum = new decimal(new int[] { 0, 0, 0, 0 });
+            nudBakeoutHoldMinutes.Name = "nudBakeoutHoldMinutes";
+            nudBakeoutHoldMinutes.Size = new Size(60, 23);
+            nudBakeoutHoldMinutes.TabIndex = 33;
+            nudBakeoutHoldMinutes.Value = new decimal(new int[] { 30, 0, 0, 0 });
+            nudBakeoutHoldMinutes.Visible = false;
+            //
+            lblBakeoutHoldMUnit = new Label();
+            lblBakeoutHoldMUnit.AutoSize = true;
+            lblBakeoutHoldMUnit.Location = new Point(314, 22);
+            lblBakeoutHoldMUnit.Name = "lblBakeoutHoldMUnit";
+            lblBakeoutHoldMUnit.Size = new Size(15, 15);
+            lblBakeoutHoldMUnit.TabIndex = 34;
+            lblBakeoutHoldMUnit.Text = "분";
+            lblBakeoutHoldMUnit.Visible = false;
+            //
+            lblBakeoutEndAction = new Label();
+            lblBakeoutEndAction.AutoSize = true;
+            lblBakeoutEndAction.Location = new Point(20, 62);
+            lblBakeoutEndAction.Name = "lblBakeoutEndAction";
+            lblBakeoutEndAction.Size = new Size(62, 15);
+            lblBakeoutEndAction.TabIndex = 35;
+            lblBakeoutEndAction.Text = "종료 동작:";
+            lblBakeoutEndAction.Visible = false;
+            //
+            cmbBakeoutEndAction = new ComboBox();
+            cmbBakeoutEndAction.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbBakeoutEndAction.FormattingEnabled = true;
+            cmbBakeoutEndAction.Items.AddRange(new object[] { "히터 OFF (전체 셧다운)", "현재 온도 유지", "알림만 (수동 조작)" });
+            cmbBakeoutEndAction.Location = new Point(150, 59);
+            cmbBakeoutEndAction.Name = "cmbBakeoutEndAction";
+            cmbBakeoutEndAction.Size = new Size(200, 23);
+            cmbBakeoutEndAction.TabIndex = 36;
+            cmbBakeoutEndAction.Visible = false;
+            //
             // tabTime
-            // 
+            //
             tabTime.Controls.Add(nudDataLoggingIntervalSeconds);
             tabTime.Controls.Add(lblDataLoggingInterval);
             tabTime.Controls.Add(lblExperimentDuration);
@@ -349,9 +526,16 @@
             tabTime.Controls.Add(lblExpHoursUnit);
             tabTime.Controls.Add(nudExperimentMinutes);
             tabTime.Controls.Add(lblExpMinutesUnit);
+            tabTime.Controls.Add(lblBakeoutHoldTime);
+            tabTime.Controls.Add(nudBakeoutHoldHours);
+            tabTime.Controls.Add(lblBakeoutHoldHUnit);
+            tabTime.Controls.Add(nudBakeoutHoldMinutes);
+            tabTime.Controls.Add(lblBakeoutHoldMUnit);
+            tabTime.Controls.Add(lblBakeoutEndAction);
+            tabTime.Controls.Add(cmbBakeoutEndAction);
             tabTime.Location = new Point(4, 24);
             tabTime.Name = "tabTime";
-            tabTime.Size = new Size(436, 430);
+            tabTime.Size = new Size(436, 392);
             tabTime.TabIndex = 2;
             tabTime.Text = "시간 설정";
             tabTime.UseVisualStyleBackColor = true;
@@ -405,7 +589,7 @@
             // 
             // nudDataLoggingIntervalSeconds
             // 
-            nudDataLoggingIntervalSeconds.Location = new Point(230, 60);
+            nudDataLoggingIntervalSeconds.Location = new Point(230, 100);
             nudDataLoggingIntervalSeconds.Maximum = new decimal(new int[] { 3600, 0, 0, 0 });
             nudDataLoggingIntervalSeconds.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             nudDataLoggingIntervalSeconds.Name = "nudDataLoggingIntervalSeconds";
@@ -416,7 +600,7 @@
             // lblDataLoggingInterval
             // 
             lblDataLoggingInterval.AutoSize = true;
-            lblDataLoggingInterval.Location = new Point(20, 62);
+            lblDataLoggingInterval.Location = new Point(20, 102);
             lblDataLoggingInterval.Name = "lblDataLoggingInterval";
             lblDataLoggingInterval.Size = new Size(126, 15);
             lblDataLoggingInterval.TabIndex = 5;
@@ -726,7 +910,7 @@
             panelButtons.Controls.Add(btnCancel);
             panelButtons.Controls.Add(btnOk);
             panelButtons.Dock = DockStyle.Bottom;
-            panelButtons.Location = new Point(0, 458);
+            panelButtons.Location = new Point(0, 458); // auto-adjusted by Dock
             panelButtons.Name = "panelButtons";
             panelButtons.Size = new Size(444, 50);
             panelButtons.TabIndex = 1;
@@ -767,7 +951,9 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             CancelButton = btnCancel;
-            ClientSize = new Size(444, 508);
+            ClientSize = new Size(444, 546);
+            Controls.Add(lblExperimentType);
+            Controls.Add(cmbExperimentType);
             Controls.Add(tabControl1);
             Controls.Add(panelButtons);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -786,6 +972,8 @@
             ((System.ComponentModel.ISupportInitialize)nudDataLoggingIntervalSeconds).EndInit();
             ((System.ComponentModel.ISupportInitialize)nudExperimentHours).EndInit();
             ((System.ComponentModel.ISupportInitialize)nudExperimentMinutes).EndInit();
+            ((System.ComponentModel.ISupportInitialize)nudBakeoutHoldHours).EndInit();
+            ((System.ComponentModel.ISupportInitialize)nudBakeoutHoldMinutes).EndInit();
             tabTimeout.ResumeLayout(false);
             tabTimeout.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)nudShutdownTimeout).EndInit();
@@ -805,6 +993,29 @@
         }
 
         #endregion
+
+        // 실험 유형 선택
+        private System.Windows.Forms.Label lblExperimentType;
+        private System.Windows.Forms.ComboBox cmbExperimentType;
+
+        // 베이크아웃 온도 컨트롤
+        private System.Windows.Forms.TextBox txtBakeoutTargetTemp;
+        private System.Windows.Forms.Label lblBakeoutTargetTemp;
+        private System.Windows.Forms.TextBox txtBakeoutRampRate;
+        private System.Windows.Forms.Label lblBakeoutRampRate;
+        private System.Windows.Forms.Label lblBakeoutMonitorChannel;
+        private System.Windows.Forms.ComboBox cmbBakeoutMonitorChannel;
+        private System.Windows.Forms.Label lblBakeoutHeaterMax;
+        private System.Windows.Forms.TextBox txtBakeoutHeaterMax;
+
+        // 베이크아웃 시간 컨트롤
+        private System.Windows.Forms.Label lblBakeoutHoldTime;
+        private System.Windows.Forms.NumericUpDown nudBakeoutHoldHours;
+        private System.Windows.Forms.Label lblBakeoutHoldHUnit;
+        private System.Windows.Forms.NumericUpDown nudBakeoutHoldMinutes;
+        private System.Windows.Forms.Label lblBakeoutHoldMUnit;
+        private System.Windows.Forms.Label lblBakeoutEndAction;
+        private System.Windows.Forms.ComboBox cmbBakeoutEndAction;
 
         // 탭 컨트롤
         private System.Windows.Forms.TabControl tabControl1;

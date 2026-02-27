@@ -124,4 +124,20 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         Simulation
     }
+
+    /// <summary>
+    /// AutoRun 실험 종류
+    /// </summary>
+    public enum ExperimentType
+    {
+        /// <summary>
+        /// 탈가스율 측정 (기존 AutoRun)
+        /// </summary>
+        OutgassingRate,
+
+        /// <summary>
+        /// 베이크 아웃
+        /// </summary>
+        Bakeout
+    }
 }

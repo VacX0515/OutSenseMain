@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Xml.Serialization;
+using VacX_OutSense.Core.Control;
 
 namespace VacX_OutSense.Core.AutoRun
 {
@@ -154,6 +155,50 @@ namespace VacX_OutSense.Core.AutoRun
 
         #endregion
 
+        #region 실험 유형 설정
+
+        /// <summary>
+        /// 실험 유형 (OutgassingRate 또는 Bakeout)
+        /// </summary>
+        public ExperimentType ExperimentType { get; set; } = ExperimentType.OutgassingRate;
+
+        /// <summary>
+        /// [Bakeout] 목표 온도 (°C)
+        /// </summary>
+        public double BakeoutTargetTemperature { get; set; } = 100.0;
+
+        /// <summary>
+        /// [Bakeout] 승온 속도 (°C/h)
+        /// </summary>
+        public double BakeoutRampRate { get; set; } = 300.0;
+
+        /// <summary>
+        /// [Bakeout] 유지 시간 (분) — 목표 온도 도달 후
+        /// </summary>
+        public int BakeoutHoldTimeMinutes { get; set; } = 30;
+
+        /// <summary>
+        /// [Bakeout] 종료 동작
+        /// </summary>
+        public BakeoutEndAction BakeoutEndAction { get; set; } = BakeoutEndAction.HeaterOff;
+
+        /// <summary>
+        /// [Bakeout] 히터(CH1) 안전 상한 온도 (°C) — 피드백 제어 시 CH1이 이 온도를 초과하지 않음
+        /// </summary>
+        public double BakeoutHeaterMaxTemperature { get; set; } = 200.0;
+
+        /// <summary>
+        /// [Bakeout] 샘플 온도 모니터링 채널 (2~4) — 이 채널이 목표 온도에 도달하면 홀드 타이머 시작
+        /// </summary>
+        public int BakeoutMonitorChannel { get; set; } = 2;
+
+        /// <summary>
+        /// [Bakeout] 프로파일 이름
+        /// </summary>
+        public string BakeoutProfileName { get; set; } = "일반 시편";
+
+        #endregion
+
         #region XML 하위호환 (기존 설정 파일 로드용)
 
         /// <summary>
@@ -288,6 +333,16 @@ namespace VacX_OutSense.Core.AutoRun
             EnableDetailedLogging = defaultConfig.EnableDetailedLogging;
             EnableSafeShutdownOnFailure = defaultConfig.EnableSafeShutdownOnFailure;
             EnableAlarmOnError = defaultConfig.EnableAlarmOnError;
+
+            // 실험 유형 설정
+            ExperimentType = defaultConfig.ExperimentType;
+            BakeoutTargetTemperature = defaultConfig.BakeoutTargetTemperature;
+            BakeoutRampRate = defaultConfig.BakeoutRampRate;
+            BakeoutHoldTimeMinutes = defaultConfig.BakeoutHoldTimeMinutes;
+            BakeoutEndAction = defaultConfig.BakeoutEndAction;
+            BakeoutHeaterMaxTemperature = defaultConfig.BakeoutHeaterMaxTemperature;
+            BakeoutMonitorChannel = defaultConfig.BakeoutMonitorChannel;
+            BakeoutProfileName = defaultConfig.BakeoutProfileName;
         }
 
         #endregion

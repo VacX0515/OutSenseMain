@@ -2351,7 +2351,7 @@ namespace VacX_OutSense
             tabPageAutoRun.Padding = new Padding(3);
             tabPageAutoRun.Size = new Size(192, 72);
             tabPageAutoRun.TabIndex = 4;
-            tabPageAutoRun.Text = "AutoRun(N/A)";
+            tabPageAutoRun.Text = "AutoRun";
             tabPageAutoRun.UseVisualStyleBackColor = true;
             // 
             // tabPageThermalRamp
