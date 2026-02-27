@@ -13,7 +13,7 @@ namespace VacX_OutSense.Core.Devices.IO_Module.Models
     ///   [0]: ATM 스위치 (0-10V)
     ///   [1]: 피라니 게이지 (0-10V)
     ///   [2]: 이온 게이지 (0-10V)
-    ///   [3]: 이온 게이지 상태 (0-10V)
+    ///   [3]: (미사용 — IG 상태는 DI3으로 이동)
     ///   [4]: 추가 AI (±10V)
     ///   [5-7]: 예비
     /// </summary>
@@ -73,7 +73,6 @@ namespace VacX_OutSense.Core.Devices.IO_Module.Models
             return $"AI: ATM={ExpansionVoltageValues[0]:F3}V, " +
                    $"Pirani={ExpansionVoltageValues[1]:F3}V, " +
                    $"Ion={ExpansionVoltageValues[2]:F3}V, " +
-                   $"IonStat={ExpansionVoltageValues[3]:F3}V, " +
                    $"Additional={AdditionalAIValue:F4}V";
         }
     }

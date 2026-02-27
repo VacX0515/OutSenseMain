@@ -55,15 +55,15 @@ namespace VacX_OutSense.Core.Devices.Gauges
         /// 게이지 상태 확인
         /// </summary>
         /// <param name="voltage">게이지 출력 전압 (V)</param>
-        /// <param name="statusvoltage">상태 출력 신호 (V)</param>
+        /// <param name="isStatusOn">상태 출력 DI3 (true=정상 작동)</param>
         /// <returns>게이지 상태 문자열</returns>
-        public string CheckGaugeStatus(double voltage, double statusvoltage)
+        public string CheckGaugeStatus(double voltage, bool isStatusOn)
         {
-            if (statusvoltage < 1.0) // Low 상태 (0V)
+            if (!isStatusOn)
             {
                 Status = "작동 대기 중";
             }
-            else // High 상태 (13.5-32V)
+            else
             {
                 Status = "정상 작동 중";
             }
@@ -86,11 +86,11 @@ namespace VacX_OutSense.Core.Devices.Gauges
         /// 게이지 상태 판별 (Pin 3 측정 신호 + Pin 6 상태 출력 기반)
         /// </summary>
         /// <param name="signalVoltage">측정 신호 전압 Pin 3 (V)</param>
-        /// <param name="statusVoltage">상태 출력 전압 Pin 6 (V)</param>
+        /// <param name="isStatusOn">상태 출력 DI3 (true=High=정상 작동)</param>
         /// <returns>판별된 게이지 상태</returns>
-        public GaugeState DetermineGaugeState(double signalVoltage, double statusVoltage)
+        public GaugeState DetermineGaugeState(double signalVoltage, bool isStatusOn)
         {
-            bool isStatusHigh = statusVoltage > 10.0;
+            bool isStatusHigh = isStatusOn;
             bool isNotIgnited = Math.Abs(signalVoltage - NotIgnitedVoltage) < 0.1;
             bool isInMeasureRange = signalVoltage >= BaseVoltage && signalVoltage <= 10.0;
 
@@ -126,7 +126,7 @@ namespace VacX_OutSense.Core.Devices.Gauges
             else
             {
                 State = GaugeState.SensorFault;
-                Status = $"상태 불명 (신호: {signalVoltage:F2}V, 상태: {statusVoltage:F2}V)";
+                Status = $"상태 불명 (신호: {signalVoltage:F2}V, 상태DI: {isStatusOn})";
             }
 
             return State;

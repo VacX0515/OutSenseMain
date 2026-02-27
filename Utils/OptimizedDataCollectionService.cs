@@ -486,16 +486,17 @@ namespace VacX_OutSense.Utils
             snapshot.ExhaustValveStatus = "Unknown";
             snapshot.IonGaugeHVStatus = "Unknown";
 
-            // AI 데이터 처리
-            if (_latestData.TryGetValue("AI_Data", out var aiObj) && aiObj is AnalogInputValues aiData)
-            {
-                ProcessIOModuleData(snapshot, aiData, null);
-            }
+            // AI + DO + DI 데이터 통합 처리
+            _latestData.TryGetValue("AI_Data", out var aiObj);
+            _latestData.TryGetValue("DO_Data", out var doObj);
+            _latestData.TryGetValue("DI_Data", out var diObj);
+            var aiData = aiObj as AnalogInputValues;
+            var doData = doObj as DigitalOutputValues;
+            var diData = diObj as DigitalInputValues;
 
-            // ★ DO 데이터 처리 (기존 AO → DO)
-            if (_latestData.TryGetValue("DO_Data", out var doObj) && doObj is DigitalOutputValues doData)
+            if (aiData != null || doData != null)
             {
-                ProcessIOModuleData(snapshot, null, doData);
+                ProcessIOModuleData(snapshot, aiData, doData, diData);
             }
 
             // 드라이펌프 데이터
@@ -536,7 +537,7 @@ namespace VacX_OutSense.Utils
         /// ★ AO(AnalogOutputValues) → DO(DigitalOutputValues) 변경
         /// ★ MasterCurrentValues → GateValvePosition(DI 기반) 변경
         /// </summary>
-        private void ProcessIOModuleData(UIDataSnapshot snapshot, AnalogInputValues aiData, DigitalOutputValues doData)
+        private void ProcessIOModuleData(UIDataSnapshot snapshot, AnalogInputValues aiData, DigitalOutputValues doData, DigitalInputValues diData = null)
         {
             try
             {
@@ -546,7 +547,7 @@ namespace VacX_OutSense.Utils
                     snapshot.AtmPressure = _mainForm._atmSwitch?.ConvertVoltageToPressureInkPa(aiData.ExpansionVoltageValues[0]) ?? 0;
                     snapshot.PiraniPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
                     snapshot.IonPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]) ?? 0;
-                    snapshot.IonGaugeStatus = _mainForm._ionGauge?.DetermineGaugeState(aiData.ExpansionVoltageValues[2], aiData.ExpansionVoltageValues[3]).ToString() ?? "N/A";
+                    snapshot.IonGaugeStatus = _mainForm._ionGauge?.DetermineGaugeState(aiData.ExpansionVoltageValues[2], diData?.IsIonGaugeStatusOn ?? false).ToString() ?? "N/A";
 
                     // ★ 수정: Float 값 우선 사용
                     if (_latestData.TryGetValue("AdditionalAI_Value", out var floatVal) && floatVal is double dVal)

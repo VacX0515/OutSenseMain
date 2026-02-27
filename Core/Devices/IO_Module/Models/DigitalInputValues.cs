@@ -8,7 +8,8 @@ namespace VacX_OutSense.Core.Devices.IO_Module.Models
     /// 채널 매핑 (AXAX8080G 마스터):
     ///   DI1 (index 0): GV Close Reed Switch
     ///   DI2 (index 1): GV Open Reed Switch
-    ///   DI3~DI8: 예비
+    ///   DI3 (index 2): IG Status (Ion Gauge 상태 출력, PTR 225 Pin 6)
+    ///   DI4~DI8: 예비
     /// </summary>
     public class DigitalInputValues
     {
@@ -30,6 +31,13 @@ namespace VacX_OutSense.Core.Devices.IO_Module.Models
             if (channel < 1 || channel > 8) return false;
             return ChannelStates[channel - 1];
         }
+
+        #region 편의 속성
+
+        /// <summary>IG Status (DI3) — PTR 225 상태 출력: true=정상 작동, false=대기</summary>
+        public bool IsIonGaugeStatusOn => ChannelStates[2];
+
+        #endregion
 
         #region 게이트 밸브 편의 속성
 
@@ -58,7 +66,7 @@ namespace VacX_OutSense.Core.Devices.IO_Module.Models
         public override string ToString()
         {
             return $"DI: GV_Close={IsGateValveClosed}, GV_Open={IsGateValveOpened}, " +
-                   $"DI3={ChannelStates[2]}, DI4={ChannelStates[3]}, " +
+                   $"IG_Stat={IsIonGaugeStatusOn}, DI4={ChannelStates[3]}, " +
                    $"DI5={ChannelStates[4]}, DI6={ChannelStates[5]}, " +
                    $"DI7={ChannelStates[6]}, DI8={ChannelStates[7]}";
         }
