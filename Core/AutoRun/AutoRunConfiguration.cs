@@ -20,12 +20,12 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// 이온게이지 활성화를 위한 목표 압력 (Torr)
         /// </summary>
-        public double TargetPressureForIonGauge { get; set; } = 1E-3;
+        public double TargetPressureForIonGauge { get; set; } = 7.5E-4;
 
         /// <summary>
         /// 히터 시작을 위한 목표 압력 (Torr)
         /// </summary>
-        public double TargetPressureForHeater { get; set; } = 1E-5;
+        public double TargetPressureForHeater { get; set; } = 7.5E-6;
 
         /// <summary>
         /// 실험 중 최대 허용 압력 (Torr)
@@ -49,7 +49,7 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// 온도 안정성 허용 범위 (±°C)
         /// </summary>
-        public double TemperatureStabilityTolerance { get; set; } = 1.0;
+        public double TemperatureStabilityTolerance { get; set; } = 0.5;
 
         #endregion
 
@@ -112,12 +112,12 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// 종료 시 CH1 쿨링 목표 온도 (°C) — 이 온도 이하로 내려가면 벤트/배기 밸브 닫기
         /// </summary>
-        public double CoolingTargetTemperature { get; set; } = 40.0;
+        public double CoolingTargetTemperature { get; set; } = 50.0;
 
         /// <summary>
         /// 벤트 후 배기 밸브 오픈 기준 압력 (kPa) — ATM 스위치 기준
         /// </summary>
-        public double VentTargetPressure_kPa { get; set; } = 80.0;
+        public double VentTargetPressure_kPa { get; set; } = 90.0;
 
         #endregion
 
@@ -170,7 +170,7 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// [Bakeout] 승온 속도 (°C/h)
         /// </summary>
-        public double BakeoutRampRate { get; set; } = 300.0;
+        public double BakeoutRampRate { get; set; } = 2.0;
 
         /// <summary>
         /// [Bakeout] 유지 시간 (분) — 목표 온도 도달 후
@@ -185,10 +185,10 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// [Bakeout] 히터(CH1) 안전 상한 온도 (°C) — 피드백 제어 시 CH1이 이 온도를 초과하지 않음
         /// </summary>
-        public double BakeoutHeaterMaxTemperature { get; set; } = 200.0;
+        public double BakeoutHeaterMaxTemperature { get; set; } = 150.0;
 
         /// <summary>
-        /// [Bakeout] 샘플 온도 모니터링 채널 (2~4) — 이 채널이 목표 온도에 도달하면 홀드 타이머 시작
+        /// [Bakeout] 샘플 온도 모니터링 채널 (1~5) — 이 채널이 목표 온도에 도달하면 홀드 타이머 시작
         /// </summary>
         public int BakeoutMonitorChannel { get; set; } = 2;
 

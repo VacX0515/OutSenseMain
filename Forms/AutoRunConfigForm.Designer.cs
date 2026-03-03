@@ -297,7 +297,7 @@
             cmbBakeoutMonitorChannel = new ComboBox();
             cmbBakeoutMonitorChannel.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbBakeoutMonitorChannel.FormattingEnabled = true;
-            cmbBakeoutMonitorChannel.Items.AddRange(new object[] { "CH2", "CH3", "CH4" });
+            cmbBakeoutMonitorChannel.Items.AddRange(new object[] { "CH1", "CH2", "CH3", "CH4", "CH5" });
             cmbBakeoutMonitorChannel.Location = new Point(230, 92);
             cmbBakeoutMonitorChannel.Name = "cmbBakeoutMonitorChannel";
             cmbBakeoutMonitorChannel.Size = new Size(120, 23);

@@ -109,6 +109,14 @@ namespace VacX_OutSense.Utils
         {
             if (_latestData.TryGetValue("AI_Data", out var aiObj) && aiObj is AnalogInputValues aiData)
             {
+                // IG HV ON이면 이온게이지 압력, 아니면 피라니 압력
+                var doData = GetLatestDOData();
+                if (doData != null && doData.IsIonGaugeHVOn && _mainForm._ionGauge != null)
+                {
+                    double ionPressure = _mainForm._ionGauge.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]);
+                    if (ionPressure > 0)
+                        return ionPressure;
+                }
                 return _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
             }
             return 0;

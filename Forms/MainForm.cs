@@ -9,6 +9,7 @@ using System.Xml.Serialization;
 using VacX_OutSense.Core.AutoRun;
 using VacX_OutSense.Core.Communication;
 using VacX_OutSense.Core.Control;
+using VacX_OutSense.Core.Safety;
 using VacX_OutSense.Core.Devices.Base;
 using VacX_OutSense.Core.Devices.BathCirculator;
 using VacX_OutSense.Core.Devices.DryPump;
@@ -169,8 +170,14 @@ namespace VacX_OutSense
 
         #region 로깅 관련
         private bool _isLoggingEnabled = true;
+        private int _dataLoggingIntervalSeconds = 1;
+        private DateTime _lastDataLogTime = DateTime.MinValue;
         private ToolStripMenuItem _menuStartLogging;
         private ToolStripMenuItem _menuStopLogging;
+        #endregion
+
+        #region 인터락
+        private InterlockConfiguration _interlockConfig;
         #endregion
 
         #endregion
@@ -249,6 +256,7 @@ namespace VacX_OutSense
                 LoggerService.Instance = new LoggerServiceWrapper(AsyncLoggingService.Instance);
                 InitializeDataLogging();
                 AddLoggingMenu();
+                AddInterlockMenu();
             });
         }
 
@@ -566,6 +574,7 @@ namespace VacX_OutSense
             try
             {
                 _autoRunConfig = LoadAutoRunConfiguration() ?? new AutoRunConfiguration();
+                _interlockConfig = InterlockConfiguration.LoadFromFile();
 
                 _autoRunService = new AutoRunService(this, _autoRunConfig);
                 _autoRunService.StateChanged += OnAutoRunStateChanged;
@@ -787,14 +796,37 @@ namespace VacX_OutSense
             var state = _autoRunService?.CurrentState ?? AutoRunState.Idle;
             bool isRunning = _autoRunService?.IsRunning ?? false;
 
-            if (!isRunning || state == AutoRunState.Idle || state == AutoRunState.Completed
-                           || state == AutoRunState.Aborted || state == AutoRunState.Error)
+            if (state == AutoRunState.Idle)
             {
                 if (_lblAutoRunBanner.Visible)
                 {
                     _lblAutoRunBanner.Visible = false;
                     tableLayoutPanel3.BackColor = SystemColors.Control;
                 }
+                return;
+            }
+
+            // 완료/중단/오류: 배너를 숨기지 않고 최종 상태 표시
+            var finalElapsed = TimeSpan.FromSeconds(_autoRunElapsedSeconds);
+            if (state == AutoRunState.Completed)
+            {
+                _lblAutoRunBanner.Text = $"✓ 완료  [{finalElapsed:hh\\:mm\\:ss}]";
+                _lblAutoRunBanner.Visible = true;
+                tableLayoutPanel3.BackColor = Color.FromArgb(0, 120, 60);
+                return;
+            }
+            if (state == AutoRunState.Aborted)
+            {
+                _lblAutoRunBanner.Text = $"■ 중단됨  [{finalElapsed:hh\\:mm\\:ss}]";
+                _lblAutoRunBanner.Visible = true;
+                tableLayoutPanel3.BackColor = Color.FromArgb(130, 80, 0);
+                return;
+            }
+            if (state == AutoRunState.Error)
+            {
+                _lblAutoRunBanner.Text = $"✗ 오류 발생  [{finalElapsed:hh\\:mm\\:ss}]";
+                _lblAutoRunBanner.Visible = true;
+                tableLayoutPanel3.BackColor = Color.FromArgb(180, 30, 30);
                 return;
             }
 
@@ -892,7 +924,7 @@ namespace VacX_OutSense
                     if (isBakeout && _tempController?.IsConnected == true)
                     {
                         int monCh = _autoRunConfig.BakeoutMonitorChannel;
-                        if (monCh >= 1 && monCh <= 4)
+                        if (monCh >= 1 && monCh <= 5)
                         {
                             var chSt = _tempController.Status.ChannelStatus[monCh - 1];
                             double pv = chSt.Dot == 1 ? chSt.PresentValue / 10.0 : chSt.PresentValue;
@@ -1008,6 +1040,9 @@ namespace VacX_OutSense
             listViewAutoRunLog.Items.Clear();
             _autoRunElapsedSeconds = 0;
             _experimentElapsedSeconds = 0;
+            // 이전 최종 상태 배너 리셋
+            _lblAutoRunBanner.Visible = false;
+            tableLayoutPanel3.BackColor = SystemColors.Control;
             _autoRunTimer.Start();
 
             if (startStep > 1)
@@ -1029,6 +1064,7 @@ namespace VacX_OutSense
             {
                 _autoRunService.Stop();
                 _autoRunTimer.Stop();
+                StopCh1Timer();
                 StopExperimentDataLogger("사용자 중지");
                 UpdateAutoRunUI();
             }
@@ -1070,16 +1106,24 @@ namespace VacX_OutSense
             if (!_autoRunService.IsRunning)
                 return;
 
-            _autoRunElapsedSeconds++;
-            lblAutoRunElapsedTime.Text = $"경과: {TimeSpan.FromSeconds(_autoRunElapsedSeconds):hh\\:mm\\:ss}";
+            bool isPaused = _autoRunService.IsPaused;
 
-            // 실시간 측정값 업데이트
+            // 일시정지 중에는 경과 시간을 증가시키지 않음
+            if (!isPaused)
+            {
+                _autoRunElapsedSeconds++;
+            }
+            lblAutoRunElapsedTime.Text = isPaused
+                ? $"경과: {TimeSpan.FromSeconds(_autoRunElapsedSeconds):hh\\:mm\\:ss} (일시정지)"
+                : $"경과: {TimeSpan.FromSeconds(_autoRunElapsedSeconds):hh\\:mm\\:ss}";
+
+            // 실시간 측정값 업데이트 (일시정지 중에도 표시)
             UpdateAutoRunMeasurements();
 
             // AutoRun 배너 업데이트
             UpdateAutoRunBanner();
 
-            if (_autoRunService.CurrentState == AutoRunState.RunningExperiment
+            if (!isPaused && _autoRunService.CurrentState == AutoRunState.RunningExperiment
                 && _autoRunService.IsExperimentTimerRunning)
             {
                 _experimentElapsedSeconds++;
@@ -1092,7 +1136,7 @@ namespace VacX_OutSense
             }
             else if (_autoRunService.CurrentState == AutoRunState.RunningExperiment)
             {
-                lblAutoRunRemainingTime.Text = "남은: 승온 대기중...";
+                lblAutoRunRemainingTime.Text = isPaused ? "남은: 일시정지" : "남은: 승온 대기중...";
             }
         }
 
@@ -1176,13 +1220,35 @@ namespace VacX_OutSense
             btnAutoRunResume.Enabled = isRunning && isPaused;
             btnAutoRunConfig.Enabled = !isRunning;
 
+            var state = _autoRunService?.CurrentState ?? AutoRunState.Idle;
+
             if (!isRunning)
             {
-                progressBarAutoRun.Value = 0;
-                lblAutoRunProgress.Text = "0%";
-                lblAutoRunStep.Text = "단계: -";
-                lblAutoRunRemainingTime.Text = "남은: --:--:--";
                 _groupBoxMeasurements.Visible = false;
+
+                // 완료/중단/오류 시 최종 상태를 유지, Idle이면 리셋
+                if (state == AutoRunState.Idle)
+                {
+                    progressBarAutoRun.Value = 0;
+                    lblAutoRunProgress.Text = "0%";
+                    lblAutoRunStep.Text = "단계: -";
+                    lblAutoRunRemainingTime.Text = "남은: --:--:--";
+                    lblAutoRunStatus.Text = "상태: 대기 중";
+                }
+                else if (state == AutoRunState.Completed)
+                {
+                    progressBarAutoRun.Value = 100;
+                    lblAutoRunProgress.Text = "100%";
+                    lblAutoRunRemainingTime.Text = "완료";
+                }
+                else if (state == AutoRunState.Aborted)
+                {
+                    lblAutoRunRemainingTime.Text = "중단됨";
+                }
+                else if (state == AutoRunState.Error)
+                {
+                    lblAutoRunRemainingTime.Text = "오류";
+                }
             }
             else
             {
@@ -1235,8 +1301,8 @@ namespace VacX_OutSense
                 bool isBakeout = _autoRunConfig?.ExperimentType == ExperimentType.Bakeout;
                 if (isBakeout && _tempController?.IsConnected == true)
                 {
-                    int monCh = _autoRunConfig.BakeoutMonitorChannel; // 2~4
-                    if (monCh >= 1 && monCh <= 4)
+                    int monCh = _autoRunConfig.BakeoutMonitorChannel; // 1~5
+                    if (monCh >= 1 && monCh <= 5)
                     {
                         var chStatus = _tempController.Status.ChannelStatus[monCh - 1];
                         double samplePV = chStatus.Dot == 1 ? chStatus.PresentValue / 10.0 : chStatus.PresentValue;
@@ -1305,6 +1371,8 @@ namespace VacX_OutSense
 
             string[] stepNames = { "초기화", "진공준비", "드라이", "터보", "IG", "고진공", "히터", "실험", "종료" };
 
+            // Paused: 현재 단계 번호를 유지하여 ⏸ 표시
+            bool isPausedState = currentState == AutoRunState.Paused;
             int currentStep = currentState switch
             {
                 AutoRunState.Initializing => 1,
@@ -1318,6 +1386,7 @@ namespace VacX_OutSense
                 AutoRunState.ShuttingDown => 9,
                 AutoRunState.Completed => 10,
                 AutoRunState.Aborted or AutoRunState.Error => -1,
+                AutoRunState.Paused => _autoRunService?.CurrentStepNumber ?? 0,
                 _ => 0
             };
 
@@ -1367,10 +1436,21 @@ namespace VacX_OutSense
                 }
                 else if (stepNum == currentStep)
                 {
-                    _stepPanels[i].BackColor = Color.FromArgb(180, 210, 255);
-                    _stepLabels[i].ForeColor = Color.DarkBlue;
-                    _stepLabels[i].Font = new Font("맑은 고딕", 8F, FontStyle.Bold);
-                    _stepLabels[i].Text = $"\u25B6 {name}";
+                    if (isPausedState)
+                    {
+                        // 일시정지: 현재 단계를 주황색 ⏸ 표시
+                        _stepPanels[i].BackColor = Color.FromArgb(255, 235, 180);
+                        _stepLabels[i].ForeColor = Color.FromArgb(150, 100, 0);
+                        _stepLabels[i].Font = new Font("맑은 고딕", 8F, FontStyle.Bold);
+                        _stepLabels[i].Text = $"\u23F8 {name}";
+                    }
+                    else
+                    {
+                        _stepPanels[i].BackColor = Color.FromArgb(180, 210, 255);
+                        _stepLabels[i].ForeColor = Color.DarkBlue;
+                        _stepLabels[i].Font = new Font("맑은 고딕", 8F, FontStyle.Bold);
+                        _stepLabels[i].Text = $"\u25B6 {name}";
+                    }
                 }
                 else
                 {
@@ -1474,6 +1554,12 @@ namespace VacX_OutSense
 
             if (!_isLoggingEnabled)
                 return;
+
+            // 설정된 수집 주기에 따라 로깅
+            var now = DateTime.Now;
+            if ((now - _lastDataLogTime).TotalSeconds < _dataLoggingIntervalSeconds)
+                return;
+            _lastDataLogTime = now;
 
             Task.Run(() =>
             {
@@ -1843,10 +1929,21 @@ namespace VacX_OutSense
 
         private async void btn_GV_Click(object sender, EventArgs e)
         {
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualValveControl, "밸브"))
+                return;
+
+            bool isOpen = btn_GV.Text == "Opened";
+
+            // 닫기 시: 터보펌프 작동 중이면 차단
+            if (isOpen && !CheckInterlock(
+                _turboPump?.Status?.CurrentSpeed > 100,
+                _interlockConfig.GateValveClose_BlockIfTurboRunning,
+                "터보펌프가 작동 중입니다. 게이트밸브를 닫을 수 없습니다."))
+                return;
+
             btn_GV.Enabled = false;
             try
             {
-                bool isOpen = btn_GV.Text == "Opened";
                 if (await _ioModule.ControlGateValveAsync(!isOpen))
                     LogInfo($"게이트 밸브 {(!isOpen ? "열기" : "닫기")} 성공");
             }
@@ -1855,12 +1952,14 @@ namespace VacX_OutSense
 
         private async void btn_VV_Click(object sender, EventArgs e)
         {
-            if (_turboPump?.Status?.CurrentSpeed > 100)
-            {
-                MessageBox.Show("터보펌프가 작동 중입니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualValveControl, "밸브"))
                 return;
-            }
+            if (!CheckInterlock(
+                _turboPump?.Status?.CurrentSpeed > 100,
+                _interlockConfig.VentValve_BlockIfTurboRunning,
+                "터보펌프가 작동 중입니다."))
+                return;
+
             btn_VV.Enabled = false;
             try
             {
@@ -1873,12 +1972,14 @@ namespace VacX_OutSense
 
         private async void btn_EV_Click(object sender, EventArgs e)
         {
-            if (_turboPump?.Status?.CurrentSpeed > 100)
-            {
-                MessageBox.Show("터보펌프가 작동 중입니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualValveControl, "밸브"))
                 return;
-            }
+            if (!CheckInterlock(
+                _turboPump?.Status?.CurrentSpeed > 100,
+                _interlockConfig.ExhaustValve_BlockIfTurboRunning,
+                "터보펌프가 작동 중입니다."))
+                return;
+
             btn_EV.Enabled = false;
             try
             {
@@ -1891,10 +1992,21 @@ namespace VacX_OutSense
 
         private async void btn_iongauge_Click(object sender, EventArgs e)
         {
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualIonGaugeControl, "이온게이지"))
+                return;
+
+            bool isOn = btn_iongauge.Text == "HV on";
+
+            // ON 시: 압력 체크
+            if (!isOn && !CheckInterlock(
+                GetCurrentPiraniPressure() > 1E-3 || GetCurrentPiraniPressure() <= 0,
+                _interlockConfig.IonGaugeHV_RequireLowPressure,
+                "피라니 압력이 너무 높습니다 (> 1E-3 Torr).\n이온게이지가 손상될 수 있습니다."))
+                return;
+
             btn_iongauge.Enabled = false;
             try
             {
-                bool isOn = btn_iongauge.Text == "HV on";
                 if (await _ioModule.ControlIonGaugeHVAsync(!isOn))
                     LogInfo($"이온 게이지 HV {(!isOn ? "ON" : "OFF")} 성공");
             }
@@ -1907,18 +2019,19 @@ namespace VacX_OutSense
 
         private async void btnDryPumpStart_Click(object sender, EventArgs e)
         {
-            if (btn_GV.Text != "Opened")
-            {
-                MessageBox.Show("게이트 밸브가 열려있지 않습니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualPumpControl, "펌프"))
                 return;
-            }
-            if (btn_VV.Text == "Opened" || btn_EV.Text == "Opened")
-            {
-                MessageBox.Show("벤트 또는 배기 밸브가 열려있습니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckInterlock(
+                btn_GV.Text != "Opened",
+                _interlockConfig.DryPump_RequireGateValveOpen,
+                "게이트 밸브가 열려있지 않습니다."))
                 return;
-            }
+            if (!CheckInterlock(
+                btn_VV.Text == "Opened" || btn_EV.Text == "Opened",
+                _interlockConfig.DryPump_RequireVentExhaustClosed,
+                "벤트 또는 배기 밸브가 열려있습니다."))
+                return;
+
             btnDryPumpStart.Enabled = false;
             try
             {
@@ -1930,12 +2043,14 @@ namespace VacX_OutSense
 
         private async void btnDryPumpStop_Click(object sender, EventArgs e)
         {
-            if (_turboPump?.Status?.IsRunning == true)
-            {
-                MessageBox.Show("터보펌프가 작동 중입니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualPumpControl, "펌프"))
                 return;
-            }
+            if (!CheckInterlock(
+                _turboPump?.Status?.IsRunning == true,
+                _interlockConfig.DryPumpStop_BlockIfTurboRunning,
+                "터보펌프가 작동 중입니다."))
+                return;
+
             btnDryPumpStop.Enabled = false;
             try
             {
@@ -1969,24 +2084,29 @@ namespace VacX_OutSense
 
         private async void btnTurboPumpStart_Click(object sender, EventArgs e)
         {
-            if (!_dryPump?.Status?.IsRunning ?? true)
-            {
-                MessageBox.Show("드라이펌프가 작동중이 아닙니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualPumpControl, "펌프"))
                 return;
-            }
-            if (_dataCollectionService?.GetLatestPressure() > 1)
-            {
-                MessageBox.Show("챔버 압력이 너무 높습니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckInterlock(
+                !(_dryPump?.Status?.IsRunning ?? false),
+                _interlockConfig.TurboPump_RequireDryPumpRunning,
+                "드라이펌프가 작동중이 아닙니다."))
                 return;
-            }
-            if (!_bathCirculator?.Status?.IsRunning ?? true)
-            {
-                MessageBox.Show("칠러가 작동중이 아닙니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckInterlock(
+                _dataCollectionService?.GetLatestPressure() > 1,
+                _interlockConfig.TurboPump_RequirePressureBelow1Torr,
+                "챔버 압력이 너무 높습니다."))
                 return;
-            }
+            if (!CheckInterlock(
+                !(_bathCirculator?.Status?.IsRunning ?? false),
+                _interlockConfig.TurboPump_RequireChillerRunning,
+                "칠러가 작동중이 아닙니다."))
+                return;
+            if (!CheckInterlock(
+                btn_GV.Text != "Opened",
+                _interlockConfig.TurboPump_RequireGateValveOpen,
+                "게이트밸브가 열려있지 않습니다."))
+                return;
+
             btnTurboPumpStart.Enabled = false;
             try
             {
@@ -2046,12 +2166,12 @@ namespace VacX_OutSense
 
         private async void btnBathCirculatorStop_Click(object sender, EventArgs e)
         {
-            if (_turboPump.IsRunning)
-            {
-                MessageBox.Show("터보 펌프가 작동 중입니다.", "인터락",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (!CheckInterlock(
+                _turboPump?.IsRunning == true,
+                _interlockConfig.ChillerStop_BlockIfTurboRunning,
+                "터보 펌프가 작동 중입니다."))
                 return;
-            }
+
             btnBathCirculatorStop.Enabled = false;
             try
             {
@@ -2083,6 +2203,23 @@ namespace VacX_OutSense
         {
             if (_tempController == null || !_tempController.IsConnected)
                 return;
+
+            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualHeaterControl, "히터"))
+                return;
+
+            // 진공 미달 경고
+            if (_interlockConfig.HeaterStart_WarnIfNoVacuum)
+            {
+                double pressure = _dataCollectionService?.GetLatestPressure() ?? 0;
+                if (pressure <= 0 || pressure > 1E-3)
+                {
+                    var warn = MessageBox.Show(
+                        $"현재 진공 상태가 충분하지 않습니다.\n압력: {(pressure > 0 ? $"{pressure:E2} Torr" : "N/A")}\n\n계속 진행하시겠습니까?",
+                        "진공 경고", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (warn != DialogResult.Yes)
+                        return;
+                }
+            }
 
             var chStatus = _tempController.Status.ChannelStatus[0];
             string svDisplay = chStatus.Dot == 1
@@ -2193,7 +2330,18 @@ namespace VacX_OutSense
             var chStatus = _tempController.Status.ChannelStatus[channel - 1];
             int dot = chStatus.Dot;
             string unit = chStatus.TemperatureUnit;
-            int maxTempRaw = _tempController.MaxTemperatureRaw;
+            // TM4 하드웨어 SVH 읽기 → 소프트웨어 상한과 동기화
+            int hwSVH = _tempController.ReadSVHighLimit(channel);
+            int maxTempRaw;
+            if (hwSVH > 0)
+            {
+                maxTempRaw = hwSVH;
+                _tempController.MaxTemperatureRaw = hwSVH;  // 소프트웨어도 동기화
+            }
+            else
+            {
+                maxTempRaw = _tempController.MaxTemperatureRaw;
+            }
 
             string pvDisplay = dot == 1 ? $"{chStatus.PresentValue / 10.0:F1}" : $"{chStatus.PresentValue}";
             string svDisplay = dot == 1 ? $"{chStatus.SetValue / 10.0:F1}" : $"{chStatus.SetValue}";
@@ -2203,7 +2351,7 @@ namespace VacX_OutSense
             {
                 dlg.Text = $"채널 {channel} 온도 설정";
                 dlg.Width = 340;
-                dlg.Height = 290;
+                dlg.Height = 355;
                 dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
                 dlg.StartPosition = FormStartPosition.CenterParent;
                 dlg.MaximizeBox = false;
@@ -2241,7 +2389,92 @@ namespace VacX_OutSense
                     ForeColor = chStatus.IsRampEnabled ? Color.Blue : Color.Gray
                 };
                 dlg.Controls.Add(lblRamp);
-                y += 35;
+                y += 25;
+
+                // 상한 온도 표시 + 변경 링크
+                var lblMaxTemp = new Label
+                {
+                    Text = $"상한 온도:  {maxDisplay}{unit}",
+                    Location = new Point(20, y),
+                    AutoSize = true
+                };
+                dlg.Controls.Add(lblMaxTemp);
+
+                var lnkChangeMax = new LinkLabel
+                {
+                    Text = "변경",
+                    Location = new Point(200, y),
+                    AutoSize = true
+                };
+                dlg.Controls.Add(lnkChangeMax);
+                y += 22;
+
+                // MV 상한 표시 + 변경 링크
+                int hwMVH = _tempController.ReadMVHighLimit(channel);
+                decimal mvhDisplay = hwMVH > 0 ? (dot == 1 ? (decimal)(hwMVH / 10.0) : (decimal)hwMVH) : 0;
+                var lblMVH = new Label
+                {
+                    Text = hwMVH > 0 ? $"조작량 상한:  {mvhDisplay}%" : "조작량 상한:  --",
+                    Location = new Point(20, y),
+                    AutoSize = true
+                };
+                dlg.Controls.Add(lblMVH);
+
+                var lnkChangeMVH = new LinkLabel
+                {
+                    Text = "변경",
+                    Location = new Point(200, y),
+                    AutoSize = true
+                };
+                lnkChangeMVH.LinkClicked += (s, ev) =>
+                {
+                    using (var mvhDlg = new Form())
+                    {
+                        mvhDlg.Text = $"CH{channel} 조작량 상한 변경";
+                        mvhDlg.Size = new Size(280, 140);
+                        mvhDlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                        mvhDlg.StartPosition = FormStartPosition.CenterParent;
+                        mvhDlg.MaximizeBox = false;
+                        mvhDlg.MinimizeBox = false;
+
+                        var lblMvhNew = new Label { Text = "조작량 상한 (%):", Location = new Point(20, 20), AutoSize = true };
+                        var nudMvh = new NumericUpDown
+                        {
+                            Location = new Point(140, 17),
+                            Size = new Size(80, 23),
+                            DecimalPlaces = dot == 1 ? 1 : 0,
+                            Minimum = 0,
+                            Maximum = dot == 1 ? 100.0m : 1000m,
+                            Increment = dot == 1 ? 0.1m : 1m,
+                            Value = mvhDisplay > 0 ? Math.Min(mvhDisplay, dot == 1 ? 100.0m : 1000m) : (dot == 1 ? 100.0m : 100m)
+                        };
+                        var btnMvhOk = new Button { Text = "확인", DialogResult = DialogResult.OK, Location = new Point(50, 60), Size = new Size(75, 28) };
+                        var btnMvhCancel = new Button { Text = "취소", DialogResult = DialogResult.Cancel, Location = new Point(140, 60), Size = new Size(75, 28) };
+                        mvhDlg.Controls.AddRange(new Control[] { lblMvhNew, nudMvh, btnMvhOk, btnMvhCancel });
+                        mvhDlg.AcceptButton = btnMvhOk;
+                        mvhDlg.CancelButton = btnMvhCancel;
+
+                        if (mvhDlg.ShowDialog(dlg) == DialogResult.OK)
+                        {
+                            short newMvhRaw = dot == 1
+                                ? (short)((double)nudMvh.Value * 10)
+                                : (short)nudMvh.Value;
+
+                            if (_tempController.WriteMVHighLimit(channel, newMvhRaw))
+                            {
+                                mvhDisplay = dot == 1 ? (decimal)(newMvhRaw / 10.0) : (decimal)newMvhRaw;
+                                lblMVH.Text = $"조작량 상한:  {mvhDisplay}%";
+                                LogInfo($"CH{channel} 조작량 상한 변경: {mvhDisplay}% (raw: {newMvhRaw})");
+                            }
+                            else
+                            {
+                                MessageBox.Show("조작량 상한 변경에 실패했습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            }
+                        }
+                    }
+                };
+                dlg.Controls.Add(lnkChangeMVH);
+                y += 28;
 
                 // 구분선
                 var separator = new Label
@@ -2286,6 +2519,96 @@ namespace VacX_OutSense
                     nudTemp.Value = Math.Min((decimal)chStatus.SetValue, nudTemp.Maximum);
                 }
                 dlg.Controls.Add(nudTemp);
+
+                // 상한 변경 링크 핸들러 등록 (nudTemp, lblNew 선언 후)
+                lnkChangeMax.LinkClicked += (s, ev) =>
+                {
+                    using (Form maxDlg = new Form())
+                    {
+                        maxDlg.Text = "상한 온도 변경";
+                        maxDlg.Width = 300;
+                        maxDlg.Height = 160;
+                        maxDlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                        maxDlg.StartPosition = FormStartPosition.CenterParent;
+                        maxDlg.MaximizeBox = false;
+                        maxDlg.MinimizeBox = false;
+
+                        var lblCur = new Label
+                        {
+                            Text = $"현재 상한: {maxDisplay}{unit}",
+                            Location = new Point(20, 15),
+                            AutoSize = true
+                        };
+                        maxDlg.Controls.Add(lblCur);
+
+                        var lblNewMax = new Label
+                        {
+                            Text = $"새 상한 ({unit}):",
+                            Location = new Point(20, 48),
+                            AutoSize = true
+                        };
+                        maxDlg.Controls.Add(lblNewMax);
+
+                        var nudMax = new NumericUpDown
+                        {
+                            Location = new Point(150, 45),
+                            Size = new Size(100, 23),
+                            TextAlign = HorizontalAlignment.Center
+                        };
+                        if (dot == 1)
+                        {
+                            nudMax.DecimalPlaces = 1;
+                            nudMax.Minimum = 10;
+                            nudMax.Maximum = 9999;
+                            nudMax.Increment = 1m;
+                            nudMax.Value = (decimal)(maxTempRaw / 10.0);
+                        }
+                        else
+                        {
+                            nudMax.DecimalPlaces = 0;
+                            nudMax.Minimum = 10;
+                            nudMax.Maximum = 9999;
+                            nudMax.Increment = 10;
+                            nudMax.Value = (decimal)maxTempRaw;
+                        }
+                        maxDlg.Controls.Add(nudMax);
+
+                        var btnMaxOk = new Button { Text = "확인", DialogResult = DialogResult.OK, Location = new Point(60, 85), Size = new Size(75, 28) };
+                        var btnMaxCancel = new Button { Text = "취소", DialogResult = DialogResult.Cancel, Location = new Point(150, 85), Size = new Size(75, 28) };
+                        maxDlg.Controls.Add(btnMaxOk);
+                        maxDlg.Controls.Add(btnMaxCancel);
+                        maxDlg.AcceptButton = btnMaxOk;
+                        maxDlg.CancelButton = btnMaxCancel;
+
+                        if (maxDlg.ShowDialog(dlg) == DialogResult.OK)
+                        {
+                            int newMaxRaw = dot == 1
+                                ? (int)((double)nudMax.Value * 10)
+                                : (int)nudMax.Value;
+
+                            // TM4 하드웨어 SVH도 함께 변경
+                            if (_tempController.WriteSVHighLimit(channel, (short)newMaxRaw))
+                            {
+                                LogInfo($"TM4 하드웨어 SVH 변경 완료 (CH{channel}, raw: {newMaxRaw})");
+                            }
+                            else
+                            {
+                                LogWarning($"TM4 하드웨어 SVH 변경 실패 — 소프트웨어 상한만 적용");
+                            }
+
+                            _tempController.MaxTemperatureRaw = newMaxRaw;
+                            maxTempRaw = newMaxRaw;
+                            maxDisplay = dot == 1 ? (decimal)(newMaxRaw / 10.0) : (decimal)newMaxRaw;
+
+                            lblMaxTemp.Text = $"상한 온도:  {maxDisplay}{unit}";
+                            lblNew.Text = $"새 설정 온도 ({unit}, 최대 {maxDisplay}):";
+                            nudTemp.Maximum = maxDisplay;
+
+                            LogInfo($"히터 상한 온도 변경: {maxDisplay}{unit} (raw: {newMaxRaw})");
+                        }
+                    }
+                };
+
                 y += 35;
 
                 // Ramp 경고 라벨
@@ -3204,6 +3527,27 @@ namespace VacX_OutSense
 
         #endregion
 
+        #region 인터락 체크
+
+        private bool CheckInterlock(bool blockCondition, bool interlockEnabled, string message)
+        {
+            if (!interlockEnabled || !blockCondition)
+                return true;
+            MessageBox.Show(message, "인터락", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private bool CheckAutoRunInterlock(bool interlockEnabled, string target)
+        {
+            if (_autoRunService?.IsRunning != true || !interlockEnabled)
+                return true;
+            MessageBox.Show($"오토런 실행 중에는 {target}을(를) 조작할 수 없습니다.", "인터락",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        #endregion
+
         #region 로깅
 
         private void LogInfo(string message) => AsyncLoggingService.Instance.LogInfo(message);
@@ -3268,6 +3612,9 @@ namespace VacX_OutSense
             _menuStopLogging = new ToolStripMenuItem("로깅 중지");
             _menuStopLogging.Click += (s, e) => ToggleLogging(false);
 
+            var menuSetInterval = new ToolStripMenuItem($"수집 주기 설정 ({_dataLoggingIntervalSeconds}초)");
+            menuSetInterval.Click += (s, e) => ShowLoggingIntervalDialog(menuSetInterval);
+
             var menuOpenLogFolder = new ToolStripMenuItem("로그 폴더 열기");
             menuOpenLogFolder.Click += (s, e) => OpenFolder(
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs"));
@@ -3278,10 +3625,33 @@ namespace VacX_OutSense
             menuLogging.DropDownItems.AddRange(new ToolStripItem[]
             {
                 _menuStartLogging, _menuStopLogging, new ToolStripSeparator(),
+                menuSetInterval, new ToolStripSeparator(),
                 menuOpenLogFolder, menuOpenDataFolder
             });
             menuStrip.Items.Add(menuLogging);
             UpdateLoggingMenuState();
+        }
+
+        private void AddInterlockMenu()
+        {
+            if (menuStrip == null) return;
+
+            var menuInterlock = new ToolStripMenuItem("인터락(&I)");
+            var menuInterlockSettings = new ToolStripMenuItem("인터락 설정");
+            menuInterlockSettings.Click += (s, e) =>
+            {
+                using (var dlg = new InterlockSettingsForm(_interlockConfig))
+                {
+                    if (dlg.ShowDialog(this) == DialogResult.OK)
+                    {
+                        _interlockConfig = dlg.Configuration;
+                        _interlockConfig.SaveToFile();
+                        LogInfo("인터락 설정이 변경되었습니다.");
+                    }
+                }
+            };
+            menuInterlock.DropDownItems.Add(menuInterlockSettings);
+            menuStrip.Items.Add(menuInterlock);
         }
 
         private void ToggleLogging(bool enable)
@@ -3289,6 +3659,42 @@ namespace VacX_OutSense
             _isLoggingEnabled = enable;
             LogInfo($"데이터 로깅 {(enable ? "활성화" : "비활성화")}");
             UpdateLoggingMenuState();
+        }
+
+        private void ShowLoggingIntervalDialog(ToolStripMenuItem menuItem)
+        {
+            using (var dlg = new Form())
+            {
+                dlg.Text = "데이터 수집 주기 설정";
+                dlg.Size = new Size(300, 150);
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.MaximizeBox = false;
+                dlg.MinimizeBox = false;
+
+                var lbl = new Label { Text = "수집 주기 (초):", Location = new Point(20, 25), AutoSize = true };
+                var nud = new NumericUpDown
+                {
+                    Location = new Point(130, 22),
+                    Size = new Size(80, 23),
+                    Minimum = 1,
+                    Maximum = 3600,
+                    Value = _dataLoggingIntervalSeconds
+                };
+                var btnOk = new Button { Text = "확인", DialogResult = DialogResult.OK, Location = new Point(70, 65), Size = new Size(70, 28) };
+                var btnCancel = new Button { Text = "취소", DialogResult = DialogResult.Cancel, Location = new Point(150, 65), Size = new Size(70, 28) };
+
+                dlg.Controls.AddRange(new Control[] { lbl, nud, btnOk, btnCancel });
+                dlg.AcceptButton = btnOk;
+                dlg.CancelButton = btnCancel;
+
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    _dataLoggingIntervalSeconds = (int)nud.Value;
+                    menuItem.Text = $"수집 주기 설정 ({_dataLoggingIntervalSeconds}초)";
+                    LogInfo($"데이터 수집 주기 변경: {_dataLoggingIntervalSeconds}초");
+                }
+            }
         }
 
         private void UpdateLoggingMenuState()

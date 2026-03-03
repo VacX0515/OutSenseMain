@@ -462,8 +462,8 @@ namespace VacX_OutSense.Core.AutoRun
 
                     if (_config.EnableSafeShutdownOnFailure && result != StepResult.Aborted)
                     {
-                        LogWarning("안전 종료 시퀀스 실행 중...");
-                        await EmergencyShutdownAsync();
+                        LogWarning($"안전 종료 시퀀스 실행 중... (실패 단계: {_currentStepNumber})");
+                        await EmergencyShutdownAsync(_currentStepNumber);
                     }
                 }
 
@@ -589,8 +589,7 @@ namespace VacX_OutSense.Core.AutoRun
             {
                 if (_mainForm._dryPump.Status?.IsRunning == true)
                 {
-                    LogError("드라이펌프가 이미 작동 중입니다. 먼저 정지해주세요.");
-                    return false;
+                    LogInfo("드라이펌프가 이미 작동 중입니다. 시작 단계를 건너뜁니다.");
                 }
             }
 
@@ -598,8 +597,7 @@ namespace VacX_OutSense.Core.AutoRun
             {
                 if (_mainForm._turboPump.Status?.IsRunning == true)
                 {
-                    LogError("터보펌프가 이미 작동 중입니다. 먼저 정지해주세요.");
-                    return false;
+                    LogInfo("터보펌프가 이미 작동 중입니다. 시작 단계를 건너뜁니다.");
                 }
             }
 
@@ -643,11 +641,14 @@ namespace VacX_OutSense.Core.AutoRun
 
             if (_mainForm._tempController?.IsConnected == true)
             {
+                await _mainForm._tempController.UpdateStatusAsync();
                 var status = _mainForm._tempController.Status;
                 if (status.ChannelStatus[0].IsRunning)
                 {
-                    LogError("히터 CH1이 이미 작동 중입니다. 먼저 정지해주세요.");
-                    return false;
+                    LogWarning("히터 CH1이 이미 작동 중입니다. 안전을 위해 정지합니다.");
+                    _mainForm._tempController.Stop(1);
+                    await Task.Delay(1000, cancellationToken);
+                    LogInfo("히터 CH1 정지 완료");
                 }
             }
 
@@ -742,6 +743,14 @@ namespace VacX_OutSense.Core.AutoRun
 
             UpdateProgress("드라이펌프 시작 중...", 0);
 
+            // 이미 작동 중이면 건너뛰기
+            if (_mainForm._dryPump.Status?.IsRunning == true)
+            {
+                LogInfo("드라이펌프가 이미 작동 중입니다. 시작 단계를 건너뜁니다.");
+                UpdateProgress("드라이펌프 시작 완료 (이미 작동 중)", 100);
+                return true;
+            }
+
             var measurements = await GetCurrentMeasurementsAsync();
             if (measurements.GateValveStatus != "Opened" ||
                 measurements.VentValveStatus != "Closed" ||
@@ -791,6 +800,14 @@ namespace VacX_OutSense.Core.AutoRun
             }
 
             UpdateProgress("터보펌프 시작 조건 확인 중...", 0);
+
+            // 이미 작동 중이면 건너뛰기
+            if (_mainForm._turboPump.Status?.IsRunning == true)
+            {
+                LogInfo("터보펌프가 이미 작동 중입니다. 시작 단계를 건너뜁니다.");
+                UpdateProgress("터보펌프 시작 완료 (이미 작동 중)", 100);
+                return true;
+            }
 
             var measurements = await GetCurrentMeasurementsAsync();
 
@@ -854,14 +871,15 @@ namespace VacX_OutSense.Core.AutoRun
                 var currentSpeed = _mainForm._turboPump.Status?.CurrentSpeed ?? 0;
                 UpdateProgress($"터보펌프 가속 중... ({currentSpeed} RPM)", 50 + (currentSpeed * 50 / targetSpeed));
 
-                // ── 가속 중 이온게이지 조기 활성화 ──
+                // ── 가속 중 압력 모니터링 (IG 조기 활성화 + 히터 조기 진행) ──
+                var currentMeasurements = await GetCurrentMeasurementsAsync();
+
                 // ★ DO 기반으로 IG HV 상태 확인 (기존 AO → DO)
                 if (!igActivatedDuringAccel && _mainForm._ioModule?.IsConnected == true)
                 {
                     var doData = _mainForm._ioModule.LastValidDOValues;
                     if (doData?.IsIonGaugeHVOn != true)
                     {
-                        var currentMeasurements = await GetCurrentMeasurementsAsync();
                         if (currentMeasurements.CurrentPressure > 0 &&
                             currentMeasurements.CurrentPressure <= _config.TargetPressureForIonGauge)
                         {
@@ -877,6 +895,15 @@ namespace VacX_OutSense.Core.AutoRun
                     {
                         igActivatedDuringAccel = true; // 이미 켜져 있음
                     }
+                }
+
+                // ★ 히터 시작 목표 압력 도달 시 가속 완료를 기다리지 않고 조기 진행
+                if (currentMeasurements.CurrentPressure > 0 &&
+                    currentMeasurements.CurrentPressure <= _config.TargetPressureForHeater)
+                {
+                    LogInfo($"터보펌프 가속 중 히터 시작 압력 도달 ({currentMeasurements.CurrentPressure:E2} Torr ≤ {_config.TargetPressureForHeater:E2}) — 정격 속도 대기 생략, 다음 단계 진행");
+                    UpdateProgress($"터보펌프 가속 중 ({currentSpeed} RPM) — 압력 조건 충족, 조기 진행", 100);
+                    return true;
                 }
 
                 if (currentSpeed >= targetSpeed * 0.95)
@@ -1034,20 +1061,32 @@ namespace VacX_OutSense.Core.AutoRun
 
             var ch1Status = _mainForm._tempController.Status.ChannelStatus[0];
 
-            // 베이크아웃 모드: CH1 램프 설정
-            if (IsBakeoutMode)
+            // ★ CH1 모니터링 시 TM4 하드웨어 램프 설정
+            //   monitorCh == 1이면 PI 비활성화 → TM4 자체 PID + 하드웨어 램프로 승온 제어
+            //   monitorCh != 1이면 소프트웨어 램프(rampedTarget)가 처리 → 하드웨어 램프 불필요
+            int monitorCh = IsBakeoutMode ? _config.BakeoutMonitorChannel : 1;
+            if (IsBakeoutMode && monitorCh == 1 && _config.BakeoutRampRate > 0)
             {
-                ushort rampRate = ch1Status.Dot == 1
+                // BakeoutRampRate(°C/h) → TM4 raw값 (Dot=1이면 ×10)
+                ushort rampRaw = ch1Status.Dot == 1
                     ? (ushort)(_config.BakeoutRampRate * 10)
                     : (ushort)_config.BakeoutRampRate;
 
-                bool rampResult = await _mainForm._tempController.SetRampConfigurationAsync(
-                    1, rampRate, 0, TempController.RampTimeUnit.Hour);
-
-                if (rampResult)
-                    LogInfo($"CH1 램프 설정: {_config.BakeoutRampRate:F0}°C/h (raw:{rampRate})");
+                if (_mainForm._tempController.SetRampConfiguration(1, rampRaw, 0, TempController.RampTimeUnit.Hour))
+                {
+                    double displayRate = ch1Status.Dot == 1 ? rampRaw / 10.0 : rampRaw;
+                    LogInfo($"TM4 하드웨어 램프 설정: {displayRate}°C/h (raw: {rampRaw}, CH1 모니터링 모드)");
+                }
                 else
-                    LogWarning("CH1 램프 설정 실패 — 램프 없이 계속 진행");
+                {
+                    LogWarning("TM4 하드웨어 램프 설정 실패 — TM4 기존 램프 설정으로 진행");
+                }
+            }
+            else if (IsBakeoutMode && monitorCh != 1)
+            {
+                // PI 피드백 모드에서는 하드웨어 램프 비활성화 (PI가 SV를 덮어쓰므로)
+                _mainForm._tempController.SetRampConfiguration(1, 0, 0, TempController.RampTimeUnit.Hour);
+                LogInfo("TM4 하드웨어 램프 OFF (소프트웨어 램프 사용)");
             }
 
             short ch1SetValue = ch1Status.Dot == 1
@@ -1224,19 +1263,23 @@ namespace VacX_OutSense.Core.AutoRun
                 }
             }
 
-            // ★ [Fix#8] PI 제어 시작 전 하드웨어 램프 비활성화 — PI가 SV를 직접 제어하므로 램프 지연 제거
-            if (IsBakeoutMode && _mainForm._tempController?.IsConnected == true)
-            {
-                bool rampOff = await _mainForm._tempController.SetRampConfigurationAsync(
-                    1, 0, 0, TempController.RampTimeUnit.Hour);
-                if (rampOff)
-                    LogInfo("PI 제어 시작 — CH1 하드웨어 램프 비활성화 (rampUp=0, rampDown=0)");
-                else
-                    LogWarning("CH1 램프 비활성화 실패 — PI 응답 지연 가능");
-            }
+            // ★ 소프트웨어 램프: 샘플 온도 상승률을 BakeoutRampRate 이내로 제어
+            //   PI 출력을 직접 제한하는 대신, 램프 기준선(rampedTarget)을 시간에 따라 올림
+            //   rampedTarget = 초기 샘플온도 + (경과시간 × 램프속도)
+            //   PI의 목표를 rampedTarget으로 치환 → 샘플이 램프 속도 이상 올라가지 않음
+            double rampRatePerSec = IsBakeoutMode && _config.BakeoutRampRate > 0
+                ? _config.BakeoutRampRate / 3600.0
+                : double.MaxValue;
+            if (IsBakeoutMode && _config.BakeoutRampRate > 0)
+                LogInfo($"소프트웨어 램프: {_config.BakeoutRampRate:F0}°C/h ({rampRatePerSec:F4}°C/s), 초기 샘플: {initialMonitorTemp:F1}°C");
+
+            // ★ CH1 자기참조 감지: 모니터 채널이 CH1이면 PI 비활성화 (TM4 자체 PID 사용)
+            bool usePIFeedback = IsBakeoutMode && monitorCh != 1;
+            if (IsBakeoutMode && monitorCh == 1)
+                LogInfo("모니터 채널 = CH1 → PI 피드백 비활성화 (TM4 내장 PID로 직접 제어)");
 
             // ★ [Fix#4] 샘플이 이미 목표 근처일 때 초기 적분 추정
-            if (IsBakeoutMode && initialMonitorTemp >= targetTemperature - _config.TemperatureStabilityTolerance * 2)
+            if (usePIFeedback && initialMonitorTemp >= targetTemperature - _config.TemperatureStabilityTolerance * 2)
             {
                 var ch1StatusInit = _mainForm._tempController.Status.ChannelStatus[0];
                 double ch1PVInit = ch1StatusInit.Dot == 1
@@ -1353,10 +1396,19 @@ namespace VacX_OutSense.Core.AutoRun
                     LogWarning($"승온 중 압력 상승: {measurements.CurrentPressure:E2} Torr (상한: {_config.MaxPressureDuringExperiment:E2})");
                 }
 
-                // ── 베이크아웃 PI 피드백 제어 ──
-                if (IsBakeoutMode && _mainForm._tempController?.IsConnected == true)
+                // ── 베이크아웃 PI 피드백 제어 (monitorCh ≠ 1일 때만) ──
+                if (usePIFeedback && _mainForm._tempController?.IsConnected == true)
                 {
-                    double error = targetTemperature - monitorTemp;
+                    // ★ 램프 기준선: 시간에 따라 목표를 점진적으로 올림
+                    //   rampedTarget = 초기 샘플온도 + (경과시간 × 램프속도)
+                    //   PI는 rampedTarget을 추종 → 샘플 상승률이 자연스럽게 제한됨
+                    //   PI 출력(CH1 SV)은 자유롭게 움직일 수 있어 열 전달 병목에도 빠르게 대응
+                    double elapsedSec = (DateTime.Now - waitStartTime).TotalSeconds;
+                    double rampedTarget = rampRatePerSec < double.MaxValue
+                        ? Math.Min(initialMonitorTemp + rampRatePerSec * elapsedSec, targetTemperature)
+                        : targetTemperature;
+
+                    double error = rampedTarget - monitorTemp;
 
                     // ★ [#3 해결] 샘플 변화율 기반 적분 제한
                     //   샘플이 상승 중이면 적분 축적 속도를 줄여 과축적 방지
@@ -1376,8 +1428,8 @@ namespace VacX_OutSense.Core.AutoRun
                         integralTerm += error * Ki_norm * 3; // 오버슈트 시 3배속 감소 (0 리셋 아님)
                     integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
 
-                    double newCh1Setpoint = targetTemperature + error * Kp + integralTerm;
-                    newCh1Setpoint = Math.Max(targetTemperature * 0.5,
+                    double newCh1Setpoint = rampedTarget + error * Kp + integralTerm;
+                    newCh1Setpoint = Math.Max(rampedTarget * 0.8,
                         Math.Min(newCh1Setpoint, effectiveMaxTemp));
 
                     // ★ [#1] CH1 상한 포화 + 샘플 정체 감지
@@ -1429,7 +1481,7 @@ namespace VacX_OutSense.Core.AutoRun
                         bool setOk = _mainForm._tempController.SetTemperature(1, rawValue);
                         if (setOk)
                         {
-                            LogInfo($"피드백: CH1 {lastCh1Setpoint:F1} → {newCh1Setpoint:F1}°C (P:{error * Kp:F1} I:{integralTerm:F1} 샘플:{monitorTemp:F1}°C)");
+                            LogInfo($"피드백: CH1 {lastCh1Setpoint:F1} → {newCh1Setpoint:F1}°C (램프목표:{rampedTarget:F1} P:{error * Kp:F1} I:{integralTerm:F1} 샘플:{monitorTemp:F1}°C)");
                             lastCh1Setpoint = newCh1Setpoint;
                         }
                         else
@@ -1443,7 +1495,7 @@ namespace VacX_OutSense.Core.AutoRun
                 }
 
                 // ★ [Fix#10] PI 피드백이 rateOfChange를 사용한 후에 갱신
-                if (IsBakeoutMode)
+                if (usePIFeedback)
                     prevMonitorTemp = monitorTemp;
 
                 var waitElapsed = DateTime.Now - waitStartTime;
@@ -1584,8 +1636,8 @@ namespace VacX_OutSense.Core.AutoRun
                     LogWarning($"압력 상승 감지: {measurements.CurrentPressure:E2} Torr");
                 }
 
-                // ── 베이크아웃 홀드 중 PI 피드백: 샘플 온도 능동 유지 ──
-                if (IsBakeoutMode && _mainForm._tempController?.IsConnected == true)
+                // ── 베이크아웃 홀드 중 PI 피드백: 샘플 온도 능동 유지 (monitorCh ≠ 1) ──
+                if (usePIFeedback && _mainForm._tempController?.IsConnected == true)
                 {
                     double holdError = targetTemperature - monitorTempNow;
 
@@ -1598,7 +1650,7 @@ namespace VacX_OutSense.Core.AutoRun
                     integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
 
                     double newCh1 = targetTemperature + holdError * Kp + integralTerm;
-                    newCh1 = Math.Max(targetTemperature * 0.5,
+                    newCh1 = Math.Max(targetTemperature * 0.8,
                         Math.Min(newCh1, effectiveMaxTemp));
 
                     // ★ [Fix#2] 유의미한 변경만 전송 + 반환값 검증
@@ -1932,32 +1984,52 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// 비상 종료 시퀀스
         /// </summary>
-        private async Task EmergencyShutdownAsync()
+        private async Task EmergencyShutdownAsync(int failedStep = 9)
         {
             try
             {
-                LogWarning("비상 종료 시퀀스 실행");
+                LogWarning($"비상 종료 시퀀스 실행 (실패 단계: {failedStep})");
 
-                // 칠러 PID 정지
-                StopChillerPID();
+                // 칠러 PID 정지 (단계 7 이후에만 — 히터 시작 후 PID가 활성화됨)
+                if (failedStep >= 7)
+                {
+                    StopChillerPID();
+                }
 
-                // 히터 CH1 즉시 종료
-                if (_mainForm._tempController?.IsConnected == true)
+                // 히터 CH1 즉시 종료 (단계 7 이후에만 — AutoRun이 히터를 시작한 경우)
+                if (failedStep >= 7 && _mainForm._tempController?.IsConnected == true)
                 {
                     _mainForm._tempController.Stop(1);
+                    LogWarning("히터 CH1 비상 정지");
                 }
 
-                // 이온게이지 HV OFF
-                if (_mainForm._ioModule?.IsConnected == true)
+                // 이온게이지 HV OFF (단계 5 이후에만)
+                if (failedStep >= 5 && _mainForm._ioModule?.IsConnected == true)
                 {
                     await _mainForm._ioModule.ControlIonGaugeHVAsync(false);
-
-                    // 게이트밸브 닫기 (챔버 보호)
-                    await _mainForm._ioModule.ControlGateValveAsync(false);
+                    LogWarning("이온게이지 HV OFF");
                 }
 
-                // 터보펌프 정지
-                _mainForm._turboPump?.Stop();
+                // 게이트밸브 닫기 (단계 2 이후에만 — AutoRun이 밸브를 열었을 때)
+                if (failedStep >= 2 && _mainForm._ioModule?.IsConnected == true)
+                {
+                    await _mainForm._ioModule.ControlGateValveAsync(false);
+                    LogWarning("게이트밸브 비상 닫기");
+                }
+
+                // 터보펌프 정지 (단계 4 이후에만 — AutoRun이 터보펌프를 시작한 경우)
+                if (failedStep >= 4)
+                {
+                    _mainForm._turboPump?.Stop();
+                    LogWarning("터보펌프 비상 정지");
+                }
+
+                // 드라이펌프 정지 (단계 3 이후에만 — AutoRun이 드라이펌프를 시작한 경우)
+                if (failedStep >= 3)
+                {
+                    _mainForm._dryPump?.Stop();
+                    LogWarning("드라이펌프 비상 정지");
+                }
 
                 LogWarning("비상 종료 완료");
             }

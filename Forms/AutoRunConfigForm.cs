@@ -71,7 +71,7 @@ namespace VacX_OutSense.Forms
             nudBakeoutHoldHours.Value = _config.BakeoutHoldTimeMinutes / 60;
             nudBakeoutHoldMinutes.Value = _config.BakeoutHoldTimeMinutes % 60;
             cmbBakeoutEndAction.SelectedIndex = (int)_config.BakeoutEndAction;
-            cmbBakeoutMonitorChannel.SelectedIndex = Math.Max(0, _config.BakeoutMonitorChannel - 2); // CH2=0, CH3=1, CH4=2
+            cmbBakeoutMonitorChannel.SelectedIndex = Math.Max(0, _config.BakeoutMonitorChannel - 1); // CH1=0, CH2=1, CH3=2, CH4=3, CH5=4
             txtBakeoutHeaterMax.Text = _config.BakeoutHeaterMaxTemperature.ToString("F1");
 
             // 실험 유형에 따라 컨트롤 표시/숨김
@@ -125,7 +125,7 @@ namespace VacX_OutSense.Forms
                 _config.BakeoutRampRate = double.Parse(txtBakeoutRampRate.Text);
                 _config.BakeoutHoldTimeMinutes = (int)nudBakeoutHoldHours.Value * 60 + (int)nudBakeoutHoldMinutes.Value;
                 _config.BakeoutEndAction = (BakeoutEndAction)cmbBakeoutEndAction.SelectedIndex;
-                _config.BakeoutMonitorChannel = cmbBakeoutMonitorChannel.SelectedIndex + 2; // 0→CH2, 1→CH3, 2→CH4
+                _config.BakeoutMonitorChannel = cmbBakeoutMonitorChannel.SelectedIndex + 1; // 0→CH1, 1→CH2, 2→CH3, 3→CH4, 4→CH5
                 _config.BakeoutHeaterMaxTemperature = double.Parse(txtBakeoutHeaterMax.Text);
             }
             catch (Exception ex)

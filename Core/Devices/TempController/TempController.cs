@@ -43,7 +43,11 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         // 보유 레지스터
         private const ushort REG_HOLD_CH1_SV = 0x0000;
+        private const ushort REG_HOLD_CH1_SVH = 0x009B;  // CH1 SV High Limit (400156)
+        private const ushort REG_HOLD_CH1_MVH = 0x0072;  // CH1 MV High Limit (400115)
         private const ushort REG_HOLD_CH2_SV = 0x03E8;
+        private const ushort REG_HOLD_CH2_SVH = 0x0483;  // CH2 SV High Limit (0x009B + 0x03E8)
+        private const ushort REG_HOLD_CH2_MVH = 0x045A;  // CH2 MV High Limit (0x0072 + 0x03E8)
 
         // Ramp 관련 레지스터 주소
         private const ushort REG_HOLD_CH1_RAMP_UP = 0x0073;
@@ -90,7 +94,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         private bool _isUpdatingStatus = false;
         private readonly object _commandLock = new object();
 
-        private const int _maxTemp = 1500;
+        private int _maxTemp = 4000;
 
         // 확장 모듈 관련 필드
         private readonly bool _hasExpansion = false;
@@ -153,7 +157,16 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// 최대 온도 제한값 (raw 레지스터 값)
         /// Dot=0: 그대로 °C, Dot=1: /10.0 하여 °C 변환
         /// </summary>
-        public int MaxTemperatureRaw => _maxTemp;
+        public int MaxTemperatureRaw
+        {
+            get => _maxTemp;
+            set
+            {
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(value), "최대 온도는 0 이상이어야 합니다.");
+                _maxTemp = value;
+            }
+        }
 
         #endregion
 
@@ -625,6 +638,126 @@ namespace VacX_OutSense.Core.Devices.TempController
             finally
             {
                 // ★ 메인 모듈 주소로 복원
+                _deviceAddress = savedAddress;
+            }
+        }
+
+        /// <summary>
+        /// 지정된 채널의 SV 상한값(SVH)을 읽어옵니다.
+        /// </summary>
+        public int ReadSVHighLimit(int channelNumber)
+        {
+            EnsureConnected();
+            int savedAddress = _deviceAddress;
+            try
+            {
+                _deviceAddress = _mainModuleAddress;
+                ushort regAddress = channelNumber == 1 ? REG_HOLD_CH1_SVH : REG_HOLD_CH2_SVH;
+                ushort[] result = ReadHoldingRegisters(regAddress, 1);
+                if (result != null && result.Length > 0)
+                    return (short)result[0];
+                return -1;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"채널 {channelNumber} SVH 읽기 실패: {ex.Message}");
+                return -1;
+            }
+            finally
+            {
+                _deviceAddress = savedAddress;
+            }
+        }
+
+        /// <summary>
+        /// 지정된 채널의 SV 상한값(SVH)을 설정합니다.
+        /// </summary>
+        public bool WriteSVHighLimit(int channelNumber, short value)
+        {
+            EnsureConnected();
+            int savedAddress = _deviceAddress;
+            try
+            {
+                _deviceAddress = _mainModuleAddress;
+                ushort regAddress = channelNumber == 1 ? REG_HOLD_CH1_SVH : REG_HOLD_CH2_SVH;
+                bool result = WriteSingleRegister(regAddress, (ushort)value);
+                if (result)
+                {
+                    var chStatus = _status.ChannelStatus[channelNumber - 1];
+                    string displayValue = chStatus.Dot == 1 ? $"{value / 10.0:F1}" : $"{value}";
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"채널 {channelNumber} SVH 설정: {displayValue}{chStatus.TemperatureUnit}",
+                        DeviceStatusCode.Ready));
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"채널 {channelNumber} SVH 설정 실패: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                _deviceAddress = savedAddress;
+            }
+        }
+
+        /// <summary>
+        /// 지정된 채널의 MV 상한값(MVH)을 읽어옵니다.
+        /// </summary>
+        public int ReadMVHighLimit(int channelNumber)
+        {
+            EnsureConnected();
+            int savedAddress = _deviceAddress;
+            try
+            {
+                _deviceAddress = _mainModuleAddress;
+                ushort regAddress = channelNumber == 1 ? REG_HOLD_CH1_MVH : REG_HOLD_CH2_MVH;
+                ushort[] result = ReadHoldingRegisters(regAddress, 1);
+                if (result != null && result.Length > 0)
+                    return (short)result[0];
+                return -1;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"채널 {channelNumber} MVH 읽기 실패: {ex.Message}");
+                return -1;
+            }
+            finally
+            {
+                _deviceAddress = savedAddress;
+            }
+        }
+
+        /// <summary>
+        /// 지정된 채널의 MV 상한값(MVH)을 설정합니다.
+        /// </summary>
+        public bool WriteMVHighLimit(int channelNumber, short value)
+        {
+            EnsureConnected();
+            int savedAddress = _deviceAddress;
+            try
+            {
+                _deviceAddress = _mainModuleAddress;
+                ushort regAddress = channelNumber == 1 ? REG_HOLD_CH1_MVH : REG_HOLD_CH2_MVH;
+                bool result = WriteSingleRegister(regAddress, (ushort)value);
+                if (result)
+                {
+                    var chStatus = _status.ChannelStatus[channelNumber - 1];
+                    string displayValue = chStatus.Dot == 1 ? $"{value / 10.0:F1}" : $"{value}";
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        $"채널 {channelNumber} MVH 설정: {displayValue}%",
+                        DeviceStatusCode.Ready));
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"채널 {channelNumber} MVH 설정 실패: {ex.Message}");
+                return false;
+            }
+            finally
+            {
                 _deviceAddress = savedAddress;
             }
         }
