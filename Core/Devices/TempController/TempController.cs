@@ -643,6 +643,75 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
+        /// SendPriorityCommand를 사용하여 온도를 설정합니다.
+        /// 폴링 서비스와의 통신 경합을 완전히 우회합니다.
+        /// AutoRun PI 피드백 등 폴링과 동시에 실행되는 코드에서 사용하세요.
+        /// </summary>
+        public bool SetTemperaturePriority(int channelNumber, short setValue)
+        {
+            if (channelNumber < 1 || channelNumber > _numChannels)
+                return false;
+
+            if (setValue > _maxTemp || setValue < 0)
+                return false;
+
+            var ccm = _communicationManager as Communication.ChannelCommunicationManager;
+            if (ccm == null || !IsConnected)
+                return SetTemperature(channelNumber, setValue);
+
+            try
+            {
+                // 채널별 레지스터 주소 계산
+                ushort registerAddress;
+                if (channelNumber == 1)
+                    registerAddress = REG_HOLD_CH1_SV;
+                else if (channelNumber == 2)
+                    registerAddress = REG_HOLD_CH2_SV;
+                else
+                    registerAddress = (ushort)((channelNumber - 1) * 0x03E8);
+
+                // Modbus Write Single Register 프레임 직접 구성
+                byte slaveAddr = (byte)_mainModuleAddress;
+                byte[] request = new byte[8];
+                request[0] = slaveAddr;
+                request[1] = FUNC_WRITE_SINGLE_REG;
+                request[2] = (byte)(registerAddress >> 8);
+                request[3] = (byte)(registerAddress & 0xFF);
+                request[4] = (byte)((ushort)setValue >> 8);
+                request[5] = (byte)((ushort)setValue & 0xFF);
+                ushort crc = CalculateCRC(request, 0, 6);
+                request[6] = (byte)(crc & 0xFF);
+                request[7] = (byte)(crc >> 8);
+
+                // SendPriorityCommand로 직접 전송 (폴링 경로 완전 우회)
+                byte[] response = ccm.SendPriorityCommand(request, 8, 500);
+
+                if (response == null || response.Length < 8)
+                    return false;
+
+                if (response[0] != slaveAddr || response[1] != FUNC_WRITE_SINGLE_REG)
+                    return false;
+
+                if ((response[1] & 0x80) == 0x80)
+                    return false;
+
+                ushort respAddr = (ushort)((response[2] << 8) | response[3]);
+                if (respAddr != registerAddress)
+                    return false;
+
+                // 성공 — 내부 상태 업데이트
+                var chStatus = _status.ChannelStatus[channelNumber - 1];
+                chStatus.SetValue = setValue;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"채널 {channelNumber} 온도 설정(Priority) 실패: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 지정된 채널의 SV 상한값(SVH)을 읽어옵니다.
         /// </summary>
         public int ReadSVHighLimit(int channelNumber)

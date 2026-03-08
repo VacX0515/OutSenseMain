@@ -53,7 +53,7 @@ namespace VacX_OutSense.Utils
 
                 // 저장 경로: Data/Experiments/
                 string directory = Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory, "Data", "Experiments");
+                    PathSettings.Instance.DataPath, "Experiments");
 
                 if (!Directory.Exists(directory))
                     Directory.CreateDirectory(directory);

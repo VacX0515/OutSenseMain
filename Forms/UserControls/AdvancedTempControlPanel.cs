@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using VacX_OutSense.Core.Devices.TempController;
 using VacX_OutSense.Core.Control;
 using VacX_OutSense.Core.Extensions;
+using VacX_OutSense.Utils;
 using static VacX_OutSense.Core.Control.ExpertParameterSystem;
 
 namespace VacX_OutSense.Forms.UserControls
@@ -542,7 +543,7 @@ namespace VacX_OutSense.Forms.UserControls
 
         private void InitializeProfilesPath()
         {
-            _profilesPath = Path.Combine(Application.StartupPath, "Profiles");
+            _profilesPath = PathSettings.Instance.ProfilesPath;
             if (!Directory.Exists(_profilesPath))
             {
                 Directory.CreateDirectory(_profilesPath);

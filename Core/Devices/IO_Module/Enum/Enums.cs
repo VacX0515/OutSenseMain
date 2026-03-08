@@ -1,27 +1,6 @@
 ﻿namespace VacX_OutSense.Core.Devices.IO_Module.Enum
 {
     /// <summary>
-    /// 전류 입력 범위 열거형
-    /// </summary>
-    public enum CurrentRange
-    {
-        /// <summary>
-        /// 0-20mA 범위
-        /// </summary>
-        Range_0_20mA = 0,
-
-        /// <summary>
-        /// 4-20mA 범위
-        /// </summary>
-        Range_4_20mA = 1,
-
-        /// <summary>
-        /// ±20mA 범위
-        /// </summary>
-        Range_Neg20_Pos20mA = 2
-    }
-
-    /// <summary>
     /// 전압 입력 범위 열거형
     /// </summary>
     public enum VoltageRange

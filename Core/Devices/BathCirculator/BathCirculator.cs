@@ -515,6 +515,113 @@ namespace VacX_OutSense.Core.Devices.BathCirculator
 
         #endregion
 
+        #region 우선순위 통신 메서드 (폴링 독립)
+
+        /// <summary>
+        /// 폴링 서비스와 완전히 독립적으로 장치를 시작합니다.
+        /// SendPriorityCommand를 사용하여 _pendingRequest를 거치지 않고
+        /// 시리얼 포트 큐에 직접 최우선순위로 전송합니다.
+        /// </summary>
+        public bool StartPriority()
+        {
+            var ccm = _communicationManager as ChannelCommunicationManager;
+            if (ccm == null || !IsConnected) return Start();
+
+            try
+            {
+                // Step 1: REG_COMM_RS = 0 (리셋)
+                byte[] req0 = BuildModbusWriteFrame(REG_COMM_RS, 0);
+                ccm.SendPriorityCommand(req0, 8);
+                Thread.Sleep(100);
+
+                // Step 2: REG_COMM_RS = 1 (트리거)
+                byte[] req1 = BuildModbusWriteFrame(REG_COMM_RS, 1);
+                byte[] resp = ccm.SendPriorityCommand(req1, 8);
+
+                bool success = resp != null && resp.Length >= 8 && resp[0] == _slaveId;
+                if (success)
+                {
+                    Thread.Sleep(500);
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId, "장치 시작 명령 성공", DeviceStatusCode.Running));
+                }
+                return success;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"장치 시작 실패 (Priority): {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 폴링 서비스와 완전히 독립적으로 장치 상태를 확인합니다.
+        /// SendPriorityCommand를 사용하여 직접 통신합니다.
+        /// </summary>
+        public bool CheckStatusPriority()
+        {
+            var ccm = _communicationManager as ChannelCommunicationManager;
+            if (ccm == null || !IsConnected) return CheckStatus();
+
+            try
+            {
+                // REG_ERROR부터 3개 레지스터 읽기 (error, status, operation)
+                byte[] request = new byte[8];
+                request[0] = _slaveId;
+                request[1] = FUNCTION_READ_HOLDING_REGISTERS;
+                request[2] = (byte)((REG_ERROR >> 8) & 0xFF);
+                request[3] = (byte)(REG_ERROR & 0xFF);
+                request[4] = 0x00;
+                request[5] = 0x03;
+                ushort crc = CalculateCRC(request, 6);
+                request[6] = (byte)(crc & 0xFF);
+                request[7] = (byte)((crc >> 8) & 0xFF);
+
+                byte[] resp = ccm.SendPriorityCommand(request, 11);
+                if (resp != null && resp.Length >= 9 &&
+                    resp[0] == _slaveId && resp[1] == FUNCTION_READ_HOLDING_REGISTERS)
+                {
+                    int byteCount = resp[2];
+                    if (byteCount >= 6)
+                    {
+                        ushort[] registers = new ushort[3];
+                        for (int i = 0; i < 3; i++)
+                        {
+                            int offset = 3 + i * 2;
+                            registers[i] = (ushort)((resp[offset] << 8) | resp[offset + 1]);
+                        }
+                        UpdateStatusFromRegisters(registers);
+                        return true;
+                    }
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred($"상태 확인 실패 (Priority): {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Modbus 단일 레지스터 쓰기 프레임 생성
+        /// </summary>
+        private byte[] BuildModbusWriteFrame(ushort registerAddress, ushort value)
+        {
+            byte[] frame = new byte[8];
+            frame[0] = _slaveId;
+            frame[1] = FUNCTION_WRITE_SINGLE_REGISTER;
+            frame[2] = (byte)((registerAddress >> 8) & 0xFF);
+            frame[3] = (byte)(registerAddress & 0xFF);
+            frame[4] = (byte)((value >> 8) & 0xFF);
+            frame[5] = (byte)(value & 0xFF);
+            ushort crc = CalculateCRC(frame, 6);
+            frame[6] = (byte)(crc & 0xFF);
+            frame[7] = (byte)((crc >> 8) & 0xFF);
+            return frame;
+        }
+
+        #endregion
+
         #region MODBUS 통신 메서드
 
         /// <summary>

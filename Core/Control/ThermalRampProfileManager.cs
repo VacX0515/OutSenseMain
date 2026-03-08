@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using VacX_OutSense.Utils;
 
 namespace VacX_OutSense.Core.Control
 {
@@ -42,9 +43,8 @@ namespace VacX_OutSense.Core.Control
 
         public ThermalRampProfileManager()
         {
-            // 설정 파일 경로: 실행 파일 위치/Config/
-            string exePath = AppDomain.CurrentDomain.BaseDirectory;
-            _configPath = Path.Combine(exePath, "Config");
+            // 설정 파일 경로
+            _configPath = PathSettings.Instance.ConfigPath;
             _profilesFilePath = Path.Combine(_configPath, "ThermalRampProfiles.json");
 
             // 디렉토리 생성

@@ -53,8 +53,8 @@ namespace VacX_OutSense.Utils
 
         private AsyncLoggingService()
         {
-            _logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
-            _dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            _logDirectory = PathSettings.Instance.LogsPath;
+            _dataDirectory = PathSettings.Instance.DataPath;
 
             Directory.CreateDirectory(_logDirectory);
             Directory.CreateDirectory(_dataDirectory);

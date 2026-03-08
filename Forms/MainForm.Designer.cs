@@ -206,12 +206,12 @@ namespace VacX_OutSense
             menuStrip = new MenuStrip();
             menuFile = new ToolStripMenuItem();
             menuFileExit = new ToolStripMenuItem();
-            menuComm = new ToolStripMenuItem();
-            menuCommSettings = new ToolStripMenuItem();
             menuHelp = new ToolStripMenuItem();
+            menuHelpPatchNotes = new ToolStripMenuItem();
             menuHelpAbout = new ToolStripMenuItem();
             statusStrip = new StatusStrip();
             toolStripStatusConnection = new ToolStripStatusLabel();
+            toolStripStatusVersion = new ToolStripStatusLabel();
             gridViewMaster = new DataGridView();
             gridViewExpansion = new DataGridView();
             tableLayoutPanelMain.SuspendLayout();
@@ -272,7 +272,6 @@ namespace VacX_OutSense
             tabControlMain.Controls.Add(tabPage1);
             tabControlMain.Controls.Add(tabPage2);
             tabControlMain.Controls.Add(tabPageAutoRun);
-            tabControlMain.Controls.Add(tabPageThermalRamp);
             tabControlMain.Dock = DockStyle.Fill;
             tabControlMain.Location = new Point(3, 3);
             tabControlMain.Name = "tabControlMain";
@@ -2380,7 +2379,7 @@ namespace VacX_OutSense
             // menuStrip
             // 
             menuStrip.ImageScalingSize = new Size(24, 24);
-            menuStrip.Items.AddRange(new ToolStripItem[] { menuFile, menuComm, menuHelp });
+            menuStrip.Items.AddRange(new ToolStripItem[] { menuFile, menuHelp });
             menuStrip.Location = new Point(0, 0);
             menuStrip.Name = "menuStrip";
             menuStrip.Size = new Size(1171, 24);
@@ -2399,27 +2398,20 @@ namespace VacX_OutSense
             menuFileExit.Size = new Size(113, 22);
             menuFileExit.Text = "종료(&X)";
             menuFileExit.Click += menuFileExit_Click;
-            // 
-            // menuComm
-            // 
-            menuComm.DropDownItems.AddRange(new ToolStripItem[] { menuCommSettings });
-            menuComm.Name = "menuComm";
-            menuComm.Size = new Size(59, 20);
-            menuComm.Text = "통신(&C)";
-            // 
-            // menuCommSettings
-            // 
-            menuCommSettings.Name = "menuCommSettings";
-            menuCommSettings.Size = new Size(141, 22);
-            menuCommSettings.Text = "통신 설정(&S)";
-            menuCommSettings.Click += MenuCommSettings_Click;
-            // 
+            //
             // menuHelp
             // 
-            menuHelp.DropDownItems.AddRange(new ToolStripItem[] { menuHelpAbout });
+            menuHelp.DropDownItems.AddRange(new ToolStripItem[] { menuHelpPatchNotes, menuHelpAbout });
             menuHelp.Name = "menuHelp";
             menuHelp.Size = new Size(72, 20);
             menuHelp.Text = "도움말(&H)";
+            //
+            // menuHelpPatchNotes
+            //
+            menuHelpPatchNotes.Name = "menuHelpPatchNotes";
+            menuHelpPatchNotes.Size = new Size(150, 22);
+            menuHelpPatchNotes.Text = "패치 노트(&P)";
+            menuHelpPatchNotes.Click += MenuHelpPatchNotes_Click;
             // 
             // menuHelpAbout
             // 
@@ -2431,7 +2423,7 @@ namespace VacX_OutSense
             // statusStrip
             // 
             statusStrip.ImageScalingSize = new Size(24, 24);
-            statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusConnection });
+            statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusConnection, toolStripStatusVersion });
             statusStrip.Location = new Point(0, 987);
             statusStrip.Name = "statusStrip";
             statusStrip.Size = new Size(1171, 22);
@@ -2442,7 +2434,14 @@ namespace VacX_OutSense
             toolStripStatusConnection.Name = "toolStripStatusConnection";
             toolStripStatusConnection.Size = new Size(31, 17);
             toolStripStatusConnection.Text = "준비";
-            // 
+            //
+            // toolStripStatusVersion
+            //
+            toolStripStatusVersion.Name = "toolStripStatusVersion";
+            toolStripStatusVersion.Alignment = ToolStripItemAlignment.Right;
+            toolStripStatusVersion.Size = new Size(80, 17);
+            toolStripStatusVersion.Text = "v" + Utils.AppVersion.Version;
+            //
             // gridViewMaster
             // 
             gridViewMaster.AllowUserToAddRows = false;
@@ -2551,11 +2550,11 @@ namespace VacX_OutSense
         private MenuStrip menuStrip;
         private ToolStripMenuItem menuFile;
         private ToolStripMenuItem menuFileExit;
-        private ToolStripMenuItem menuComm;
-        private ToolStripMenuItem menuCommSettings;
         private ToolStripMenuItem menuHelp;
+        private ToolStripMenuItem menuHelpPatchNotes;
         private ToolStripMenuItem menuHelpAbout;
         private StatusStrip statusStrip;
+        private ToolStripStatusLabel toolStripStatusVersion;
 
         #endregion
 

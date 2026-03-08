@@ -1,0 +1,67 @@
+namespace VacX_OutSense.Utils
+{
+    /// <summary>
+    /// 소프트웨어 버전 및 패치 노트 관리
+    /// </summary>
+    public static class AppVersion
+    {
+        public const string Version = "2.1.0";
+        public const string BuildDate = "2026-03-06";
+        public const string AppTitle = "VacX OutSense";
+
+        public static string FullTitle => $"{AppTitle} v{Version}";
+
+        /// <summary>
+        /// 패치 노트 (최신 순)
+        /// </summary>
+        public static readonly string[] PatchNotes = new[]
+        {
+            "v2.1.0 (2026-03-06)",
+            "─────────────────────────────────",
+            "[신규] AutoRun 실시간 온도/압력 차트 추가 (ScottPlot)",
+            "[신규] 압력 인터락 지속 시간 설정 (PressureInterlockDurationSeconds)",
+            "[신규] Outgassing 모드 TM4 램프 설정 적용 (HeaterRampUpRate)",
+            "[개선] 비상 정지 시 터보펌프 감속 대기 후 안전 순서 준수",
+            "[개선] Outgassing 모드 센서 에러/이상값 감지 추가",
+            "[개선] Outgassing 모드 과압 시 CH1 SV 자동 감소/복원",
+            "[개선] Outgassing 모드 하드웨어 최대 온도 사전 검증",
+            "[개선] Outgassing 모드 승온 타임아웃 동적 계산",
+            "[개선] Outgassing 홀드 루프 5초 간격으로 단축 (기존 60초)",
+            "[개선] Outgassing 홀드 CH1 무응답 감지 및 자동 중단",
+            "[수정] PI 감속 구간 적분 강제 클램핑 → 증가율 감속으로 변경 (Fix#14)",
+            "[수정] 차트 시간축 24시간 형식 적용 (AM/PM 깨짐 수정)",
+            "[수정] 온도 차트에 목표 온도 기준선 표시",
+            "",
+            "v2.0.0 (2026-02-27)",
+            "─────────────────────────────────",
+            "[신규] 설정 가능한 인터락 시스템 구현",
+            "[신규] 온도제어기 SVH/MVH 설정",
+            "[개선] 압력 표시 개선",
+            "[개선] 이온게이지 신호(pin6) DI3 적용",
+            "",
+            "v1.9.0 (2026-02-27)",
+            "─────────────────────────────────",
+            "[신규] Bakeout AutoRun 1차 구현",
+            "[신규] IO모듈 마스터 교체 (DIO)",
+            "",
+            "v1.8.0 (2026-02-20)",
+            "─────────────────────────────────",
+            "[신규] AutoRun 상태 감지 재개 기능",
+            "[신규] 실험 데이터 통합 로거",
+            "[신규] 시리얼 자동 수색 기능",
+            "[개선] 통신 아키텍처 전환",
+            "[수정] 칠러 실행 트리거 메서드 수정",
+            "",
+            "v1.7.0 (2026-02-10)",
+            "─────────────────────────────────",
+            "[신규] 온도 유지(Hold) 기능",
+            "[수정] NumericUpDown 범위 에러 수정",
+            "[개선] Ramp 제어 기능 개선",
+            "",
+            "v1.6.0 (2026-01-29)",
+            "─────────────────────────────────",
+            "[신규] Bakeout Ramp-Up 기능",
+            "[수정] PID 제어 출력 부호 수정",
+        };
+    }
+}

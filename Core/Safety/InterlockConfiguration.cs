@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
+using VacX_OutSense.Utils;
 
 namespace VacX_OutSense.Core.Safety
 {
@@ -26,6 +27,16 @@ namespace VacX_OutSense.Core.Safety
         /// 게이트밸브: 터보펌프 작동 시 닫기 차단
         /// </summary>
         public bool GateValveClose_BlockIfTurboRunning { get; set; } = true;
+
+        /// <summary>
+        /// 게이트밸브: ATM 압력 80 kPa 이상일 때만 열기 허용
+        /// </summary>
+        public bool GateValveOpen_RequireAtmPressure { get; set; } = true;
+
+        /// <summary>
+        /// 벤트밸브 열림 + ATM 압력 ≥ 90 kPa → 배기밸브 자동 열림 (과압 방지)
+        /// </summary>
+        public bool VentValve_AutoOpenExhaustAtHighPressure { get; set; } = true;
 
         #endregion
 
@@ -75,7 +86,7 @@ namespace VacX_OutSense.Core.Safety
         #region 이온게이지 인터락
 
         /// <summary>
-        /// 이온게이지 HV ON: 피라니 압력 ≤ 1E-3 Torr 필요
+        /// 이온게이지 HV ON: 피라니 압력 ≤ 7.5E-4 Torr 필요
         /// </summary>
         public bool IonGaugeHV_RequireLowPressure { get; set; } = true;
 
@@ -125,8 +136,8 @@ namespace VacX_OutSense.Core.Safety
 
         #region 메서드
 
-        private static readonly string DefaultPath =
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "InterlockConfig.xml");
+        private static string DefaultPath =>
+            Path.Combine(PathSettings.Instance.ConfigPath, "InterlockConfig.xml");
 
         public void SaveToFile(string filePath = null)
         {
@@ -176,6 +187,8 @@ namespace VacX_OutSense.Core.Safety
             VentValve_BlockIfTurboRunning = defaults.VentValve_BlockIfTurboRunning;
             ExhaustValve_BlockIfTurboRunning = defaults.ExhaustValve_BlockIfTurboRunning;
             GateValveClose_BlockIfTurboRunning = defaults.GateValveClose_BlockIfTurboRunning;
+            GateValveOpen_RequireAtmPressure = defaults.GateValveOpen_RequireAtmPressure;
+            VentValve_AutoOpenExhaustAtHighPressure = defaults.VentValve_AutoOpenExhaustAtHighPressure;
 
             DryPump_RequireGateValveOpen = defaults.DryPump_RequireGateValveOpen;
             DryPump_RequireVentExhaustClosed = defaults.DryPump_RequireVentExhaustClosed;

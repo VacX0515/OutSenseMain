@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Xml.Serialization;
 using VacX_OutSense.Core.Control;
 
@@ -31,6 +33,12 @@ namespace VacX_OutSense.Core.AutoRun
         /// 실험 중 최대 허용 압력 (Torr)
         /// </summary>
         public double MaxPressureDuringExperiment { get; set; } = 1E-4;
+
+        /// <summary>
+        /// 압력 인터락 지속 시간 (초) — 이 시간 이상 연속 초과 시 SV 감소/중단 동작
+        /// 0이면 기본값 사용 (SV감소: 15초, 중단: 30초)
+        /// </summary>
+        public int PressureInterlockDurationSeconds { get; set; } = 0;
 
         #endregion
 
@@ -115,6 +123,12 @@ namespace VacX_OutSense.Core.AutoRun
         public double CoolingTargetTemperature { get; set; } = 50.0;
 
         /// <summary>
+        /// 벤팅 시작 온도 (°C) — CH1이 이 온도 이하로 내려가야 벤트 밸브를 연다
+        /// (너무 뜨거운 상태에서 벤트하면 챔버 과열 위험)
+        /// </summary>
+        public double VentingStartTemperature { get; set; } = 125.0;
+
+        /// <summary>
         /// 벤트 후 배기 밸브 오픈 기준 압력 (kPa) — ATM 스위치 기준
         /// </summary>
         public double VentTargetPressure_kPa { get; set; } = 90.0;
@@ -188,14 +202,79 @@ namespace VacX_OutSense.Core.AutoRun
         public double BakeoutHeaterMaxTemperature { get; set; } = 150.0;
 
         /// <summary>
-        /// [Bakeout] 샘플 온도 모니터링 채널 (1~5) — 이 채널이 목표 온도에 도달하면 홀드 타이머 시작
+        /// [Bakeout] 승온 중 CH1-샘플 최대 허용 온도차 (°C)
+        /// CH1 SV가 샘플 온도 + 이 값을 초과하지 않도록 제한합니다.
+        /// 0이면 제한 없음 (절대 상한만 적용).
+        /// </summary>
+        public double BakeoutMaxDeltaT { get; set; } = 50.0;
+
+        /// <summary>
+        /// [Bakeout] 승온 타임아웃 (분) — 0이면 자동 계산 (램프 속도 기반 × 3 + 30분)
+        /// </summary>
+        public int BakeoutRiseTimeoutMinutes { get; set; } = 0;
+
+        /// <summary>
+        /// [Bakeout] 오버슈트 방지 감속 구간 (°C) — 목표 온도 이 값 전부터 적분항 감소 시작
+        /// 열 관성이 큰 시스템은 크게, 작은 시스템은 작게 설정. 0이면 감속 없음.
+        /// </summary>
+        public double BakeoutDecelerationZone { get; set; } = 10.0;
+
+        /// <summary>
+        /// [Bakeout] PI 피드백 주기 (초) — CH1 SV 변경 간격
+        /// </summary>
+        public double BakeoutFeedbackIntervalSec { get; set; } = 5.0;
+
+        /// <summary>
+        /// [Bakeout] 샘플 온도 모니터링 채널 (1~5) — 하위호환용 (단일 채널)
         /// </summary>
         public int BakeoutMonitorChannel { get; set; } = 2;
+
+        /// <summary>
+        /// [Bakeout] 다중 모니터 채널 선택 — 선택된 채널 중 MAX 온도로 제어
+        /// </summary>
+        public bool BakeoutMonitorCh1 { get; set; } = false;
+        public bool BakeoutMonitorCh2 { get; set; } = true;
+        public bool BakeoutMonitorCh3 { get; set; } = false;
+        public bool BakeoutMonitorCh4 { get; set; } = false;
+        public bool BakeoutMonitorCh5 { get; set; } = false;
 
         /// <summary>
         /// [Bakeout] 프로파일 이름
         /// </summary>
         public string BakeoutProfileName { get; set; } = "일반 시편";
+
+        #endregion
+
+        #region 다중 모니터 채널 헬퍼
+
+        /// <summary>
+        /// 선택된 모니터 채널 목록 반환.
+        /// 다중 채널이 설정되어 있으면 사용, 없으면 기존 BakeoutMonitorChannel 폴백.
+        /// </summary>
+        public List<int> GetBakeoutMonitorChannels()
+        {
+            var channels = new List<int>();
+            if (BakeoutMonitorCh1) channels.Add(1);
+            if (BakeoutMonitorCh2) channels.Add(2);
+            if (BakeoutMonitorCh3) channels.Add(3);
+            if (BakeoutMonitorCh4) channels.Add(4);
+            if (BakeoutMonitorCh5) channels.Add(5);
+
+            if (channels.Count == 0)
+                channels.Add(BakeoutMonitorChannel);
+
+            return channels;
+        }
+
+        /// <summary>
+        /// 모니터 채널 표시 텍스트 (예: "CH2", "CH2+3 MAX")
+        /// </summary>
+        public string GetBakeoutMonitorLabel()
+        {
+            var channels = GetBakeoutMonitorChannels();
+            if (channels.Count == 1) return $"CH{channels[0]}";
+            return $"CH{string.Join("+", channels)} MAX";
+        }
 
         #endregion
 
@@ -304,6 +383,7 @@ namespace VacX_OutSense.Core.AutoRun
             TargetPressureForIonGauge = defaultConfig.TargetPressureForIonGauge;
             TargetPressureForHeater = defaultConfig.TargetPressureForHeater;
             MaxPressureDuringExperiment = defaultConfig.MaxPressureDuringExperiment;
+            PressureInterlockDurationSeconds = defaultConfig.PressureInterlockDurationSeconds;
 
             // 온도 설정
             HeaterCh1SetTemperature = defaultConfig.HeaterCh1SetTemperature;
@@ -324,6 +404,7 @@ namespace VacX_OutSense.Core.AutoRun
             HeaterStartTimeout = defaultConfig.HeaterStartTimeout;
             ShutdownTimeout = defaultConfig.ShutdownTimeout;
             CoolingTargetTemperature = defaultConfig.CoolingTargetTemperature;
+            VentingStartTemperature = defaultConfig.VentingStartTemperature;
             VentTargetPressure_kPa = defaultConfig.VentTargetPressure_kPa;
 
             // 기타 설정
@@ -341,7 +422,16 @@ namespace VacX_OutSense.Core.AutoRun
             BakeoutHoldTimeMinutes = defaultConfig.BakeoutHoldTimeMinutes;
             BakeoutEndAction = defaultConfig.BakeoutEndAction;
             BakeoutHeaterMaxTemperature = defaultConfig.BakeoutHeaterMaxTemperature;
+            BakeoutMaxDeltaT = defaultConfig.BakeoutMaxDeltaT;
+            BakeoutRiseTimeoutMinutes = defaultConfig.BakeoutRiseTimeoutMinutes;
+            BakeoutDecelerationZone = defaultConfig.BakeoutDecelerationZone;
+            BakeoutFeedbackIntervalSec = defaultConfig.BakeoutFeedbackIntervalSec;
             BakeoutMonitorChannel = defaultConfig.BakeoutMonitorChannel;
+            BakeoutMonitorCh1 = defaultConfig.BakeoutMonitorCh1;
+            BakeoutMonitorCh2 = defaultConfig.BakeoutMonitorCh2;
+            BakeoutMonitorCh3 = defaultConfig.BakeoutMonitorCh3;
+            BakeoutMonitorCh4 = defaultConfig.BakeoutMonitorCh4;
+            BakeoutMonitorCh5 = defaultConfig.BakeoutMonitorCh5;
             BakeoutProfileName = defaultConfig.BakeoutProfileName;
         }
 

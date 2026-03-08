@@ -47,7 +47,7 @@ namespace VacX_OutSense.Utils
         private DataLoggerService()
         {
             // 데이터 디렉토리 설정
-            _dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            _dataDirectory = PathSettings.Instance.DataPath;
 
             // 데이터 디렉토리가 없으면 생성
             if (!Directory.Exists(_dataDirectory))

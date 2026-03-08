@@ -31,9 +31,16 @@ namespace VacX_OutSense.Core.Communication
         /// <summary>
         /// Write() 호출 시 요청 데이터를 임시 저장하는 버퍼.
         /// ReadAll() 호출 시 이 데이터가 SerialCommand의 Request로 사용됩니다.
-        /// 장치별로 인스턴스가 분리되므로 스레드 안전합니다.
         /// </summary>
         private byte[] _pendingRequest;
+
+        /// <summary>
+        /// Write→ReadAll 쌍의 원자성을 보장하는 세마포어.
+        /// Write()에서 획득, ReadAll()/Read()에서 해제.
+        /// 폴링 서비스와 UI/AutoRun이 동시에 같은 장치에 접근할 때
+        /// _pendingRequest 덮어쓰기를 방지합니다.
+        /// </summary>
+        private readonly SemaphoreSlim _commSemaphore = new SemaphoreSlim(1, 1);
 
         /// <summary>
         /// Modbus RTU 응답의 기본 예상 길이.
@@ -175,7 +182,11 @@ namespace VacX_OutSense.Core.Communication
             if (!IsConnected || buffer == null || count <= 0)
                 return false;
 
-            // 요청 데이터를 버퍼에 저장 (offset/count 반영)
+            // Write→ReadAll 쌍의 원자성 보장: 세마포어 획득
+            // 다른 스레드의 Write→ReadAll이 진행 중이면 완료까지 대기 (최대 5초)
+            if (!_commSemaphore.Wait(5000))
+                return false;
+
             _pendingRequest = new byte[count];
             Array.Copy(buffer, offset, _pendingRequest, 0, count);
             return true;
@@ -187,6 +198,9 @@ namespace VacX_OutSense.Core.Communication
         public bool Write(byte[] buffer)
         {
             if (!IsConnected || buffer == null || buffer.Length == 0)
+                return false;
+
+            if (!_commSemaphore.Wait(5000))
                 return false;
 
             _pendingRequest = (byte[])buffer.Clone();
@@ -208,10 +222,16 @@ namespace VacX_OutSense.Core.Communication
         public byte[] ReadAll()
         {
             if (!IsConnected)
+            {
+                TryReleaseSemaphore();
                 return null;
+            }
 
             if (_pendingRequest == null || _pendingRequest.Length == 0)
+            {
+                TryReleaseSemaphore();
                 return null;
+            }
 
             try
             {
@@ -233,6 +253,11 @@ namespace VacX_OutSense.Core.Communication
                 _pendingRequest = null;
                 return null;
             }
+            finally
+            {
+                // Write()에서 획득한 세마포어 해제
+                TryReleaseSemaphore();
+            }
         }
 
         /// <summary>
@@ -242,10 +267,16 @@ namespace VacX_OutSense.Core.Communication
         public byte[] Read(int count)
         {
             if (!IsConnected)
+            {
+                TryReleaseSemaphore();
                 return null;
+            }
 
             if (_pendingRequest == null || _pendingRequest.Length == 0)
+            {
+                TryReleaseSemaphore();
                 return null;
+            }
 
             try
             {
@@ -263,6 +294,10 @@ namespace VacX_OutSense.Core.Communication
             {
                 _pendingRequest = null;
                 return null;
+            }
+            finally
+            {
+                TryReleaseSemaphore();
             }
         }
 
@@ -340,6 +375,21 @@ namespace VacX_OutSense.Core.Communication
             command.Description = "Priority Command (Async)";
 
             return await _channel.SendAndReceiveAsync(command);
+        }
+
+        #endregion
+
+        #region 내부 유틸리티
+
+        /// <summary>
+        /// 세마포어를 안전하게 해제합니다.
+        /// Write() 없이 ReadAll()/Read()가 호출된 경우(세마포어 미획득)에도
+        /// SemaphoreFullException을 무시하여 안전하게 처리합니다.
+        /// </summary>
+        private void TryReleaseSemaphore()
+        {
+            try { _commSemaphore.Release(); }
+            catch (SemaphoreFullException) { /* Write() 없이 호출된 경우 — 무시 */ }
         }
 
         #endregion

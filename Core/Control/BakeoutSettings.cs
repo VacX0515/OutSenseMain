@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using VacX_OutSense.Utils;
 
 namespace VacX_OutSense.Core.Control
 {
@@ -60,8 +61,7 @@ namespace VacX_OutSense.Core.Control
 
         private static string GetSettingsPath()
         {
-            string exePath = AppDomain.CurrentDomain.BaseDirectory;
-            string configPath = Path.Combine(exePath, "Config");
+            string configPath = PathSettings.Instance.ConfigPath;
             
             if (!Directory.Exists(configPath))
             {

@@ -12,8 +12,10 @@ namespace VacX_OutSense.Forms
 
         // 밸브
         private CheckBox chkVV_TurboBlock;
+        private CheckBox chkVV_AutoExhaust;
         private CheckBox chkEV_TurboBlock;
         private CheckBox chkGV_TurboBlock;
+        private CheckBox chkGV_RequireAtm;
 
         // 드라이펌프
         private CheckBox chkDP_RequireGV;
@@ -70,8 +72,10 @@ namespace VacX_OutSense.Forms
             // ── 밸브 ──
             y = AddGroupLabel(panel, "밸브", y);
             chkVV_TurboBlock = AddCheckBox(panel, "벤트밸브: 터보펌프 작동 시 차단", ref y);
+            chkVV_AutoExhaust = AddCheckBox(panel, "벤트밸브: ATM ≥ 90 kPa 시 배기밸브 자동 열림", ref y);
             chkEV_TurboBlock = AddCheckBox(panel, "배기밸브: 터보펌프 작동 시 차단", ref y);
             chkGV_TurboBlock = AddCheckBox(panel, "게이트밸브: 터보펌프 작동 시 닫기 차단", ref y);
+            chkGV_RequireAtm = AddCheckBox(panel, "게이트밸브: ATM 압력 ≥ 80 kPa 시만 열기 허용", ref y);
             y += 8;
 
             // ── 드라이펌프 ──
@@ -91,7 +95,7 @@ namespace VacX_OutSense.Forms
 
             // ── 이온게이지 ──
             y = AddGroupLabel(panel, "이온게이지", y);
-            chkIG_RequireLowPressure = AddCheckBox(panel, "HV ON: 피라니 압력 ≤ 1E-3 Torr", ref y);
+            chkIG_RequireLowPressure = AddCheckBox(panel, "HV ON: 피라니 압력 ≤ 7.5E-4 Torr", ref y);
             y += 8;
 
             // ── 히터 ──
@@ -178,8 +182,10 @@ namespace VacX_OutSense.Forms
         private void LoadFromConfig()
         {
             chkVV_TurboBlock.Checked = _config.VentValve_BlockIfTurboRunning;
+            chkVV_AutoExhaust.Checked = _config.VentValve_AutoOpenExhaustAtHighPressure;
             chkEV_TurboBlock.Checked = _config.ExhaustValve_BlockIfTurboRunning;
             chkGV_TurboBlock.Checked = _config.GateValveClose_BlockIfTurboRunning;
+            chkGV_RequireAtm.Checked = _config.GateValveOpen_RequireAtmPressure;
 
             chkDP_RequireGV.Checked = _config.DryPump_RequireGateValveOpen;
             chkDP_RequireVVEVClosed.Checked = _config.DryPump_RequireVentExhaustClosed;
@@ -203,8 +209,10 @@ namespace VacX_OutSense.Forms
         private void SaveToConfig()
         {
             _config.VentValve_BlockIfTurboRunning = chkVV_TurboBlock.Checked;
+            _config.VentValve_AutoOpenExhaustAtHighPressure = chkVV_AutoExhaust.Checked;
             _config.ExhaustValve_BlockIfTurboRunning = chkEV_TurboBlock.Checked;
             _config.GateValveClose_BlockIfTurboRunning = chkGV_TurboBlock.Checked;
+            _config.GateValveOpen_RequireAtmPressure = chkGV_RequireAtm.Checked;
 
             _config.DryPump_RequireGateValveOpen = chkDP_RequireGV.Checked;
             _config.DryPump_RequireVentExhaustClosed = chkDP_RequireVVEVClosed.Checked;

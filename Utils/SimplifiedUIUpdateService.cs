@@ -224,24 +224,26 @@ namespace VacX_OutSense.Utils
             _mainForm.SetButtonEnabled("ventvalve", states.VentValveEnabled);
             _mainForm.SetButtonEnabled("exhaustvalve", states.ExhaustValveEnabled);
 
-            _mainForm.SetButtonEnabled("drypumpstart", states.DryPumpStartEnabled);
-            _mainForm.SetButtonEnabled("drypumpstop", states.DryPumpStopEnabled);
+            // 토글 버튼: Start OR Stop 중 하나라도 가능하면 Enabled
+            _mainForm.SetButtonEnabled("drypumpstart", states.DryPumpStartEnabled || states.DryPumpStopEnabled);
             _mainForm.SetButtonEnabled("drypumpstandby", states.DryPumpStandbyEnabled);
             _mainForm.SetButtonEnabled("drypumpnormal", states.DryPumpNormalEnabled);
 
-            _mainForm.SetButtonEnabled("turbopumpstart", states.TurboPumpStartEnabled);
-            _mainForm.SetButtonEnabled("turbopumpstop", states.TurboPumpStopEnabled);
+            _mainForm.SetButtonEnabled("turbopumpstart", states.TurboPumpStartEnabled || states.TurboPumpStopEnabled);
             _mainForm.SetButtonEnabled("turbopumpvent", states.TurboPumpVentEnabled);
             _mainForm.SetButtonEnabled("turbopumpreset", states.TurboPumpResetEnabled);
 
-            _mainForm.SetButtonEnabled("bathcirculatorstart", states.BathCirculatorStartEnabled);
-            _mainForm.SetButtonEnabled("bathcirculatorstop", states.BathCirculatorStopEnabled);
+            _mainForm.SetButtonEnabled("bathcirculatorstart", states.BathCirculatorStartEnabled || states.BathCirculatorStopEnabled);
 
-            // 온도컨트롤러 버튼 (5채널)
-            _mainForm.SetButtonEnabled("ch1start", states.TempControllerStartEnabled[0]);
-            _mainForm.SetButtonEnabled("ch1stop", states.TempControllerStopEnabled[0]);
+            _mainForm.SetButtonEnabled("ch1start", states.TempControllerStartEnabled[0] || states.TempControllerStopEnabled[0]);
             _mainForm.SetButtonEnabled("ch2start", states.TempControllerStartEnabled[1]);
             _mainForm.SetButtonEnabled("ch2stop", states.TempControllerStopEnabled[1]);
+
+            // 토글 버튼 외관 업데이트 (텍스트 + 색상)
+            _mainForm.UpdateToggleButtonAppearance("drypump", states.DryPumpStopEnabled);
+            _mainForm.UpdateToggleButtonAppearance("turbopump", states.TurboPumpStopEnabled);
+            _mainForm.UpdateToggleButtonAppearance("bathcirculator", states.BathCirculatorStopEnabled);
+            _mainForm.UpdateToggleButtonAppearance("ch1", states.TempControllerStopEnabled[0]);
 
             // 확장 채널은 버튼이 없으므로 (입력 전용) 별도 처리 불필요
             // 필요시 아래 주석 해제

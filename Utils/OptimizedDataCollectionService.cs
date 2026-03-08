@@ -293,7 +293,7 @@ namespace VacX_OutSense.Utils
                     }
                 }
 
-                // ★ AO 읽기 제거 (AXAX8080G 마스터에 AO 없음)
+                // DIO 마스터: AO 없음
             }
             catch (Exception ex)
             {
@@ -541,9 +541,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// IO 모듈 데이터 처리
-        /// ★ AO(AnalogOutputValues) → DO(DigitalOutputValues) 변경
-        /// ★ MasterCurrentValues → GateValvePosition(DI 기반) 변경
+        /// IO 모듈 데이터 처리 (DO/DI 기반)
         /// </summary>
         private void ProcessIOModuleData(UIDataSnapshot snapshot, AnalogInputValues aiData, DigitalOutputValues doData, DigitalInputValues diData = null)
         {
@@ -568,11 +566,11 @@ namespace VacX_OutSense.Utils
                     }
                     snapshot.AdditionalAITimestamp = aiData.Timestamp;
 
-                    // ★ 게이트 밸브 상태: DI 기반 리드 스위치 (기존 MasterCurrentValues → GateValvePosition)
+                    // 게이트 밸브 상태: DI 기반 리드 스위치
                     snapshot.GateValveStatus = _mainForm._ioModule?.GateValvePosition ?? "Unknown";
                 }
 
-                // ★ DO 기반으로 밸브/IG 상태 확인 (기존 AO → DO)
+                // DO 기반으로 밸브/IG 상태 확인
                 if (doData != null)
                 {
                     snapshot.VentValveStatus = doData.IsVentValveOn ? "Opened" : "Closed";
@@ -722,7 +720,7 @@ namespace VacX_OutSense.Utils
             try
             {
                 // 이온게이지 버튼 상태
-                snapshot.ButtonStates.IonGaugeEnabled = snapshot.PiraniPressure <= 1E-3;
+                snapshot.ButtonStates.IonGaugeEnabled = snapshot.PiraniPressure <= 7.5E-4;
 
                 // 드라이펌프 버튼 상태
                 if (_mainForm._dryPump?.Status != null)
@@ -800,7 +798,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// ★ 최신 DO 데이터 가져오기 (기존 GetLatestAOData → GetLatestDOData)
+        /// 최신 DO 데이터 가져오기
         /// </summary>
         public DigitalOutputValues GetLatestDOData()
         {
@@ -850,8 +848,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 게이트 밸브 상태 가져오기
-        /// ★ DI 기반 리드 스위치로 변경 (기존 MasterCurrentValues → GateValvePosition)
+        /// 게이트 밸브 상태 가져오기 (DI 기반 리드 스위치)
         /// </summary>
         public string GetGateValveStatus()
         {
@@ -859,8 +856,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 모든 밸브 상태 가져오기
-        /// ★ DO 기반으로 변경 (기존 AO → DO)
+        /// 모든 밸브 상태 가져오기 (DO 기반)
         /// </summary>
         public (bool ventOpen, bool exhaustOpen, bool ionGaugeHV) GetValveStates()
         {

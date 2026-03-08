@@ -287,42 +287,147 @@
             lblBakeoutMonitorChannel.AutoSize = true;
             lblBakeoutMonitorChannel.Location = new Point(20, 95);
             lblBakeoutMonitorChannel.Name = "lblBakeoutMonitorChannel";
-            lblBakeoutMonitorChannel.Size = new Size(155, 15);
+            lblBakeoutMonitorChannel.Size = new Size(120, 15);
             lblBakeoutMonitorChannel.TabIndex = 24;
-            lblBakeoutMonitorChannel.Text = "모니터 채널 (샘플 센서):";
+            lblBakeoutMonitorChannel.Text = "모니터 채널 (MAX):";
             lblBakeoutMonitorChannel.Visible = false;
             //
-            // cmbBakeoutMonitorChannel
+            // chkBakeoutMonitorCh1~5
             //
-            cmbBakeoutMonitorChannel = new ComboBox();
-            cmbBakeoutMonitorChannel.DropDownStyle = ComboBoxStyle.DropDownList;
-            cmbBakeoutMonitorChannel.FormattingEnabled = true;
-            cmbBakeoutMonitorChannel.Items.AddRange(new object[] { "CH1", "CH2", "CH3", "CH4", "CH5" });
-            cmbBakeoutMonitorChannel.Location = new Point(230, 92);
-            cmbBakeoutMonitorChannel.Name = "cmbBakeoutMonitorChannel";
-            cmbBakeoutMonitorChannel.Size = new Size(120, 23);
-            cmbBakeoutMonitorChannel.TabIndex = 25;
-            cmbBakeoutMonitorChannel.Visible = false;
+            chkBakeoutMonitorCh1 = new CheckBox();
+            chkBakeoutMonitorCh1.Text = "CH1";
+            chkBakeoutMonitorCh1.Location = new Point(150, 93);
+            chkBakeoutMonitorCh1.Size = new Size(52, 20);
+            chkBakeoutMonitorCh1.TabIndex = 25;
+            chkBakeoutMonitorCh1.Visible = false;
+
+            chkBakeoutMonitorCh2 = new CheckBox();
+            chkBakeoutMonitorCh2.Text = "CH2";
+            chkBakeoutMonitorCh2.Location = new Point(204, 93);
+            chkBakeoutMonitorCh2.Size = new Size(52, 20);
+            chkBakeoutMonitorCh2.TabIndex = 26;
+            chkBakeoutMonitorCh2.Visible = false;
+
+            chkBakeoutMonitorCh3 = new CheckBox();
+            chkBakeoutMonitorCh3.Text = "CH3";
+            chkBakeoutMonitorCh3.Location = new Point(258, 93);
+            chkBakeoutMonitorCh3.Size = new Size(52, 20);
+            chkBakeoutMonitorCh3.TabIndex = 27;
+            chkBakeoutMonitorCh3.Visible = false;
+
+            chkBakeoutMonitorCh4 = new CheckBox();
+            chkBakeoutMonitorCh4.Text = "CH4";
+            chkBakeoutMonitorCh4.Location = new Point(312, 93);
+            chkBakeoutMonitorCh4.Size = new Size(52, 20);
+            chkBakeoutMonitorCh4.TabIndex = 28;
+            chkBakeoutMonitorCh4.Visible = false;
+
+            chkBakeoutMonitorCh5 = new CheckBox();
+            chkBakeoutMonitorCh5.Text = "CH5";
+            chkBakeoutMonitorCh5.Location = new Point(366, 93);
+            chkBakeoutMonitorCh5.Size = new Size(52, 20);
+            chkBakeoutMonitorCh5.TabIndex = 29;
+            chkBakeoutMonitorCh5.Visible = false;
             //
             // lblBakeoutHeaterMax
             //
             lblBakeoutHeaterMax = new Label();
             lblBakeoutHeaterMax.AutoSize = true;
-            lblBakeoutHeaterMax.Location = new Point(20, 130);
+            lblBakeoutHeaterMax.Location = new Point(20, 123);
             lblBakeoutHeaterMax.Name = "lblBakeoutHeaterMax";
             lblBakeoutHeaterMax.Size = new Size(155, 15);
-            lblBakeoutHeaterMax.TabIndex = 26;
+            lblBakeoutHeaterMax.TabIndex = 30;
             lblBakeoutHeaterMax.Text = "CH1 안전 상한 (°C):";
             lblBakeoutHeaterMax.Visible = false;
             //
             // txtBakeoutHeaterMax
             //
             txtBakeoutHeaterMax = new TextBox();
-            txtBakeoutHeaterMax.Location = new Point(230, 127);
+            txtBakeoutHeaterMax.Location = new Point(230, 120);
             txtBakeoutHeaterMax.Name = "txtBakeoutHeaterMax";
             txtBakeoutHeaterMax.Size = new Size(120, 23);
-            txtBakeoutHeaterMax.TabIndex = 27;
+            txtBakeoutHeaterMax.TabIndex = 31;
             txtBakeoutHeaterMax.Visible = false;
+            //
+            // lblBakeoutMaxDeltaT
+            //
+            lblBakeoutMaxDeltaT = new Label();
+            lblBakeoutMaxDeltaT.AutoSize = true;
+            lblBakeoutMaxDeltaT.Location = new Point(20, 153);
+            lblBakeoutMaxDeltaT.Name = "lblBakeoutMaxDeltaT";
+            lblBakeoutMaxDeltaT.Size = new Size(200, 15);
+            lblBakeoutMaxDeltaT.TabIndex = 32;
+            lblBakeoutMaxDeltaT.Text = "CH1-샘플 최대 온도차 (°C):";
+            lblBakeoutMaxDeltaT.Visible = false;
+            //
+            // txtBakeoutMaxDeltaT
+            //
+            txtBakeoutMaxDeltaT = new TextBox();
+            txtBakeoutMaxDeltaT.Location = new Point(230, 150);
+            txtBakeoutMaxDeltaT.Name = "txtBakeoutMaxDeltaT";
+            txtBakeoutMaxDeltaT.Size = new Size(120, 23);
+            txtBakeoutMaxDeltaT.TabIndex = 33;
+            txtBakeoutMaxDeltaT.Visible = false;
+            //
+            // lblBakeoutRiseTimeout
+            //
+            lblBakeoutRiseTimeout = new Label();
+            lblBakeoutRiseTimeout.AutoSize = true;
+            lblBakeoutRiseTimeout.Location = new Point(20, 183);
+            lblBakeoutRiseTimeout.Name = "lblBakeoutRiseTimeout";
+            lblBakeoutRiseTimeout.Size = new Size(200, 15);
+            lblBakeoutRiseTimeout.TabIndex = 34;
+            lblBakeoutRiseTimeout.Text = "승온 타임아웃 (분, 0=자동):";
+            lblBakeoutRiseTimeout.Visible = false;
+            //
+            // txtBakeoutRiseTimeout
+            //
+            txtBakeoutRiseTimeout = new TextBox();
+            txtBakeoutRiseTimeout.Location = new Point(230, 180);
+            txtBakeoutRiseTimeout.Name = "txtBakeoutRiseTimeout";
+            txtBakeoutRiseTimeout.Size = new Size(120, 23);
+            txtBakeoutRiseTimeout.TabIndex = 35;
+            txtBakeoutRiseTimeout.Visible = false;
+            //
+            // lblBakeoutDecelZone
+            //
+            lblBakeoutDecelZone = new Label();
+            lblBakeoutDecelZone.AutoSize = true;
+            lblBakeoutDecelZone.Location = new Point(20, 213);
+            lblBakeoutDecelZone.Name = "lblBakeoutDecelZone";
+            lblBakeoutDecelZone.Size = new Size(200, 15);
+            lblBakeoutDecelZone.TabIndex = 36;
+            lblBakeoutDecelZone.Text = "감속 구간 (°C, 0=없음):";
+            lblBakeoutDecelZone.Visible = false;
+            //
+            // txtBakeoutDecelZone
+            //
+            txtBakeoutDecelZone = new TextBox();
+            txtBakeoutDecelZone.Location = new Point(230, 210);
+            txtBakeoutDecelZone.Name = "txtBakeoutDecelZone";
+            txtBakeoutDecelZone.Size = new Size(120, 23);
+            txtBakeoutDecelZone.TabIndex = 37;
+            txtBakeoutDecelZone.Visible = false;
+            //
+            // lblBakeoutFeedbackInterval
+            //
+            lblBakeoutFeedbackInterval = new Label();
+            lblBakeoutFeedbackInterval.AutoSize = true;
+            lblBakeoutFeedbackInterval.Location = new Point(20, 243);
+            lblBakeoutFeedbackInterval.Name = "lblBakeoutFeedbackInterval";
+            lblBakeoutFeedbackInterval.Size = new Size(200, 15);
+            lblBakeoutFeedbackInterval.TabIndex = 38;
+            lblBakeoutFeedbackInterval.Text = "PI 피드백 주기 (초):";
+            lblBakeoutFeedbackInterval.Visible = false;
+            //
+            // txtBakeoutFeedbackInterval
+            //
+            txtBakeoutFeedbackInterval = new TextBox();
+            txtBakeoutFeedbackInterval.Location = new Point(230, 240);
+            txtBakeoutFeedbackInterval.Name = "txtBakeoutFeedbackInterval";
+            txtBakeoutFeedbackInterval.Size = new Size(120, 23);
+            txtBakeoutFeedbackInterval.TabIndex = 39;
+            txtBakeoutFeedbackInterval.Visible = false;
             //
             // tabTemperature
             //
@@ -338,9 +443,21 @@
             tabTemperature.Controls.Add(txtBakeoutRampRate);
             tabTemperature.Controls.Add(lblBakeoutRampRate);
             tabTemperature.Controls.Add(lblBakeoutMonitorChannel);
-            tabTemperature.Controls.Add(cmbBakeoutMonitorChannel);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh1);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh2);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh3);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh4);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh5);
             tabTemperature.Controls.Add(lblBakeoutHeaterMax);
             tabTemperature.Controls.Add(txtBakeoutHeaterMax);
+            tabTemperature.Controls.Add(lblBakeoutMaxDeltaT);
+            tabTemperature.Controls.Add(txtBakeoutMaxDeltaT);
+            tabTemperature.Controls.Add(lblBakeoutRiseTimeout);
+            tabTemperature.Controls.Add(txtBakeoutRiseTimeout);
+            tabTemperature.Controls.Add(lblBakeoutDecelZone);
+            tabTemperature.Controls.Add(txtBakeoutDecelZone);
+            tabTemperature.Controls.Add(lblBakeoutFeedbackInterval);
+            tabTemperature.Controls.Add(txtBakeoutFeedbackInterval);
             tabTemperature.Controls.Add(lblShutdownTempHeader);
             tabTemperature.Controls.Add(txtCoolingTargetTemperature);
             tabTemperature.Controls.Add(lblCoolingTargetTemperature);
@@ -1004,9 +1121,21 @@
         private System.Windows.Forms.TextBox txtBakeoutRampRate;
         private System.Windows.Forms.Label lblBakeoutRampRate;
         private System.Windows.Forms.Label lblBakeoutMonitorChannel;
-        private System.Windows.Forms.ComboBox cmbBakeoutMonitorChannel;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh1;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh2;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh3;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh4;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh5;
         private System.Windows.Forms.Label lblBakeoutHeaterMax;
         private System.Windows.Forms.TextBox txtBakeoutHeaterMax;
+        private System.Windows.Forms.Label lblBakeoutMaxDeltaT;
+        private System.Windows.Forms.TextBox txtBakeoutMaxDeltaT;
+        private System.Windows.Forms.Label lblBakeoutRiseTimeout;
+        private System.Windows.Forms.TextBox txtBakeoutRiseTimeout;
+        private System.Windows.Forms.Label lblBakeoutDecelZone;
+        private System.Windows.Forms.TextBox txtBakeoutDecelZone;
+        private System.Windows.Forms.Label lblBakeoutFeedbackInterval;
+        private System.Windows.Forms.TextBox txtBakeoutFeedbackInterval;
 
         // 베이크아웃 시간 컨트롤
         private System.Windows.Forms.Label lblBakeoutHoldTime;

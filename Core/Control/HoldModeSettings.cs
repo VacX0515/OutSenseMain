@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
+using VacX_OutSense.Utils;
 
 namespace VacX_OutSense.Core.Control
 {
@@ -76,8 +77,8 @@ namespace VacX_OutSense.Core.Control
 
         #region 저장/로드
 
-        private static readonly string SettingsPath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "Config", "HoldModeSettings.xml");
+        private static string SettingsPath =>
+            Path.Combine(PathSettings.Instance.ConfigPath, "HoldModeSettings.xml");
 
         public void Save()
         {
