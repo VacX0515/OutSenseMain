@@ -113,7 +113,11 @@ namespace VacX_OutSense.Utils
                 var doData = GetLatestDOData();
                 if (doData != null && doData.IsIonGaugeHVOn && _mainForm._ionGauge != null)
                 {
-                    double ionPressure = _mainForm._ionGauge.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]);
+                    double igVoltage = aiData.ExpansionVoltageValues[2];
+                    var igCal = _mainForm._tempCalibrationConfig?.IonGauge;
+                    if (igCal != null) igVoltage = igCal.ApplyVoltageOffset(igVoltage);
+                    double ionPressure = _mainForm._ionGauge.ConvertVoltageToPressureInTorr(igVoltage);
+                    if (igCal != null) ionPressure = igCal.Apply(ionPressure);
                     if (ionPressure > 0)
                         return ionPressure;
                 }
@@ -506,11 +510,19 @@ namespace VacX_OutSense.Utils
             {
                 ProcessIOModuleData(snapshot, aiData, doData, diData);
             }
+            else
+            {
+                SetIOModuleDisconnectedDefaults(snapshot);
+            }
 
             // 드라이펌프 데이터
             if (_latestData.TryGetValue("DryPump", out var dpObj))
             {
                 ProcessDryPumpData(snapshot, dpObj);
+            }
+            else
+            {
+                SetPumpDisconnectedDefaults(snapshot.DryPump);
             }
 
             // 터보펌프 데이터
@@ -518,17 +530,29 @@ namespace VacX_OutSense.Utils
             {
                 ProcessTurboPumpData(snapshot, tpObj);
             }
+            else
+            {
+                SetPumpDisconnectedDefaults(snapshot.TurboPump);
+            }
 
             // 칠러 데이터
             if (_latestData.TryGetValue("BathCirculator", out var bathObj))
             {
                 ProcessBathCirculatorData(snapshot, bathObj);
             }
+            else
+            {
+                SetBathCirculatorDisconnectedDefaults(snapshot.BathCirculator);
+            }
 
             // 온도 컨트롤러 데이터
             if (_latestData.TryGetValue("TempController", out var tempObj))
             {
                 ProcessTempControllerData(snapshot, tempObj);
+            }
+            else
+            {
+                SetTempControllerDisconnectedDefaults(snapshot.TempController);
             }
 
             // 연결 상태 업데이트
@@ -552,7 +576,16 @@ namespace VacX_OutSense.Utils
                     // 압력 데이터 계산
                     snapshot.AtmPressure = _mainForm._atmSwitch?.ConvertVoltageToPressureInkPa(aiData.ExpansionVoltageValues[0]) ?? 0;
                     snapshot.PiraniPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
-                    snapshot.IonPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]) ?? 0;
+
+                    // 이온게이지: 캘리브레이션 적용
+                    double igVoltage = aiData.ExpansionVoltageValues[2];
+                    var igCal = _mainForm._tempCalibrationConfig?.IonGauge;
+                    if (igCal != null)
+                        igVoltage = igCal.ApplyVoltageOffset(igVoltage);
+                    double igPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(igVoltage) ?? 0;
+                    if (igCal != null)
+                        igPressure = igCal.Apply(igPressure);
+                    snapshot.IonPressure = igPressure;
                     snapshot.IonGaugeStatus = _mainForm._ionGauge?.DetermineGaugeState(aiData.ExpansionVoltageValues[2], diData?.IsIonGaugeStatusOn ?? false).ToString() ?? "N/A";
 
                     // ★ 수정: Float 값 우선 사용
@@ -595,6 +628,9 @@ namespace VacX_OutSense.Utils
                     snapshot.DryPump.Speed = $"{status.MotorFrequency:F1} Hz";
                     snapshot.DryPump.Current = $"{status.MotorCurrent:F2} A";
                     snapshot.DryPump.Temperature = $"{status.MotorTemperature:F1} °C";
+                    snapshot.DryPump.Power = $"{status.MotorPower:F1} W";
+                    snapshot.DryPump.RunningTime = $"{status.RunTimeHours:F0} h";
+                    snapshot.DryPump.IsServiceDue = status.IsServiceDue;
                     snapshot.DryPump.HasWarning = status.HasWarning;
                     snapshot.DryPump.HasError = status.HasFault;
 
@@ -621,6 +657,12 @@ namespace VacX_OutSense.Utils
                     snapshot.TurboPump.Speed = $"{status.CurrentSpeed} RPM";
                     snapshot.TurboPump.Current = $"{status.MotorCurrent:F2} A";
                     snapshot.TurboPump.Temperature = $"{status.MotorTemperature} °C";
+                    snapshot.TurboPump.BearingTemperature = $"{status.BearingTemperature} °C";
+                    snapshot.TurboPump.ElectronicsTemperature = $"{status.ElectronicsTemperature} °C";
+                    snapshot.TurboPump.RunningTime = $"{status.RunningTimeHours} h";
+                    snapshot.TurboPump.IsReady = status.IsReady;
+                    snapshot.TurboPump.IsRemoteActive = status.IsRemoteActive;
+                    snapshot.TurboPump.IsInNormalOperation = status.IsInNormalOperation;
                     snapshot.TurboPump.HasWarning = status.HasWarning;
                     snapshot.TurboPump.HasError = status.HasError;
 
@@ -693,6 +735,43 @@ namespace VacX_OutSense.Utils
             catch (Exception ex)
             {
                 LoggerService.Instance.LogError($"TempController 데이터 처리 오류: {ex.Message}", ex);
+            }
+        }
+
+        private void SetIOModuleDisconnectedDefaults(UIDataSnapshot snapshot)
+        {
+            snapshot.GateValveStatus = "연결 안 됨";
+            snapshot.VentValveStatus = "연결 안 됨";
+            snapshot.ExhaustValveStatus = "연결 안 됨";
+            snapshot.IonGaugeHVStatus = "연결 안 됨";
+            snapshot.IonGaugeStatus = "연결 안 됨";
+        }
+
+        private void SetPumpDisconnectedDefaults(PumpUIData pump)
+        {
+            pump.Status = "연결 안 됨";
+            pump.Speed = "-";
+            pump.Current = "-";
+            pump.Temperature = "-";
+        }
+
+        private void SetBathCirculatorDisconnectedDefaults(TemperatureUIData bath)
+        {
+            bath.Status = "연결 안 됨";
+            bath.CurrentTemp = "-";
+            bath.TargetTemp = "-";
+            bath.Time = "-";
+            bath.Mode = "-";
+        }
+
+        private void SetTempControllerDisconnectedDefaults(TemperatureControllerUIData tempCtrl)
+        {
+            for (int i = 0; i < tempCtrl.Channels.Length; i++)
+            {
+                tempCtrl.Channels[i].PresentValue = "-";
+                tempCtrl.Channels[i].SetValue = "-";
+                tempCtrl.Channels[i].Status = "연결 안 됨";
+                tempCtrl.Channels[i].HeatingMV = "-";
             }
         }
 

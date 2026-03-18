@@ -27,14 +27,20 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         private const byte USS_ADR = 0x00;           // RS-232의 경우 기본 주소는 0
 
         // USS PKE 액세스 타입 (매뉴얼 p.15)
+        // Query Designator (호스트 → 펌프)
         private const int PKE_NO_ACCESS = 0x0000;     // 액세스 없음
         private const int PKE_READ_16BIT = 0x1000;    // 16비트 파라미터 값 요청
-        private const int PKE_READ_32BIT = 0x2000;    // 32비트 파라미터 값 요청 (응답용)
         private const int PKE_WRITE_16BIT = 0x2000;   // 16비트 파라미터 값 쓰기
         private const int PKE_WRITE_32BIT = 0x3000;   // 32비트 파라미터 값 쓰기
         private const int PKE_READ_ARRAY = 0x6000;    // 배열 값 요청
         private const int PKE_WRITE_ARRAY_16BIT = 0x7000;  // 16비트 배열 값 쓰기
         private const int PKE_WRITE_ARRAY_32BIT = 0x8000;  // 32비트 배열 값 쓰기
+
+        // Reply Designator (펌프 → 호스트)
+        private const int PKE_REPLY_16BIT = 0x1000;   // 16비트 값 응답
+        private const int PKE_REPLY_32BIT = 0x2000;   // 32비트 값 응답
+        private const int PKE_REPLY_CANNOT_EXECUTE = 0x7000;  // 명령 실행 불가
+        private const int PKE_REPLY_NO_WRITE_PERM = 0x8000;   // 쓰기 권한 없음
 
         // 파라미터 번호 (매뉴얼 p.19-23)
         private const ushort PARAM_ACTUAL_FREQUENCY = 3;          // 현재 로터 주파수 (Hz)
@@ -356,8 +362,13 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             {
                 lock (_controlWordLock)
                 {
-                    _currentControlWord &= ~CTL_START_STOP;
+                    // [수정] Bit 0(START)과 Bit 6(ENABLE_SETPOINT)을 모두 해제
+                    // 정지 시 PZD2 설정값 활성화를 유지할 이유가 없으며,
+                    // 이후 Start() 호출 시 Parameter 24 기반으로 깨끗하게 시작
+                    _currentControlWord &= ~(CTL_START_STOP | CTL_ENABLE_SETPOINT);
                     _currentControlWord |= CTL_ENABLE_REMOTE;
+
+                    _currentSetpointFrequency = 0;
 
                     bool result = SendControlCommand(_currentControlWord, 0);
                     if (result)
@@ -636,6 +647,7 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
                         // 리셋 비트 해제
                         _currentControlWord = CTL_ENABLE_REMOTE;
+                        _currentSetpointFrequency = 0;
                         SendControlCommand(_currentControlWord, 0);
 
                         Thread.Sleep(100);
@@ -817,6 +829,8 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
         /// <summary>
         /// 펌프 상태를 업데이트합니다.
+        /// 매뉴얼 p.13의 응답 PZD 영역에서 주요 실시간 데이터를 추출하고,
+        /// PZD에 포함되지 않는 파라미터만 별도 요청합니다.
         /// </summary>
         /// <returns>상태 업데이트 성공 여부</returns>
         public bool UpdateStatus()
@@ -828,38 +842,35 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
             try
             {
-                // 상태 워드 읽기
-                ushort statusWord;
-                if (!ReadStatusWord(out statusWord))
+                // [수정] 텔레그램 1회로 PZD1~PZD6 전체를 가져옴
+                byte[] response;
+                if (!SendAndReceive(0, PKE_NO_ACCESS, 0, _currentControlWord,
+                                    _currentSetpointFrequency, out response))
                 {
                     return false;
                 }
+
+                // PZD1 (상태 워드): byte 11-12
+                ushort statusWord = (ushort)((response[11] << 8) | response[12]);
                 UpdateStatusFromStatusWord(statusWord);
 
-                // 현재 주파수 읽기
-                ushort frequency;
-                if (ReadParameter(PARAM_ACTUAL_FREQUENCY, out frequency))
-                {
-                    _currentStatus.CurrentSpeed = frequency;
-                }
+                // PZD2 (실제 로터 주파수 = P3): byte 13-14
+                _currentStatus.CurrentSpeed = (ushort)((response[13] << 8) | response[14]);
 
-                // 전류 읽기
-                ushort current;
-                if (ReadParameter(PARAM_ACTUAL_CURRENT, out current))
-                {
-                    _currentStatus.MotorCurrent = current / 10.0; // 0.1A 단위
-                }
+                // PZD3 (변환기 온도 = P11): byte 15-16
+                _currentStatus.ElectronicsTemperature = (ushort)((response[15] << 8) | response[16]);
 
-                // 온도 읽기
+                // PZD4 (모터 전류 = P5, 0.1A 단위): byte 17-18
+                _currentStatus.MotorCurrent = ((response[17] << 8) | response[18]) / 10.0;
+
+                // PZD5 (펌프 온도 = P127): byte 19-20
+                _currentStatus.MotorTemperature = (ushort)((response[19] << 8) | response[20]);
+
+                // PZD에 포함되지 않는 파라미터만 별도 요청
                 ushort temp;
-                if (ReadParameter(PARAM_MOTOR_TEMP, out temp))
-                    _currentStatus.MotorTemperature = temp;
-                if (ReadParameter(PARAM_CONVERTER_TEMP, out temp))
-                    _currentStatus.ElectronicsTemperature = temp;
                 if (ReadParameter(PARAM_BEARING_TEMP, out temp))
                     _currentStatus.BearingTemperature = temp;
 
-                // 오류/경고 코드 읽기
                 ushort code;
                 if (ReadParameter(PARAM_ERROR_CODE, out code))
                     _currentStatus.ErrorCode = code;
@@ -1012,24 +1023,50 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         #region USS 프로토콜 통신
 
         /// <summary>
+        /// 텔레그램을 전송하고 응답을 수신하는 공통 메서드입니다.
+        /// 모든 USS 통신은 이 메서드를 통해 수행됩니다.
+        /// </summary>
+        /// <param name="paramNumber">파라미터 번호</param>
+        /// <param name="pke">PKE 값 (액세스 타입 + 파라미터 번호)</param>
+        /// <param name="paramValue">파라미터 값 (PWE)</param>
+        /// <param name="controlWord">제어 워드 (PZD1 STW)</param>
+        /// <param name="setpointFrequency">속도 설정값 (PZD2 HSW)</param>
+        /// <param name="response">수신된 응답 바이트 배열</param>
+        /// <returns>통신 및 검증 성공 여부</returns>
+        private bool SendAndReceive(ushort paramNumber, int pke, ushort paramValue,
+                                     int controlWord, ushort setpointFrequency,
+                                     out byte[] response)
+        {
+            response = null;
+
+            byte[] telegram = CreateUssTelegram(paramNumber, pke, paramValue,
+                                                controlWord, setpointFrequency);
+
+            _communicationManager.DiscardInBuffer();
+            if (!_communicationManager.Write(telegram))
+            {
+                return false;
+            }
+
+            response = _communicationManager.ReadAll();
+            return ValidateResponse(response);
+        }
+
+        /// <summary>
         /// 상태 워드만 읽습니다 (PZD1 ZSW).
+        /// [수정] 현재 _currentSetpointFrequency를 PZD2로 전송하여
+        /// Bit 6 활성화 시 의도치 않은 0 Hz 설정을 방지합니다.
         /// </summary>
         private bool ReadStatusWord(out ushort statusWord)
         {
             statusWord = 0;
 
-            byte[] telegram = CreateUssTelegram(0, PKE_NO_ACCESS, 0, _currentControlWord, 0);
-
-            _communicationManager.DiscardInBuffer();
-            if (!_communicationManager.Write(telegram))
+            byte[] response;
+            if (!SendAndReceive(0, PKE_NO_ACCESS, 0,
+                                _currentControlWord, _currentSetpointFrequency,
+                                out response))
             {
                 OnErrorOccurred("상태 읽기 요청 실패");
-                return false;
-            }
-
-            byte[] response = _communicationManager.ReadAll();
-            if (!ValidateResponse(response))
-            {
                 return false;
             }
 
@@ -1046,17 +1083,14 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         /// <returns>성공 여부</returns>
         private bool SendControlCommand(int controlWord, ushort setpointFrequency)
         {
-            byte[] telegram = CreateUssTelegram(0, PKE_NO_ACCESS, 0, controlWord, setpointFrequency);
-
-            _communicationManager.DiscardInBuffer();
-            if (!_communicationManager.Write(telegram))
+            byte[] response;
+            if (!SendAndReceive(0, PKE_NO_ACCESS, 0,
+                                controlWord, setpointFrequency, out response))
             {
                 OnErrorOccurred("제어 명령 전송 실패");
                 return false;
             }
-
-            byte[] response = _communicationManager.ReadAll();
-            return ValidateResponse(response);
+            return true;
         }
 
         /// <summary>
@@ -1067,18 +1101,13 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             value = 0;
 
             int pke = PKE_READ_16BIT | (paramNumber & 0x0FFF);
-            byte[] telegram = CreateUssTelegram(paramNumber, pke, 0, _currentControlWord, _currentSetpointFrequency);
 
-            _communicationManager.DiscardInBuffer();
-            if (!_communicationManager.Write(telegram))
+            byte[] response;
+            if (!SendAndReceive(paramNumber, pke, 0,
+                                _currentControlWord, _currentSetpointFrequency,
+                                out response))
             {
                 OnErrorOccurred($"파라미터 {paramNumber} 읽기 요청 실패");
-                return false;
-            }
-
-            byte[] response = _communicationManager.ReadAll();
-            if (!ValidateResponse(response))
-            {
                 return false;
             }
 
@@ -1086,7 +1115,7 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             int pkeResponse = (response[3] << 8) | response[4];
             int responseType = pkeResponse & 0xF000;
 
-            if (responseType == 0x7000)
+            if (responseType == PKE_REPLY_CANNOT_EXECUTE)
             {
                 OnErrorOccurred($"파라미터 {paramNumber}: 명령 실행 불가");
                 return false;
@@ -1105,16 +1134,11 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             value = 0;
 
             int pke = PKE_READ_16BIT | (paramNumber & 0x0FFF);
-            byte[] telegram = CreateUssTelegram(paramNumber, pke, 0, _currentControlWord, _currentSetpointFrequency);
 
-            _communicationManager.DiscardInBuffer();
-            if (!_communicationManager.Write(telegram))
-            {
-                return false;
-            }
-
-            byte[] response = _communicationManager.ReadAll();
-            if (!ValidateResponse(response))
+            byte[] response;
+            if (!SendAndReceive(paramNumber, pke, 0,
+                                _currentControlWord, _currentSetpointFrequency,
+                                out response))
             {
                 return false;
             }
@@ -1130,20 +1154,14 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         /// </summary>
         private bool WriteParameter(ushort paramNumber, ushort value)
         {
-            // PKE_WRITE_16BIT 사용 (수정됨)
             int pke = PKE_WRITE_16BIT | (paramNumber & 0x0FFF);
-            byte[] telegram = CreateUssTelegram(paramNumber, pke, value, _currentControlWord, _currentSetpointFrequency);
 
-            _communicationManager.DiscardInBuffer();
-            if (!_communicationManager.Write(telegram))
+            byte[] response;
+            if (!SendAndReceive(paramNumber, pke, value,
+                                _currentControlWord, _currentSetpointFrequency,
+                                out response))
             {
                 OnErrorOccurred($"파라미터 {paramNumber} 쓰기 요청 실패");
-                return false;
-            }
-
-            byte[] response = _communicationManager.ReadAll();
-            if (!ValidateResponse(response))
-            {
                 return false;
             }
 
@@ -1151,14 +1169,14 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             int pkeResponse = (response[3] << 8) | response[4];
             int responseType = pkeResponse & 0xF000;
 
-            if (responseType == 0x7000)
+            if (responseType == PKE_REPLY_CANNOT_EXECUTE)
             {
                 int errorCode = (response[9] << 8) | response[10];
                 OnErrorOccurred($"파라미터 {paramNumber} 쓰기 실패: 오류 코드 {errorCode}");
                 return false;
             }
 
-            if (responseType == 0x8000)
+            if (responseType == PKE_REPLY_NO_WRITE_PERM)
             {
                 OnErrorOccurred($"파라미터 {paramNumber}: 쓰기 권한 없음");
                 return false;

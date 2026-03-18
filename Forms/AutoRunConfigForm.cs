@@ -82,8 +82,8 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh5.Checked = _config.BakeoutMonitorCh5;
             txtBakeoutHeaterMax.Text = _config.BakeoutHeaterMaxTemperature.ToString("F1");
             txtBakeoutMaxDeltaT.Text = _config.BakeoutMaxDeltaT.ToString("F0");
+            txtBakeoutTolerance.Text = _config.BakeoutTolerance.ToString("F1");
             txtBakeoutRiseTimeout.Text = _config.BakeoutRiseTimeoutMinutes.ToString();
-            txtBakeoutDecelZone.Text = _config.BakeoutDecelerationZone.ToString("F1");
             txtBakeoutFeedbackInterval.Text = _config.BakeoutFeedbackIntervalSec.ToString("F1");
 
             // 실험 유형에 따라 컨트롤 표시/숨김
@@ -146,8 +146,8 @@ namespace VacX_OutSense.Forms
                 _config.BakeoutMonitorChannel = selected.Count > 0 ? selected[0] : 2;
                 _config.BakeoutHeaterMaxTemperature = double.Parse(txtBakeoutHeaterMax.Text);
                 _config.BakeoutMaxDeltaT = double.Parse(txtBakeoutMaxDeltaT.Text);
+                _config.BakeoutTolerance = double.Parse(txtBakeoutTolerance.Text);
                 _config.BakeoutRiseTimeoutMinutes = int.Parse(txtBakeoutRiseTimeout.Text);
-                _config.BakeoutDecelerationZone = double.Parse(txtBakeoutDecelZone.Text);
                 _config.BakeoutFeedbackIntervalSec = double.Parse(txtBakeoutFeedbackInterval.Text);
             }
             catch (Exception ex)
@@ -187,10 +187,12 @@ namespace VacX_OutSense.Forms
             txtBakeoutHeaterMax.Visible = isBakeout;
             lblBakeoutMaxDeltaT.Visible = isBakeout;
             txtBakeoutMaxDeltaT.Visible = isBakeout;
+            lblBakeoutTolerance.Visible = isBakeout;
+            txtBakeoutTolerance.Visible = isBakeout;
             lblBakeoutRiseTimeout.Visible = isBakeout;
             txtBakeoutRiseTimeout.Visible = isBakeout;
-            lblBakeoutDecelZone.Visible = isBakeout;
-            txtBakeoutDecelZone.Visible = isBakeout;
+            lblBakeoutDecelZone.Visible = false;
+            txtBakeoutDecelZone.Visible = false;
             lblBakeoutFeedbackInterval.Visible = isBakeout;
             txtBakeoutFeedbackInterval.Visible = isBakeout;
 
@@ -333,10 +335,6 @@ namespace VacX_OutSense.Forms
             _toolTip.SetToolTip(txtBakeoutRiseTimeout,
                 "목표 온도 도달까지 허용되는 최대 시간 (분).\n" +
                 "0이면 자동 계산 (램프 속도 기반 × 3 + 30분, 최소 60분).");
-            _toolTip.SetToolTip(txtBakeoutDecelZone,
-                "목표 온도 이 값(°C) 전부터 적분항을 점진적으로 줄여 오버슈트를 방지합니다.\n" +
-                "열 관성이 큰 시스템은 크게(15~20), 작은 시스템은 작게(5) 설정.\n" +
-                "0이면 감속 없음.");
             _toolTip.SetToolTip(txtBakeoutFeedbackInterval,
                 "PI 피드백으로 CH1 SV를 변경하는 주기 (초).\n" +
                 "짧으면 반응이 빠르지만 진동 위험, 길면 안정적이지만 느림.\n" +

@@ -220,7 +220,7 @@ namespace VacX_OutSense.Core.Extensions
                 throw new ArgumentOutOfRangeException(nameof(channelNumber));
 
             var status = controller.Status.ChannelStatus[channelNumber - 1];
-            return status.PresentValue / (status.Dot == 0 ? 1.0 : 10.0);
+            return status.CalibratedTemperature;
         }
 
         /// <summary>

@@ -118,6 +118,8 @@ namespace VacX_OutSense
         public TempController _tempController;
         #endregion
 
+        internal TempCalibrationConfig _tempCalibrationConfig;
+
         #region 게이지 인스턴스
         public ATMswitch _atmSwitch;
         public PiraniGauge _piraniGauge;
@@ -244,6 +246,9 @@ namespace VacX_OutSense
                     loadingForm.UpdateStatus("UI 서비스 시작 중...");
                     StartServices();
 
+                    loadingForm.UpdateStatus("캘리브레이션 적용 중...");
+                    ApplyCalibrationToChannels();
+
                     loadingForm.UpdateStatus("AutoRun 초기화 중...");
                     InitializeAutoRun();
 
@@ -252,6 +257,9 @@ namespace VacX_OutSense
                 }
 
                 LogInfo("시스템 초기화 완료");
+
+                // 이전 오토런 상태 복원 확인
+                CheckAutoRunResume();
             }
             catch (Exception ex)
             {
@@ -536,6 +544,10 @@ namespace VacX_OutSense
 
             _chillerPIDService = new ChillerPIDControlService(this);
 
+            // 저장된 PID 설정을 UI에 반영
+            numCh2Target.Value = (decimal)_chillerPIDService.TargetTemperature;
+            cmbPIDChannel.SelectedIndex = _chillerPIDService.TargetChannelIndex;
+
             InitializeBakeoutSettings();
             InitializeSimpleRampControl();
 
@@ -567,12 +579,6 @@ namespace VacX_OutSense
             }
 
             LogInfo("SimpleRampControl 초기화 완료");
-
-            if (_tempController != null && rampSettingControl1 != null)
-            {
-                rampSettingControl1.Initialize(_tempController, 1);
-                LogInfo("RampSettingControl 초기화 완료 (CH1)");
-            }
         }
 
         private void SimpleRampControl_TargetReached(object sender, EventArgs e)
@@ -649,12 +655,105 @@ namespace VacX_OutSense
 
         #region AutoRun
 
+        /// <summary>
+        /// 프로그램 시작 시 이전 오토런 상태가 남아있는지 확인하고 이어하기 제안
+        /// </summary>
+        private async void CheckAutoRunResume()
+        {
+            try
+            {
+                var snapshot = AutoRunStateSnapshot.Load();
+                if (snapshot == null) return;
+
+                // 24시간 이상 경과했으면 무효
+                if (snapshot.IsExpired)
+                {
+                    AutoRunStateSnapshot.Clear();
+                    LogInfo("이전 오토런 상태가 24시간 이상 경과하여 삭제됨");
+                    return;
+                }
+
+                // 시스템 상태 감지
+                var assessment = _autoRunService.DetectCurrentSystemState();
+
+                string msg = snapshot.GetSummaryText()
+                    + "\n현재 시스템 상태:\n"
+                    + assessment.GetSummaryText()
+                    + "\n─────────────────────────────\n"
+                    + $"[예] → {assessment.RecommendedStartStep}단계({SystemStateAssessment.GetStepName(assessment.RecommendedStartStep)})부터 이어서 실행\n"
+                    + "[아니오] → 이전 상태 삭제 (새로 시작 가능)";
+
+                var dialogResult = MessageBox.Show(msg,
+                    "이전 오토런 이어하기",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (dialogResult != DialogResult.Yes)
+                {
+                    AutoRunStateSnapshot.Clear();
+                    return;
+                }
+
+                // 이어하기 실행
+                int startStep = assessment.RecommendedStartStep;
+
+                // 실험 데이터 로거 (이전 파일명에 _resumed 추가)
+                string experimentName = $"{snapshot.ExperimentName}_resumed";
+                _experimentDataLogger?.Dispose();
+                _experimentDataLogger = new ExperimentDataLogger();
+                string filePath = _experimentDataLogger.Start(experimentName);
+                if (filePath != null)
+                    AddAutoRunLog("DATA", $"실험 데이터 저장: {filePath}");
+
+                // UI 초기화
+                btnAutoRunStart.Enabled = false;
+                btnAutoRunStop.Enabled = true;
+                btnAutoRunPause.Enabled = true;
+                btnAutoRunConfig.Enabled = false;
+                listViewAutoRunLog.Items.Clear();
+
+                // 이전 경과시간 복원
+                _autoRunElapsedSeconds = snapshot.AutoRunElapsedSeconds
+                    + (int)(DateTime.Now - snapshot.SavedAt).TotalSeconds;
+                _experimentElapsedSeconds = snapshot.IsExperimentTimerRunning
+                    ? snapshot.ExperimentElapsedSeconds
+                        + (int)(DateTime.Now - snapshot.SavedAt).TotalSeconds
+                    : 0;
+
+                ClearAutoRunCharts();
+                _lblAutoRunBanner.Visible = false;
+                tableLayoutPanel3.BackColor = SystemColors.Control;
+                _autoRunTimer.Start();
+
+                _autoRunService.ExperimentName = experimentName;
+
+                AddAutoRunLog("RESUME", $"이전 오토런 이어하기 — {startStep}단계({SystemStateAssessment.GetStepName(startStep)})부터");
+                LogInfo($"오토런 이어하기 시작 (이전: {snapshot.CurrentStepNumber}단계, 현재: {startStep}단계)");
+
+                if (!await _autoRunService.StartAsync(startStep))
+                {
+                    MessageBox.Show("AutoRun 이어하기 실패", "오류",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    _experimentDataLogger?.Stop();
+                    AutoRunStateSnapshot.Clear();
+                    UpdateAutoRunUI();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"오토런 이어하기 확인 실패: {ex.Message}");
+                AutoRunStateSnapshot.Clear();
+            }
+        }
+
         private void InitializeAutoRun()
         {
             try
             {
                 _autoRunConfig = LoadAutoRunConfiguration() ?? new AutoRunConfiguration();
                 _interlockConfig = InterlockConfiguration.LoadFromFile();
+                _tempCalibrationConfig = TempCalibrationConfig.LoadFromFile();
+                ApplyCalibrationToChannels();
 
                 _autoRunService = new AutoRunService(this, _autoRunConfig);
                 _autoRunService.StateChanged += OnAutoRunStateChanged;
@@ -1341,6 +1440,8 @@ namespace VacX_OutSense
             tableLayoutPanel3.BackColor = SystemColors.Control;
             _autoRunTimer.Start();
 
+            _autoRunService.ExperimentName = experimentName;
+
             if (startStep > 1)
                 AddAutoRunLog("RESUME", $"{startStep}단계({SystemStateAssessment.GetStepName(startStep)})부터 시작");
 
@@ -1412,6 +1513,10 @@ namespace VacX_OutSense
             lblAutoRunElapsedTime.Text = isPaused
                 ? $"경과: {FmtTime(TimeSpan.FromSeconds(_autoRunElapsedSeconds))} (일시정지)"
                 : $"경과: {FmtTime(TimeSpan.FromSeconds(_autoRunElapsedSeconds))}";
+
+            // 30초마다 상태 스냅샷 저장 (재시작 시 이어하기용)
+            if (_autoRunElapsedSeconds % 30 == 0)
+                _autoRunService?.SaveStateSnapshot();
 
             // 실시간 측정값 업데이트 (일시정지 중에도 표시)
             UpdateAutoRunMeasurements();
@@ -2022,9 +2127,7 @@ namespace VacX_OutSense
                 if (txtPG != null)
                 {
                     txtPG.TextValue = value;
-                    txtPG.ForeColor = (double.TryParse(value.Replace("E", "e"), out double p) && p > 1E-3)
-                        ? Color.Red
-                        : SystemColors.WindowText;
+                    txtPG.ForeColor = SystemColors.WindowText;
                 }
             }
             catch { }
@@ -2128,6 +2231,26 @@ namespace VacX_OutSense
             catch { }
         }
 
+        public void SetDryPumpExtendedStatus(string power, string runningTime, bool isServiceDue)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<string, string, bool>(SetDryPumpExtendedStatus), power, runningTime, isServiceDue);
+                return;
+            }
+            try
+            {
+                if (txtDryPumpPower != null) txtDryPumpPower.Text = power;
+                if (txtDryPumpRunTime != null) txtDryPumpRunTime.Text = runningTime;
+                if (lblDryPumpService != null)
+                {
+                    lblDryPumpService.Text = isServiceDue ? "서비스 필요" : "-";
+                    lblDryPumpService.ForeColor = isServiceDue ? Color.Orange : Color.White;
+                }
+            }
+            catch { }
+        }
+
         public void SetTurboPumpStatus(string status, string speed, string current,
             string temperature, bool hasWarning, bool hasError, string warningMessage = "")
         {
@@ -2152,6 +2275,27 @@ namespace VacX_OutSense
                         lblTurboPumpWarning.ForeColor = hasError ? Color.Red : Color.Orange;
                     }
                 }
+            }
+            catch { }
+        }
+
+        public void SetTurboPumpExtendedStatus(string bearingTemp, string electronicsTemp,
+            string runningTime, bool isReady, bool isRemoteActive, bool isNormalOperation)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<string, string, string, bool, bool, bool>(
+                    SetTurboPumpExtendedStatus), bearingTemp, electronicsTemp, runningTime, isReady, isRemoteActive, isNormalOperation);
+                return;
+            }
+            try
+            {
+                if (txtTurboPumpBearingTemp != null) txtTurboPumpBearingTemp.Text = bearingTemp;
+                if (txtTurboPumpElectronicsTemp != null) txtTurboPumpElectronicsTemp.Text = electronicsTemp;
+                if (txtTurboPumpRunTime != null) txtTurboPumpRunTime.Text = runningTime;
+                if (txtTurboPumpReady != null) txtTurboPumpReady.Text = isReady ? "Ready" : "-";
+                if (txtTurboPumpRemote != null) txtTurboPumpRemote.Text = isRemoteActive ? "Remote" : "Local";
+                if (txtTurboPumpNormal != null) txtTurboPumpNormal.Text = isNormalOperation ? "Normal" : "-";
             }
             catch { }
         }
@@ -2187,34 +2331,74 @@ namespace VacX_OutSense
             }
             try
             {
+                // PV는 항상 업데이트
                 switch (channel)
                 {
-                    case 1:
-                        if (txtCh1PresentValue != null) txtCh1PresentValue.Text = $"{presentValue}℃";
-                        if (txtCh1SetValue != null) txtCh1SetValue.Text = $"{setValue}℃";
-                        if (txtCh1Status != null) txtCh1Status.Text = status;
-                        if (txtCh1HeatingMV != null) txtCh1HeatingMV.Text = heatingMV;
-                        if (txtCh1IsAutotune != null) txtCh1IsAutotune.Text = isAutoTuning ? "On" : "Off";
-                        break;
+                    case 1: if (txtCh1PresentValue != null) txtCh1PresentValue.Text = $"{presentValue}℃"; break;
                     case 2: if (txtCh2PresentValue != null) txtCh2PresentValue.Text = $"{presentValue}℃"; break;
                     case 3: if (txtCh3PresentValue != null) txtCh3PresentValue.Text = $"{presentValue}℃"; break;
                     case 4: if (txtCh4PresentValue != null) txtCh4PresentValue.Text = $"{presentValue}℃"; break;
                     case 5: if (txtCh5PresentValue != null) txtCh5PresentValue.Text = $"{presentValue}℃"; break;
+                }
+
+                // 상세 정보는 선택된 채널만 업데이트
+                int selectedCh = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
+                if (channel == selectedCh)
+                {
+                    if (txtCh1SetValue != null) txtCh1SetValue.Text = $"{setValue}℃";
+                    if (txtCh1Status != null) txtCh1Status.Text = status;
+                    if (txtCh1HeatingMV != null) txtCh1HeatingMV.Text = heatingMV;
+                    if (txtCh1IsAutotune != null) txtCh1IsAutotune.Text = isAutoTuning ? "On" : "Off";
                 }
             }
             catch { }
         }
 
         /// <summary>
-        /// Stop 버튼 숨기고 Start 버튼을 토글로 전환 (초기화 시 1회 호출)
+        /// 초기화: 불필요한 버튼 숨김, 펌프 속도 초기값 로딩, 툴팁 설정
         /// </summary>
         public void SetupToggleButtons()
         {
-            // Stop 버튼 숨김
-            btnDryPumpStop.Visible = false;
-            btnTurboPumpStop.Visible = false;
-            btnBathCirculatorStop.Visible = false;
             btnCh1Stop.Visible = false;
+
+            // 온도 컨트롤러 채널 선택 초기화
+            if (cmbTempChannel != null)
+                cmbTempChannel.SelectedIndex = 0;
+
+            // 펌프 속도 컨트롤 툴팁
+            var toolTip = new ToolTip();
+            toolTip.SetToolTip(btnDryPumpSpeedSet, "현재 세션에만 적용 (재시작 시 초기화)");
+            toolTip.SetToolTip(btnDryPumpSpeedStore, "비휘발성 메모리에 저장 (재시작 후에도 유지)");
+            toolTip.SetToolTip(btnTurboPumpSpeedSet, "실시간 적용 (재시작 시 초기화)");
+            toolTip.SetToolTip(btnTurboPumpSpeedPerm, "EEPROM에 영구 저장 (재시작 후에도 유지)");
+            toolTip.SetToolTip(btnTurboPumpStandbySet, "대기 모드 진입 시 저속 회전 주파수");
+
+            // 펌프에서 현재 속도 설정값 읽어오기
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (_dryPump?.IsConnected == true)
+                    {
+                        _dryPump.GetSpeedDemand(); // Hz 반환, 내부적으로 SpeedDemandPercent 갱신
+                        double pct = _dryPump.Status?.SpeedDemandPercent ?? 0;
+                        if (pct >= 50 && pct <= 100)
+                            BeginInvoke(new Action(() => numDryPumpSpeed.Value = (decimal)Math.Round(pct)));
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    if (_turboPump?.IsConnected == true)
+                    {
+                        ushort freq = _turboPump.CurrentSetpointFrequency;
+                        if (freq >= 600 && freq <= 1200)
+                            BeginInvoke(new Action(() => numTurboPumpSpeed.Value = freq));
+                    }
+                }
+                catch { }
+            });
         }
 
         /// <summary>
@@ -2294,21 +2478,46 @@ namespace VacX_OutSense
             catch { }
         }
 
+        public void SetPanelEnabled(string deviceName, bool enabled)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action<string, bool>(SetPanelEnabled), deviceName, enabled); return; }
+            try
+            {
+                var panels = GetPanelsByDevice(deviceName);
+                if (panels != null)
+                {
+                    foreach (var panel in panels)
+                    {
+                        if (panel != null && panel.Enabled != enabled)
+                            panel.Enabled = enabled;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private Control[] GetPanelsByDevice(string deviceName) => deviceName.ToLower() switch
+        {
+            "iomodule" => new Control[] { tableLayoutPanel5 },
+            "drypump" => new Control[] { panel2 },
+            "turbopump" => new Control[] { panel3 },
+            "bathcirculator" => new Control[] { grpChillerPID },
+            "tempcontroller" => new Control[] { panel5, grpCh1Timer },
+            _ => null
+        };
+
         private Button GetButtonByName(string buttonName) => buttonName.ToLower() switch
         {
             "iongauge" or "btn_iongauge" => btn_iongauge,
             "ventvalve" or "btn_vv" => btn_VV,
             "exhaustvalve" or "btn_ev" => btn_EV,
             "drypumpstart" => btnDryPumpStart,
-            "drypumpstop" => btnDryPumpStop,
             "drypumpstandby" => btnDryPumpStandby,
             "drypumpnormal" => btnDryPumpNormal,
             "turbopumpstart" => btnTurboPumpStart,
-            "turbopumpstop" => btnTurboPumpStop,
             "turbopumpvent" => btnTurboPumpVent,
             "turbopumpreset" => btnTurboPumpReset,
             "bathcirculatorstart" => btnBathCirculatorStart,
-            "bathcirculatorstop" => btnBathCirculatorStop,
             "ch1start" => btnCh1Start,
             "ch1stop" => btnCh1Stop,
             _ => null
@@ -2328,9 +2537,12 @@ namespace VacX_OutSense
         {
             if (_chillerPIDService != null && _chillerPIDService.IsEnabled)
             {
-                lblLastOutputValue.Text = $"{_chillerPIDService.LastOutput:F2}°C " +
-                    $"(Ch2: {_chillerPIDService.LastCh2Temperature:F1}°C, " +
-                    $"칠러: {_chillerPIDService.LastChillerSetpoint:F1}°C)";
+                lblLastOutputValue.Text = $"{_chillerPIDService.TargetChannelName}: {_chillerPIDService.LastChannelTemperature:F1}°C → " +
+                    $"칠러: {_chillerPIDService.LastChillerSetpoint:F1}°C";
+            }
+            else
+            {
+                lblLastOutputValue.Text = "-";
             }
         }
 
@@ -2483,26 +2695,7 @@ namespace VacX_OutSense
             finally { btnDryPumpStart.Enabled = true; }
         }
 
-        private async void btnDryPumpStop_Click(object sender, EventArgs e)
-        {
-            if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualPumpControl, "펌프"))
-                return;
-            if (!CheckInterlock(
-                _turboPump?.Status?.IsRunning == true,
-                _interlockConfig.DryPumpStop_BlockIfTurboRunning,
-                "터보펌프가 작동 중입니다."))
-                return;
-
-            btnDryPumpStop.Enabled = false;
-            try
-            {
-                await Task.Run(() => _dryPump.Stop());
-                LogInfo("드라이펌프 정지");
-            }
-            finally { btnDryPumpStop.Enabled = true; }
-        }
-
-        private async void btnDryPumpStandby_Click(object sender, EventArgs e)
+private async void btnDryPumpStandby_Click(object sender, EventArgs e)
         {
             btnDryPumpStandby.Enabled = false;
             try
@@ -2575,18 +2768,7 @@ namespace VacX_OutSense
             finally { btnTurboPumpStart.Enabled = true; }
         }
 
-        private async void btnTurboPumpStop_Click(object sender, EventArgs e)
-        {
-            btnTurboPumpStop.Enabled = false;
-            try
-            {
-                await Task.Run(() => _turboPump.Stop());
-                LogInfo("터보펌프 정지");
-            }
-            finally { btnTurboPumpStop.Enabled = true; }
-        }
-
-        private async void btnTurboPumpVent_Click(object sender, EventArgs e)
+private async void btnTurboPumpVent_Click(object sender, EventArgs e)
         {
             btnTurboPumpVent.Enabled = false;
             try
@@ -2606,6 +2788,71 @@ namespace VacX_OutSense
                 LogInfo("터보펌프 리셋");
             }
             finally { btnTurboPumpReset.Enabled = true; }
+        }
+
+        // ── 드라이펌프 속도 조절 ──
+        private async void btnDryPumpSpeedSet_Click(object sender, EventArgs e)
+        {
+            btnDryPumpSpeedSet.Enabled = false;
+            try
+            {
+                double percent = (double)numDryPumpSpeed.Value;
+                bool ok = await Task.Run(() => _dryPump.SetSpeedDemandPercent(percent));
+                LogInfo(ok ? $"드라이펌프 속도 설정: {percent:F0}%" : "드라이펌프 속도 설정 실패");
+            }
+            finally { btnDryPumpSpeedSet.Enabled = true; }
+        }
+
+        private async void btnDryPumpSpeedStore_Click(object sender, EventArgs e)
+        {
+            btnDryPumpSpeedStore.Enabled = false;
+            try
+            {
+                bool ok = await Task.Run(() => _dryPump.StoreConfiguration());
+                LogInfo(ok ? "드라이펌프 설정 비휘발성 저장 완료" : "드라이펌프 저장 실패");
+            }
+            finally { btnDryPumpSpeedStore.Enabled = true; }
+        }
+
+        // ── 터보펌프 속도 조절 ──
+        private async void btnTurboPumpSpeedSet_Click(object sender, EventArgs e)
+        {
+            btnTurboPumpSpeedSet.Enabled = false;
+            try
+            {
+                ushort hz = (ushort)numTurboPumpSpeed.Value;
+                bool ok = await Task.Run(() => _turboPump.SetRotationSpeed(hz));
+                LogInfo(ok ? $"터보펌프 속도 설정: {hz} Hz" : "터보펌프 속도 설정 실패");
+            }
+            finally { btnTurboPumpSpeedSet.Enabled = true; }
+        }
+
+        private async void btnTurboPumpSpeedPerm_Click(object sender, EventArgs e)
+        {
+            var result = MessageBox.Show($"터보펌프 속도를 {numTurboPumpSpeed.Value} Hz로 영구 저장하시겠습니까?\n(EEPROM에 기록됩니다)",
+                "영구 저장 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (result != DialogResult.Yes) return;
+
+            btnTurboPumpSpeedPerm.Enabled = false;
+            try
+            {
+                ushort hz = (ushort)numTurboPumpSpeed.Value;
+                bool ok = await Task.Run(() => _turboPump.SetRotationSpeedPermanent(hz));
+                LogInfo(ok ? $"터보펌프 속도 영구 저장: {hz} Hz" : "터보펌프 영구 저장 실패");
+            }
+            finally { btnTurboPumpSpeedPerm.Enabled = true; }
+        }
+
+        private async void btnTurboPumpStandbySet_Click(object sender, EventArgs e)
+        {
+            btnTurboPumpStandbySet.Enabled = false;
+            try
+            {
+                ushort hz = (ushort)numTurboPumpStandbySpeed.Value;
+                bool ok = await Task.Run(() => _turboPump.SetStandbySpeed(hz));
+                LogInfo(ok ? $"터보펌프 대기 속도 설정: {hz} Hz" : "터보펌프 대기 속도 설정 실패");
+            }
+            finally { btnTurboPumpStandbySet.Enabled = true; }
         }
 
         #endregion
@@ -2647,22 +2894,6 @@ namespace VacX_OutSense
             finally { btnBathCirculatorStart.Enabled = true; }
         }
 
-        private async void btnBathCirculatorStop_Click(object sender, EventArgs e)
-        {
-            if (!CheckInterlock(
-                _turboPump?.Status?.IsRunning == true,
-                _interlockConfig.ChillerStop_BlockIfTurboRunning,
-                "터보 펌프가 작동 중입니다."))
-                return;
-
-            btnBathCirculatorStop.Enabled = false;
-            try
-            {
-                await Task.Run(() => _bathCirculator.Stop());
-                LogInfo("칠러 정지");
-            }
-            finally { btnBathCirculatorStop.Enabled = true; }
-        }
 
         private void btnBathCirculatorSetTemp_Click(object sender, EventArgs e)
         {
@@ -2690,14 +2921,17 @@ namespace VacX_OutSense
             if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualHeaterControl, "히터"))
                 return;
 
+            int ch = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
+            int chIdx = ch - 1;
+
             // 실제 장비 상태를 직접 조회
             await _tempController.UpdateStatusAsync();
-            bool isRunning = _tempController.Status.ChannelStatus[0].IsRunning;
+            bool isRunning = _tempController.Status.ChannelStatus[chIdx].IsRunning;
 
             if (isRunning)
             {
                 // Stop 로직
-                var chStatus = _tempController.Status.ChannelStatus[0];
+                var chStatus = _tempController.Status.ChannelStatus[chIdx];
                 string pvDisplay = chStatus.Dot == 1
                     ? $"{chStatus.PresentValue / 10.0:F1}"
                     : $"{chStatus.PresentValue}";
@@ -2707,7 +2941,7 @@ namespace VacX_OutSense
                     : "";
 
                 var result = MessageBox.Show(
-                    $"채널 1 히터를 정지하시겠습니까?\n\n" +
+                    $"채널 {ch} 히터를 정지하시겠습니까?\n\n" +
                     $"현재 온도: {pvDisplay}{chStatus.TemperatureUnit}" + warning,
                     "히터 정지 확인",
                     MessageBoxButtons.YesNo,
@@ -2719,11 +2953,11 @@ namespace VacX_OutSense
                 btnCh1Start.Enabled = false;
                 try
                 {
-                    await Task.Run(() => _tempController.Stop(1));
-                    ForceToggleButtonAppearance("ch1", false);
-                    LogInfo("온도컨트롤러 CH1 정지");
+                    await Task.Run(() => _tempController.Stop(ch));
+                    ForceToggleButtonAppearance($"ch{ch}", false);
+                    LogInfo($"온도컨트롤러 CH{ch} 정지");
 
-                    if (_ch1TimerActive)
+                    if (ch == 1 && _ch1TimerActive)
                         StopCh1Timer();
                 }
                 finally { btnCh1Start.Enabled = true; }
@@ -2744,13 +2978,13 @@ namespace VacX_OutSense
                     }
                 }
 
-                var chStatus = _tempController.Status.ChannelStatus[0];
+                var chStatus = _tempController.Status.ChannelStatus[chIdx];
                 string svDisplay = chStatus.Dot == 1
                     ? $"{chStatus.SetValue / 10.0:F1}"
                     : $"{chStatus.SetValue}";
 
                 var result = MessageBox.Show(
-                    $"채널 1 히터를 시작하시겠습니까?\n\n" +
+                    $"채널 {ch} 히터를 시작하시겠습니까?\n\n" +
                     $"설정 온도: {svDisplay}{chStatus.TemperatureUnit}\n" +
                     $"Ramp: {chStatus.RampStatusText}",
                     "히터 시작 확인",
@@ -2763,11 +2997,11 @@ namespace VacX_OutSense
                 btnCh1Start.Enabled = false;
                 try
                 {
-                    await Task.Run(() => _tempController.Start(1));
-                    ForceToggleButtonAppearance("ch1", true);
-                    LogInfo("온도컨트롤러 CH1 시작");
+                    await Task.Run(() => _tempController.Start(ch));
+                    ForceToggleButtonAppearance($"ch{ch}", true);
+                    LogInfo($"온도컨트롤러 CH{ch} 시작");
 
-                    if (chkCh1TimerEnabled.Checked)
+                    if (ch == 1 && chkCh1TimerEnabled.Checked)
                         StartCh1Timer();
                 }
                 finally { btnCh1Start.Enabled = true; }
@@ -2812,7 +3046,8 @@ namespace VacX_OutSense
 
         private void btnCh1SetTemp_Click(object sender, EventArgs e)
         {
-            ShowTemperatureSetDialog(1);
+            int ch = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
+            ShowTemperatureSetDialog(ch);
         }
 
         private async void btnCh1AutoTuning_Click(object sender, EventArgs e)
@@ -2820,27 +3055,79 @@ namespace VacX_OutSense
             if (_tempController == null || !_tempController.IsConnected)
                 return;
 
-            if (MessageBox.Show("CH1 오토튜닝을 시작하시겠습니까?", "확인",
+            int ch = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
+
+            if (MessageBox.Show($"CH{ch} 오토튜닝을 시작하시겠습니까?", "확인",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
             btnCh1AutoTuning.Enabled = false;
             try
             {
-                if (await Task.Run(() => _tempController.StartAutoTuning(1)))
+                if (await Task.Run(() => _tempController.StartAutoTuning(ch)))
                 {
-                    LogInfo("CH1 오토튜닝 시작");
-                    MessageBox.Show("CH1 오토튜닝 시작됨", "알림",
+                    LogInfo($"CH{ch} 오토튜닝 시작");
+                    MessageBox.Show($"CH{ch} 오토튜닝 시작됨", "알림",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
                 {
-                    LogError("CH1 오토튜닝 시작 실패");
+                    LogError($"CH{ch} 오토튜닝 시작 실패");
                     MessageBox.Show("오토튜닝 실패", "오류",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             finally { btnCh1AutoTuning.Enabled = true; }
+        }
+
+        private void cmbTempChannel_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_tempController == null || !_tempController.IsConnected)
+                return;
+
+            int ch = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
+            int chIdx = ch - 1;
+
+            try
+            {
+                var chStatus = _tempController.Status.ChannelStatus[chIdx];
+                int dot = chStatus.Dot;
+
+                string sv = dot == 1 ? $"{chStatus.SetValue / 10.0:F1}℃" : $"{chStatus.SetValue}℃";
+                string status = chStatus.IsRunning ? "Run" : "Stop";
+                string mv = dot == 1 ? $"{chStatus.HeatingMV / 10.0:F1}%" : $"{chStatus.HeatingMV}%";
+
+                if (txtCh1SetValue != null) txtCh1SetValue.Text = sv;
+                if (txtCh1Status != null) txtCh1Status.Text = status;
+                if (txtCh1HeatingMV != null) txtCh1HeatingMV.Text = mv;
+                if (txtCh1IsAutotune != null) txtCh1IsAutotune.Text = chStatus.IsAutoTuning ? "On" : "Off";
+            }
+            catch { }
+        }
+
+        private void btnRampSetting_Click(object sender, EventArgs e)
+        {
+            if (_tempController == null || !_tempController.IsConnected)
+                return;
+
+            int ch = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
+
+            using (var dlg = new Form())
+            {
+                dlg.Text = $"CH{ch} Ramp 설정";
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.MaximizeBox = false;
+                dlg.MinimizeBox = false;
+                dlg.Size = new Size(490, 200);
+
+                var rampCtrl = new UI.Controls.RampSettingControl();
+                rampCtrl.Dock = DockStyle.Fill;
+                dlg.Controls.Add(rampCtrl);
+                rampCtrl.Initialize(_tempController, ch);
+
+                dlg.ShowDialog(this);
+            }
         }
 
         /// <summary>
@@ -3234,31 +3521,79 @@ namespace VacX_OutSense
                 _chillerPIDService.Ch2TargetTemperature = (double)numCh2Target.Value;
         }
 
+        private void cmbPIDChannel_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_chillerPIDService != null && cmbPIDChannel.SelectedIndex >= 0)
+                _chillerPIDService.TargetChannelIndex = cmbPIDChannel.SelectedIndex;
+        }
+
         private void numChillerBase_ValueChanged(object sender, EventArgs e)
         {
-            if (_chillerPIDService != null)
-                _chillerPIDService.ChillerBaseTemperature = (double)numChillerBase.Value;
+            // 더 이상 사용하지 않음 (하위 호환 유지)
         }
 
         private void PIDParams_ValueChanged(object sender, EventArgs e)
         {
-            if (_chillerPIDService != null)
-                _chillerPIDService.SetPIDParameters(
-                    (double)numKp.Value, (double)numKi.Value, (double)numKd.Value);
+            // PID 파라미터는 자동 관리됨 (하위 호환 유지)
         }
 
         private void numUpdateInterval_ValueChanged(object sender, EventArgs e)
         {
-            if (_chillerPIDService != null)
-                _chillerPIDService.UpdateInterval = (double)numUpdateInterval.Value;
+            // 업데이트 주기는 자동 관리됨 (하위 호환 유지)
         }
 
         private void UpdateChillerPIDControls(bool enabled)
         {
             numCh2Target.Enabled = enabled;
-            numChillerBase.Enabled = enabled;
-            grpPIDParams.Enabled = enabled;
-            numUpdateInterval.Enabled = enabled;
+            cmbPIDChannel.Enabled = !enabled; // 실행 중에는 채널 변경 불가
+        }
+
+        #endregion
+
+        #region 온도 센서 캘리브레이션
+
+        private void ApplyCalibrationToChannels()
+        {
+            if (_tempCalibrationConfig == null) return;
+
+            // 이온게이지 모델 적용
+            if (_ionGauge != null)
+                _ionGauge.Model = _tempCalibrationConfig.IonGauge.Model;
+
+            // PTR90: IG와 동일하게 표시하되 HV 버튼만 숨김
+            bool isPTR90 = _tempCalibrationConfig.IonGauge.Model == IonGaugeModel.PTR90;
+            if (txtIG != null)
+            {
+                txtIG.Visible = true;
+                txtIG.LabelText = isPTR90 ? "PTR90(Torr)" : "IG(Torr)";
+            }
+            if (btn_iongauge != null)
+                btn_iongauge.Visible = !isPTR90;
+
+            if (_tempController?.Status?.ChannelStatus == null) return;
+
+            for (int i = 0; i < Math.Min(5, _tempController.Status.ChannelStatus.Length); i++)
+            {
+                var cal = _tempCalibrationConfig.Channels[i];
+                var ch = _tempController.Status.ChannelStatus[i];
+                ch.CalibrationEnabled = cal.Enabled;
+                ch.CalibrationOffset = cal.Offset;
+                ch.CalibrationGain = cal.Gain;
+            }
+        }
+
+        private void ShowTempCalibrationDialog()
+        {
+            using (var dlg = new TempCalibrationForm(_tempCalibrationConfig))
+            {
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    _tempCalibrationConfig = dlg.Configuration;
+                    _tempCalibrationConfig.SaveToFile();
+                    ApplyCalibrationToChannels();
+                    LogInfo("온도 센서 캘리브레이션 설정 저장됨");
+                }
+            }
         }
 
         #endregion
@@ -3735,7 +4070,7 @@ namespace VacX_OutSense
         private bool _ventOverpressureInterlockTriggered = false;
         private void CheckVentOverpressureInterlock(UIDataSnapshot snapshot)
         {
-            if (!_interlockConfig.VentValve_AutoOpenExhaustAtHighPressure)
+            if (_interlockConfig == null || !_interlockConfig.VentValve_AutoOpenExhaustAtHighPressure)
                 return;
             if (snapshot.VentValveStatus != "Opened")
             {
@@ -3755,7 +4090,10 @@ namespace VacX_OutSense
                         {
                             bool result = await _ioModule.ControlExhaustValveAsync(true);
                             if (result)
+                            {
                                 LogInfo($"[인터락] 벤트 중 과압 감지 (ATM: {snapshot.AtmPressure:F1} kPa ≥ 90) → 배기밸브 자동 열림");
+                                SetExhaustValveStatus("Opened");
+                            }
                             else
                                 LogInfo($"[인터락] 배기밸브 자동 열림 실패 (ATM: {snapshot.AtmPressure:F1} kPa)");
                         }
@@ -3918,7 +4256,7 @@ namespace VacX_OutSense
                     {
                         await Task.Run(() => _turboPump.Stop());
                         return true;
-                    }, btnTurboPumpStop, 3, 2000);
+                    }, null, 3, 2000);
 
                     LogInfo("[종료 시퀀스] 터보펌프 감속 대기 중...");
                     await WaitForCondition(
@@ -3956,7 +4294,7 @@ namespace VacX_OutSense
                         await Task.Run(() => _dryPump.Stop());
                         await Task.Delay(2000);
                         return _dryPump.Status?.IsRunning == false;
-                    }, btnDryPumpStop, 3, 2000);
+                    }, null, 3, 2000);
                 }
                 catch (Exception ex) { LogError($"[종료 시퀀스] 드라이펌프 정지 실패: {ex.Message}"); }
             }
@@ -4275,9 +4613,25 @@ namespace VacX_OutSense
                 }
             };
 
+            var menuTempCalibration = new ToolStripMenuItem("온도 센서 캘리브레이션");
+            menuTempCalibration.Click += (s, e) => ShowTempCalibrationDialog();
+
             menuSettings.DropDownItems.Add(menuPathSettings);
             menuSettings.DropDownItems.Add(menuCommSettings);
+            menuSettings.DropDownItems.Add(new ToolStripSeparator());
+            menuSettings.DropDownItems.Add(menuTempCalibration);
             menuStrip.Items.Add(menuSettings);
+
+            // 도구 메뉴
+            var menuTools = new ToolStripMenuItem("도구(&T)");
+            var menuBakeoutSim = new ToolStripMenuItem("베이크아웃 시뮬레이션");
+            menuBakeoutSim.Click += (s, e) =>
+            {
+                using (var dlg = new BakeoutSimulationForm())
+                    dlg.ShowDialog(this);
+            };
+            menuTools.DropDownItems.Add(menuBakeoutSim);
+            menuStrip.Items.Add(menuTools);
         }
 
         private void ToggleLogging(bool enable)
@@ -4527,7 +4881,6 @@ namespace VacX_OutSense
 
         // Designer 생성 이벤트 핸들러 (제거 시 Designer.cs 수정 필요)
         private void tableLayoutPanel3_Paint(object sender, PaintEventArgs e) { }
-        private void rampSettingControl1_Load(object sender, EventArgs e) { }
         private void tabControlMain_SelectedIndexChanged(object sender, EventArgs e) { }
 
         #endregion

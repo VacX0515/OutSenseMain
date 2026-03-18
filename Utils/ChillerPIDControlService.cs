@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Serialization;
 using VacX_OutSense.Core.Control;
 using VacX_OutSense.Core.Devices.BathCirculator;
 using VacX_OutSense.Core.Devices.TempController;
@@ -10,7 +12,12 @@ using VacX_OutSense.Forms;
 namespace VacX_OutSense.Utils
 {
     /// <summary>
-    /// Ch2 온도를 기반으로 칠러를 PID 제어하는 서비스
+    /// 선택된 온도 채널 기준으로 칠러를 자동 제어하는 PID 서비스
+    /// - 타겟 채널 선택 가능 (CH1~CH5)
+    /// - 칠러 자동 시작/정지
+    /// - 센서 에러 감지 시 안전 정지
+    /// - 연결 끊김 복구
+    /// - 설정 자동 저장/로드
     /// </summary>
     public class ChillerPIDControlService : IDisposable
     {
@@ -21,21 +28,72 @@ namespace VacX_OutSense.Utils
         private readonly System.Timers.Timer _controlTimer;
 
         private bool _isEnabled;
-        private double _ch2TargetTemperature;
-        private double _chillerBaseTemperature;
-        private double _updateInterval; // 초 단위
+        private double _targetTemperature = 25.0;
+        private double _updateInterval = 10.0;
+        private int _targetChannelIndex = 1; // 기본: CH2 (인덱스 1)
 
-        // 칠러 온도 제한
+        private static readonly string[] ChannelNames = { "CH1", "CH2", "CH3", "CH4", "CH5" };
+
+        // 칠러 출력 온도 범위
         private const double CHILLER_MIN_TEMP = -10.0;
         private const double CHILLER_MAX_TEMP = 80.0;
 
-        // PID 출력 제한 (칠러 온도 오프셋)
-        private const double PID_OUTPUT_MIN = -20.0; // 최대 20도 낮출 수 있음
-        private const double PID_OUTPUT_MAX = 20.0;  // 최대 20도 높일 수 있음
+        // 안전 관련
+        private int _consecutiveErrors = 0;
+        private const int MAX_CONSECUTIVE_ERRORS = 5;
+        private DateTime _lastSuccessTime = DateTime.MinValue;
+        private bool _chillerAutoStarted = false;
 
-        /// <summary>
-        /// PID 제어 활성화 여부
-        /// </summary>
+        // === 하위 호환 속성 (AutoRun 등 기존 코드에서 사용) ===
+
+        /// <summary>Ch2 목표온도 (하위 호환)</summary>
+        public double Ch2TargetTemperature
+        {
+            get => _targetTemperature;
+            set => TargetTemperature = value;
+        }
+
+        /// <summary>칠러 기준온도 (하위 호환 - 더 이상 사용하지 않지만 set은 무시)</summary>
+        public double ChillerBaseTemperature
+        {
+            get => _targetTemperature;
+            set { /* 무시 - 이제 PID가 직접 제어 */ }
+        }
+
+        // === 신규 속성 ===
+
+        /// <summary>PID 제어 기준 채널 인덱스 (0=CH1, 1=CH2, ..., 4=CH5)</summary>
+        public int TargetChannelIndex
+        {
+            get => _targetChannelIndex;
+            set
+            {
+                int clamped = Math.Max(0, Math.Min(4, value));
+                if (_targetChannelIndex != clamped)
+                {
+                    _targetChannelIndex = clamped;
+                    _pidController?.Reset();
+                    SaveSettings();
+                    LogInfo($"타겟 채널 변경: {ChannelNames[_targetChannelIndex]}");
+                }
+            }
+        }
+
+        /// <summary>현재 타겟 채널 이름</summary>
+        public string TargetChannelName => ChannelNames[_targetChannelIndex];
+
+        /// <summary>목표 온도 (°C) - 이것만 설정하면 됨</summary>
+        public double TargetTemperature
+        {
+            get => _targetTemperature;
+            set
+            {
+                _targetTemperature = value;
+                SaveSettings();
+            }
+        }
+
+        /// <summary>PID 활성화 여부</summary>
         public bool IsEnabled
         {
             get => _isEnabled;
@@ -45,38 +103,15 @@ namespace VacX_OutSense.Utils
                 {
                     _isEnabled = value;
                     if (_isEnabled)
-                    {
                         Start();
-                    }
                     else
-                    {
                         Stop();
-                    }
+                    SaveSettings();
                 }
             }
         }
 
-        /// <summary>
-        /// Ch2 목표 온도
-        /// </summary>
-        public double Ch2TargetTemperature
-        {
-            get => _ch2TargetTemperature;
-            set => _ch2TargetTemperature = value;
-        }
-
-        /// <summary>
-        /// 칠러 기준 온도
-        /// </summary>
-        public double ChillerBaseTemperature
-        {
-            get => _chillerBaseTemperature;
-            set => _chillerBaseTemperature = value;
-        }
-
-        /// <summary>
-        /// 업데이트 주기 (초)
-        /// </summary>
+        /// <summary>업데이트 주기 (초)</summary>
         public double UpdateInterval
         {
             get => _updateInterval;
@@ -84,217 +119,319 @@ namespace VacX_OutSense.Utils
             {
                 _updateInterval = Math.Max(1.0, value);
                 if (_controlTimer != null)
-                {
                     _controlTimer.Interval = _updateInterval * 1000;
-                }
+                SaveSettings();
             }
         }
 
-        /// <summary>
-        /// PID 제어기
-        /// </summary>
         public PIDController PID => _pidController;
-
-        /// <summary>
-        /// 마지막 제어 출력값
-        /// </summary>
         public double LastOutput { get; private set; }
-
-        /// <summary>
-        /// 마지막 Ch2 온도
-        /// </summary>
-        public double LastCh2Temperature { get; private set; }
-
-        /// <summary>
-        /// 마지막 칠러 설정 온도
-        /// </summary>
+        /// <summary>마지막 측정 온도 (선택된 채널)</summary>
+        public double LastChannelTemperature { get; private set; }
+        /// <summary>하위 호환</summary>
+        public double LastCh2Temperature => LastChannelTemperature;
         public double LastChillerSetpoint { get; private set; }
 
         #endregion
 
         #region 생성자
 
-        /// <summary>
-        /// ChillerPIDControlService 생성자
-        /// </summary>
-        /// <param name="mainForm">메인 폼 참조</param>
         public ChillerPIDControlService(MainForm mainForm)
         {
             _mainForm = mainForm ?? throw new ArgumentNullException(nameof(mainForm));
 
-            // PID 제어기 초기화 (기본값)
+            // PID 기본 파라미터 (온도 제어에 적합한 보수적 값)
             _pidController = new PIDController(
-                kp: 1.0,     // 비례 게인
-                ki: 0.01,     // 적분 게인
-                kd: 0.5,     // 미분 게인
-                outputMin: PID_OUTPUT_MIN,
-                outputMax: PID_OUTPUT_MAX
+                kp: 2.0,
+                ki: 0.005,
+                kd: 1.0,
+                outputMin: CHILLER_MIN_TEMP,
+                outputMax: CHILLER_MAX_TEMP
             );
+            _pidController.Deadband = 0.2;
 
-            // 기본값 설정
-            _ch2TargetTemperature = 25.0;
-            _chillerBaseTemperature = 23.5;
-            _updateInterval = 10.0; // 5초마다 업데이트
-
-            // 타이머 초기화
             _controlTimer = new System.Timers.Timer(_updateInterval * 1000);
             _controlTimer.Elapsed += ControlTimer_Elapsed;
             _controlTimer.AutoReset = true;
+
+            // 저장된 설정 로드
+            LoadSettings();
         }
 
         #endregion
 
-        #region 제어 메서드
+        #region 제어
 
-        /// <summary>
-        /// PID 제어 시작
-        /// </summary>
-        public void Start()
+        private void Start()
         {
             if (!_isEnabled) return;
 
             // 장치 연결 확인
-            if (!_mainForm._tempController?.IsConnected ?? true)
+            if (_mainForm._tempController?.IsConnected != true)
             {
-                LogError("온도 컨트롤러가 연결되지 않았습니다.");
+                LogError("온도 컨트롤러 미연결 — PID 시작 불가");
                 return;
             }
 
-            if (!_mainForm._bathCirculator?.IsConnected ?? true)
+            if (_mainForm._bathCirculator?.IsConnected != true)
             {
-                LogError("칠러가 연결되지 않았습니다.");
+                LogError("칠러 미연결 — PID 시작 불가");
                 return;
             }
 
-            // PID 제어기 리셋
+            // 칠러가 꺼져있으면 자동 시작
+            EnsureChillerRunning();
+
             _pidController.Reset();
-
-            // 타이머 시작
+            _consecutiveErrors = 0;
             _controlTimer.Start();
 
-            LogInfo($"칠러 PID 제어 시작 (Ch2 목표: {_ch2TargetTemperature}°C, 업데이트 주기: {_updateInterval}초)");
+            LogInfo($"칠러 PID 시작 ({ChannelNames[_targetChannelIndex]} 목표: {_targetTemperature:F1}°C)");
         }
 
-        /// <summary>
-        /// PID 제어 정지
-        /// </summary>
-        public void Stop()
+        private void Stop()
         {
             _controlTimer.Stop();
-            LogInfo("칠러 PID 제어 정지");
+
+            // PID가 자동으로 칠러를 켰으면 원래 온도로 복원
+            if (_chillerAutoStarted && _mainForm._bathCirculator?.IsConnected == true)
+            {
+                try
+                {
+                    _mainForm._bathCirculator.SetTemperature(_targetTemperature);
+                    LogInfo($"칠러 온도 복원: {_targetTemperature:F1}°C");
+                }
+                catch { }
+                _chillerAutoStarted = false;
+            }
+
+            LogInfo("칠러 PID 정지");
         }
 
-        /// <summary>
-        /// PID 파라미터 설정
-        /// </summary>
-        /// <param name="kp">비례 게인</param>
-        /// <param name="ki">적분 게인</param>
-        /// <param name="kd">미분 게인</param>
         public void SetPIDParameters(double kp, double ki, double kd)
         {
             _pidController.SetParameters(kp, ki, kd);
-            LogInfo($"PID 파라미터 변경 - Kp: {kp}, Ki: {ki}, Kd: {kd}");
+            SaveSettings();
+            LogInfo($"PID 파라미터 변경 — Kp:{kp:F3} Ki:{ki:F3} Kd:{kd:F3}");
         }
 
         #endregion
 
-        #region 타이머 이벤트
+        #region PID 실행
 
-        /// <summary>
-        /// 제어 타이머 이벤트 핸들러
-        /// </summary>
         private async void ControlTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
             try
             {
-                // 타이머 중복 실행 방지
                 _controlTimer.Stop();
-
-                // PID 제어 실행
                 await ExecutePIDControl();
             }
             catch (Exception ex)
             {
-                LogError($"PID 제어 오류: {ex.Message}");
+                LogError($"PID 오류: {ex.Message}");
+                HandleError();
             }
             finally
             {
-                // 타이머 재시작
                 if (_isEnabled)
-                {
                     _controlTimer.Start();
-                }
             }
         }
 
-        /// <summary>
-        /// PID 제어 실행
-        /// </summary>
         private async Task ExecutePIDControl()
         {
-            // 1. Ch2 현재 온도 읽기
-            //await _mainForm._tempController.UpdateStatusAsync();
-            var ch2Status = _mainForm._tempController.Status?.ChannelStatus[1]; // Ch2는 인덱스 1
-
-            if (ch2Status == null)
+            // 연결 확인
+            if (_mainForm._tempController?.IsConnected != true ||
+                _mainForm._bathCirculator?.IsConnected != true)
             {
-                LogWarning("Ch2 상태를 읽을 수 없습니다.");
+                HandleError();
+                LogWarning("장치 연결 끊김 — 대기 중");
                 return;
             }
 
-            // 온도값 계산 (소수점 처리)
-            double ch2CurrentTemp = ch2Status.PresentValue;
-            if (ch2Status.Dot > 0)
+            // 타겟 채널 현재 온도 읽기
+            string chName = ChannelNames[_targetChannelIndex];
+            var chStatus = _mainForm._tempController.Status?.ChannelStatus?[_targetChannelIndex];
+            if (chStatus == null)
             {
-                ch2CurrentTemp = ch2CurrentTemp / Math.Pow(10, ch2Status.Dot);
+                HandleError();
+                return;
             }
 
-            LastCh2Temperature = ch2CurrentTemp;
+            // 센서 에러 체크
+            if (!string.IsNullOrEmpty(chStatus.SensorError))
+            {
+                HandleError();
+                LogWarning($"{chName} 센서 에러: {chStatus.SensorError} — 안전 정지");
+                if (_consecutiveErrors >= MAX_CONSECUTIVE_ERRORS)
+                    SafeStop("센서 에러 지속");
+                return;
+            }
 
-            // 2. PID 계산
-            double pidOutput = _pidController.Calculate(_ch2TargetTemperature, ch2CurrentTemp);
+            double chTemp = chStatus.CalibratedTemperature;
+            LastChannelTemperature = chTemp;
+
+            // 온도 이상치 체크 (센서 고장 감지)
+            if (chTemp < -50 || chTemp > 300)
+            {
+                HandleError();
+                LogWarning($"{chName} 온도 이상: {chTemp:F1}°C — 무시");
+                return;
+            }
+
+            // PID 계산 — 출력이 곧 칠러 설정온도
+            double pidOutput = _pidController.Calculate(_targetTemperature, chTemp);
             LastOutput = pidOutput;
 
-            // 3. 칠러 설정 온도 계산
-            // 칠러 온도 = 기준 온도 - PID 출력
-            // (PID 출력이 양수이면 Ch2가 목표보다 낮으므로 칠러 온도를 낮춰야 함)
-            double chillerSetpoint = _chillerBaseTemperature + pidOutput;
-
-            // 칠러 온도 제한
-            chillerSetpoint = Math.Max(CHILLER_MIN_TEMP, Math.Min(CHILLER_MAX_TEMP, chillerSetpoint));
+            // 칠러 설정온도 = PID 출력 (직접 제어)
+            double chillerSetpoint = Math.Max(CHILLER_MIN_TEMP, Math.Min(CHILLER_MAX_TEMP, pidOutput));
             LastChillerSetpoint = chillerSetpoint;
 
-            // 4. 칠러에 새로운 온도 설정
+            // 칠러에 온도 설정
             bool result = await Task.Run(() => _mainForm._bathCirculator.SetTemperature(chillerSetpoint));
 
             if (result)
             {
-                LogDebug($"PID 제어 - Ch2: {ch2CurrentTemp:F2}°C (목표: {_ch2TargetTemperature:F2}°C), " +
-                        $"PID 출력: {pidOutput:F2}, 칠러 설정: {chillerSetpoint:F2}°C");
+                _consecutiveErrors = 0;
+                _lastSuccessTime = DateTime.Now;
+                LogDebug($"PID — {chName}: {chTemp:F1}°C (목표: {_targetTemperature:F1}), 칠러→{chillerSetpoint:F1}°C");
             }
             else
             {
+                HandleError();
                 LogWarning("칠러 온도 설정 실패");
             }
 
-            // 5. 데이터 로깅
-            LogPIDData(ch2CurrentTemp, pidOutput, chillerSetpoint);
+            LogPIDData(chTemp, pidOutput, chillerSetpoint);
         }
 
         #endregion
 
-        #region 로깅 메서드
+        #region 안전 및 자동화
 
-        /// <summary>
-        /// PID 제어 데이터 로깅
-        /// </summary>
-        private void LogPIDData(double ch2Temp, double pidOutput, double chillerSetpoint)
+        private void EnsureChillerRunning()
         {
-            // CSV 형식으로 데이터 로깅
+            try
+            {
+                var status = _mainForm._bathCirculator?.Status;
+                if (status != null && !status.IsRunning)
+                {
+                    LogInfo("칠러 자동 시작");
+                    _mainForm._bathCirculator.SetTemperature(_targetTemperature);
+                    Task.Run(() => _mainForm._bathCirculator.StartPriority());
+                    _chillerAutoStarted = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"칠러 자동 시작 실패: {ex.Message}");
+            }
+        }
+
+        private void HandleError()
+        {
+            _consecutiveErrors++;
+        }
+
+        private void SafeStop(string reason)
+        {
+            LogError($"안전 정지: {reason}");
+            _isEnabled = false;
+            _controlTimer.Stop();
+
+            // UI 동기화
+            try
+            {
+                _mainForm.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        var chk = _mainForm.Controls.Find("chkChillerPIDEnabled", true);
+                        if (chk.Length > 0 && chk[0] is System.Windows.Forms.CheckBox cb)
+                            cb.Checked = false;
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
+        }
+
+        #endregion
+
+        #region 설정 저장/로드
+
+        private static string SettingsPath =>
+            Path.Combine(PathSettings.Instance.ConfigPath, "ChillerPIDSettings.xml");
+
+        private bool _suppressSave = false;
+
+        private void SaveSettings()
+        {
+            if (_suppressSave) return;
+            try
+            {
+                var settings = new ChillerPIDSettings
+                {
+                    TargetTemperature = _targetTemperature,
+                    TargetChannelIndex = _targetChannelIndex,
+                    UpdateInterval = _updateInterval,
+                    Kp = _pidController.Kp,
+                    Ki = _pidController.Ki,
+                    Kd = _pidController.Kd
+                };
+
+                string dir = Path.GetDirectoryName(SettingsPath);
+                if (!Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                var serializer = new XmlSerializer(typeof(ChillerPIDSettings));
+                using (var writer = new StreamWriter(SettingsPath))
+                    serializer.Serialize(writer, settings);
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"PID 설정 저장 실패: {ex.Message}");
+            }
+        }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                if (!File.Exists(SettingsPath)) return;
+
+                var serializer = new XmlSerializer(typeof(ChillerPIDSettings));
+                ChillerPIDSettings settings;
+                using (var reader = new StreamReader(SettingsPath))
+                    settings = (ChillerPIDSettings)serializer.Deserialize(reader);
+
+                _suppressSave = true;
+                _targetTemperature = settings.TargetTemperature;
+                _targetChannelIndex = Math.Max(0, Math.Min(4, settings.TargetChannelIndex));
+                _updateInterval = Math.Max(1.0, settings.UpdateInterval);
+                _controlTimer.Interval = _updateInterval * 1000;
+                _pidController.SetParameters(settings.Kp, settings.Ki, settings.Kd);
+                _suppressSave = false;
+
+                LogInfo($"PID 설정 로드 — 채널:{ChannelNames[_targetChannelIndex]}, 목표:{_targetTemperature:F1}°C, Kp:{settings.Kp:F3}, Ki:{settings.Ki:F3}, Kd:{settings.Kd:F3}");
+            }
+            catch
+            {
+                _suppressSave = false;
+            }
+        }
+
+        #endregion
+
+        #region 로깅
+
+        private void LogPIDData(double chTemp, double pidOutput, double chillerSetpoint)
+        {
             var dataList = new List<string>
             {
-                ch2Temp.ToString("F2"),
-                _ch2TargetTemperature.ToString("F2"),
+                ChannelNames[_targetChannelIndex],
+                chTemp.ToString("F2"),
+                _targetTemperature.ToString("F2"),
                 pidOutput.ToString("F2"),
                 chillerSetpoint.ToString("F2"),
                 _pidController.Kp.ToString("F3"),
@@ -303,37 +440,18 @@ namespace VacX_OutSense.Utils
                 _pidController.IntegralTerm.ToString("F3"),
                 _pidController.LastError.ToString("F3")
             };
-
             DataLoggerService.Instance.LogDataAsync("ChillerPID", dataList);
         }
 
-        private void LogInfo(string message)
-        {
-            LoggerService.Instance.LogInfo($"[ChillerPID] {message}");
-        }
-
-        private void LogWarning(string message)
-        {
-            LoggerService.Instance.LogWarning($"[ChillerPID] {message}");
-        }
-
-        private void LogError(string message)
-        {
-            LoggerService.Instance.LogError($"[ChillerPID] {message}");
-        }
-
-        private void LogDebug(string message)
-        {
-            LoggerService.Instance.LogDebug($"[ChillerPID] {message}");
-        }
+        private void LogInfo(string msg) => LoggerService.Instance.LogInfo($"[ChillerPID] {msg}");
+        private void LogWarning(string msg) => LoggerService.Instance.LogWarning($"[ChillerPID] {msg}");
+        private void LogError(string msg) => LoggerService.Instance.LogError($"[ChillerPID] {msg}");
+        private void LogDebug(string msg) => LoggerService.Instance.LogDebug($"[ChillerPID] {msg}");
 
         #endregion
 
         #region IDisposable
 
-        /// <summary>
-        /// 리소스 해제
-        /// </summary>
         public void Dispose()
         {
             Stop();
@@ -341,5 +459,17 @@ namespace VacX_OutSense.Utils
         }
 
         #endregion
+    }
+
+    /// <summary>PID 설정 저장용 모델</summary>
+    public class ChillerPIDSettings
+    {
+        public double TargetTemperature { get; set; } = 25.0;
+        /// <summary>타겟 채널 인덱스 (0=CH1, 1=CH2, ..., 4=CH5)</summary>
+        public int TargetChannelIndex { get; set; } = 1;
+        public double UpdateInterval { get; set; } = 10.0;
+        public double Kp { get; set; } = 2.0;
+        public double Ki { get; set; } = 0.005;
+        public double Kd { get; set; } = 1.0;
     }
 }

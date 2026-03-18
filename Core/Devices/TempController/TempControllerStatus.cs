@@ -29,6 +29,11 @@ namespace VacX_OutSense.Core.Devices.TempController
         // 확장 모듈 관련 필드
         private bool _isExpansionChannel;
 
+        // 캘리브레이션
+        private double _calibrationOffset = 0.0;
+        private double _calibrationGain = 1.0;
+        private bool _calibrationEnabled = false;
+
         /// <summary>
         /// 속성 변경 이벤트
         /// </summary>
@@ -322,6 +327,74 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
+        /// 캘리브레이션 오프셋 (°C)
+        /// </summary>
+        public double CalibrationOffset
+        {
+            get => _calibrationOffset;
+            set
+            {
+                if (_calibrationOffset != value)
+                {
+                    _calibrationOffset = value;
+                    OnPropertyChanged(nameof(CalibrationOffset));
+                    OnPropertyChanged(nameof(FormattedPresentValue));
+                    OnPropertyChanged(nameof(CalibratedTemperature));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 캘리브레이션 게인 (배율)
+        /// </summary>
+        public double CalibrationGain
+        {
+            get => _calibrationGain;
+            set
+            {
+                if (_calibrationGain != value)
+                {
+                    _calibrationGain = value;
+                    OnPropertyChanged(nameof(CalibrationGain));
+                    OnPropertyChanged(nameof(FormattedPresentValue));
+                    OnPropertyChanged(nameof(CalibratedTemperature));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 캘리브레이션 활성화 여부
+        /// </summary>
+        public bool CalibrationEnabled
+        {
+            get => _calibrationEnabled;
+            set
+            {
+                if (_calibrationEnabled != value)
+                {
+                    _calibrationEnabled = value;
+                    OnPropertyChanged(nameof(CalibrationEnabled));
+                    OnPropertyChanged(nameof(FormattedPresentValue));
+                    OnPropertyChanged(nameof(CalibratedTemperature));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 캘리브레이션 적용된 온도 (°C, 실수)
+        /// </summary>
+        public double CalibratedTemperature
+        {
+            get
+            {
+                double raw = _dot == 1 ? _presentValue / 10.0 : _presentValue;
+                if (!_calibrationEnabled)
+                    return raw;
+                return (raw * _calibrationGain) + _calibrationOffset;
+            }
+        }
+
+        /// <summary>
         /// 램프 시간 단위 텍스트
         /// </summary>
         public string RampTimeUnitText
@@ -389,6 +462,12 @@ namespace VacX_OutSense.Core.Devices.TempController
                 if (!string.IsNullOrEmpty(_sensorError))
                 {
                     return _sensorError;
+                }
+
+                if (_calibrationEnabled)
+                {
+                    double calibrated = CalibratedTemperature;
+                    return _dot == 1 ? $"{calibrated:F1}" : $"{Math.Round(calibrated)}";
                 }
 
                 return FormatTemperature(_presentValue, _dot, _temperatureUnit);

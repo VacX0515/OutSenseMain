@@ -369,11 +369,29 @@
             txtBakeoutMaxDeltaT.TabIndex = 33;
             txtBakeoutMaxDeltaT.Visible = false;
             //
+            // lblBakeoutTolerance
+            //
+            lblBakeoutTolerance = new Label();
+            lblBakeoutTolerance.AutoSize = true;
+            lblBakeoutTolerance.Location = new Point(20, 183);
+            lblBakeoutTolerance.Name = "lblBakeoutTolerance";
+            lblBakeoutTolerance.Size = new Size(200, 15);
+            lblBakeoutTolerance.TabIndex = 50;
+            lblBakeoutTolerance.Text = "도달 허용오차 (°C):";
+            //
+            // txtBakeoutTolerance
+            //
+            txtBakeoutTolerance = new TextBox();
+            txtBakeoutTolerance.Location = new Point(230, 180);
+            txtBakeoutTolerance.Name = "txtBakeoutTolerance";
+            txtBakeoutTolerance.Size = new Size(120, 23);
+            txtBakeoutTolerance.TabIndex = 51;
+            //
             // lblBakeoutRiseTimeout
             //
             lblBakeoutRiseTimeout = new Label();
             lblBakeoutRiseTimeout.AutoSize = true;
-            lblBakeoutRiseTimeout.Location = new Point(20, 183);
+            lblBakeoutRiseTimeout.Location = new Point(20, 213);
             lblBakeoutRiseTimeout.Name = "lblBakeoutRiseTimeout";
             lblBakeoutRiseTimeout.Size = new Size(200, 15);
             lblBakeoutRiseTimeout.TabIndex = 34;
@@ -383,7 +401,7 @@
             // txtBakeoutRiseTimeout
             //
             txtBakeoutRiseTimeout = new TextBox();
-            txtBakeoutRiseTimeout.Location = new Point(230, 180);
+            txtBakeoutRiseTimeout.Location = new Point(230, 210);
             txtBakeoutRiseTimeout.Name = "txtBakeoutRiseTimeout";
             txtBakeoutRiseTimeout.Size = new Size(120, 23);
             txtBakeoutRiseTimeout.TabIndex = 35;
@@ -452,6 +470,8 @@
             tabTemperature.Controls.Add(txtBakeoutHeaterMax);
             tabTemperature.Controls.Add(lblBakeoutMaxDeltaT);
             tabTemperature.Controls.Add(txtBakeoutMaxDeltaT);
+            tabTemperature.Controls.Add(lblBakeoutTolerance);
+            tabTemperature.Controls.Add(txtBakeoutTolerance);
             tabTemperature.Controls.Add(lblBakeoutRiseTimeout);
             tabTemperature.Controls.Add(txtBakeoutRiseTimeout);
             tabTemperature.Controls.Add(lblBakeoutDecelZone);
@@ -1130,6 +1150,8 @@
         private System.Windows.Forms.TextBox txtBakeoutHeaterMax;
         private System.Windows.Forms.Label lblBakeoutMaxDeltaT;
         private System.Windows.Forms.TextBox txtBakeoutMaxDeltaT;
+        private System.Windows.Forms.Label lblBakeoutTolerance;
+        private System.Windows.Forms.TextBox txtBakeoutTolerance;
         private System.Windows.Forms.Label lblBakeoutRiseTimeout;
         private System.Windows.Forms.TextBox txtBakeoutRiseTimeout;
         private System.Windows.Forms.Label lblBakeoutDecelZone;

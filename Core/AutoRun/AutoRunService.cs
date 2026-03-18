@@ -28,6 +28,9 @@ namespace VacX_OutSense.Core.AutoRun
         private DateTime _experimentStartTime;
         private bool _isExperimentTimerRunning = false;
 
+        // 상태 저장용
+        private string _experimentName = "";
+
         private AutoRunState _currentState = AutoRunState.Idle;
         private bool _isRunning = false;
         private bool _isPaused = false;
@@ -54,6 +57,13 @@ namespace VacX_OutSense.Core.AutoRun
                         var previousState = _currentState;
                         _currentState = value;
                         OnStateChanged(new AutoRunStateChangedEventArgs(previousState, value));
+
+                        // 진행 중인 상태 변경 시 스냅샷 저장
+                        if (_isRunning && value != AutoRunState.Completed
+                            && value != AutoRunState.Aborted && value != AutoRunState.Error)
+                        {
+                            Task.Run(() => SaveStateSnapshot());
+                        }
                     }
                 }
             }
@@ -99,6 +109,46 @@ namespace VacX_OutSense.Core.AutoRun
         /// 현재 실험이 베이크아웃 모드인지
         /// </summary>
         private bool IsBakeoutMode => _config.ExperimentType == ExperimentType.Bakeout;
+
+        /// <summary>
+        /// 실험 이름 (상태 저장용)
+        /// </summary>
+        public string ExperimentName
+        {
+            get => _experimentName;
+            set => _experimentName = value ?? "";
+        }
+
+        /// <summary>
+        /// 현재 오토런 진행 상태를 파일에 저장 (재시작 시 이어하기용)
+        /// </summary>
+        public void SaveStateSnapshot()
+        {
+            if (!_isRunning) return;
+
+            try
+            {
+                var snapshot = new AutoRunStateSnapshot
+                {
+                    CurrentStepNumber = _currentStepNumber,
+                    StartTime = _startTime,
+                    ExperimentStartTime = _experimentStartTime,
+                    IsExperimentTimerRunning = _isExperimentTimerRunning,
+                    ExperimentType = _config.ExperimentType,
+                    ExperimentName = _experimentName,
+                    AutoRunElapsedSeconds = (int)_stopwatch.Elapsed.TotalSeconds,
+                    ExperimentElapsedSeconds = _isExperimentTimerRunning
+                        ? (int)(DateTime.Now - _experimentStartTime).TotalSeconds : 0
+                };
+                snapshot.Save();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 저장된 상태 파일 삭제
+        /// </summary>
+        public static void ClearStateSnapshot() => AutoRunStateSnapshot.Clear();
 
         #endregion
 
@@ -232,6 +282,7 @@ namespace VacX_OutSense.Core.AutoRun
             }
 
             CurrentState = AutoRunState.Aborted;
+            AutoRunStateSnapshot.Clear();
             _stopwatch.Stop();
             EnableManualControls(true);
         }
@@ -499,6 +550,7 @@ namespace VacX_OutSense.Core.AutoRun
                     _config.ShutdownTimeout, cancellationToken, maxRetryOverride: 0);
 
                 CurrentState = AutoRunState.Completed;
+                AutoRunStateSnapshot.Clear();
                 LogInfo("=== AutoRun 시퀀스 정상 완료 ===");
 
             Cleanup:
@@ -1397,11 +1449,14 @@ namespace VacX_OutSense.Core.AutoRun
             UpdateProgress("온도 도달 대기 중...", 0);
             LogInfo($"{monitorLabel} 목표 온도({targetTemperature:F1}°C) 도달 대기 중...");
 
-            // PI 제어 상태 (베이크아웃 전용)
+            // PID 제어 상태 (베이크아웃 전용)
             const double Kp = 1.5;
             // ★ [#6 해결] 적분 속도를 dt 무관하게 정규화 — °C/초² 단위
             //   실제 적분 증분 = error × Ki_norm (dt 곱하지 않음, 매 루프 1회 고정)
             const double Ki_norm = 0.01;       // 정규화 적분 게인 (°C/회)
+            const double Kd = 3.0;             // 미분 게인 — 상승 속도에 비례해 SV 억제
+            double observedThermalLag = 0;     // 관측된 열 지연 (CH1 PV − 샘플) — 적응형 감속 구간용
+            double smoothedRate = 0;           // 변화율 이동평균 (노이즈 필터)
             double integralTerm = 0;           // 적분 기여값 (°C)
             double maxIntegral = IsBakeoutMode
                 ? _config.BakeoutHeaterMaxTemperature - targetTemperature
@@ -1574,6 +1629,11 @@ namespace VacX_OutSense.Core.AutoRun
 
             bool temperatureReached = false;
             var waitStartTime = DateTime.Now;
+            double reachTolerance = _config.BakeoutTolerance > 0 ? _config.BakeoutTolerance : 1.0;
+            // 도달 가능성 예측: 초기 5분간 승온율 관측
+            double predictBaseline = double.NaN;
+            double predictBaselineTime = 0;
+            bool predictChecked = false;
 
             while (!temperatureReached && (DateTime.Now - waitStartTime).TotalMinutes < riseTimeoutMinutes)
             {
@@ -1734,52 +1794,77 @@ namespace VacX_OutSense.Core.AutoRun
 
                     double error = rampedTarget - monitorTemp;
 
-                    // ★ [#3 해결] 샘플 변화율 기반 적분 제한
-                    //   샘플이 상승 중이면 적분 축적 속도를 줄여 과축적 방지
-                    double rateOfChange = double.IsNaN(prevMonitorTemp) ? 0
-                        : (monitorTemp - prevMonitorTemp); // 양수 = 상승 중
+                    // ★ 변화율: 이동평균으로 노이즈 필터링 (α=0.3)
+                    double rawRate = double.IsNaN(prevMonitorTemp) ? 0
+                        : (monitorTemp - prevMonitorTemp);
+                    smoothedRate = smoothedRate * 0.7 + rawRate * 0.3;
+                    double rateOfChange = smoothedRate;
+
                     double integralGain = Ki_norm;
                     if (rateOfChange > 0.5 && error > 0)
-                    {
-                        // 샘플이 빠르게 상승 중 → 적분 축적 억제
                         integralGain *= 0.3;
-                    }
 
-                    // ★ [Fix#14] 적분 업데이트 — 감속 구간은 증가율만 감속, 적분값 강제 감소 없음
-                    //   기존 문제: 감속 구간에서 적분 상한을 distance 비례로 클램핑 → 열저항 큰 시스템에서
-                    //   CH1 SV 급락 → 목표 온도 도달 불가능 (점근적 접근만 반복)
-                    //   수정: 감속 구간 진입 시 적분 증가 속도만 줄임 → 오버슈트 방지 + 목표 도달 가능
+                    // ★ 적응형 감속: 현재 열 지연 추적 (빠른 감쇠)
                     double distanceToTarget = targetTemperature - monitorTemp;
-                    double decelerationZone = _config.BakeoutDecelerationZone;
+                    double ch1PVNow = measurements.HeaterCh1Temperature;
+                    double currentLag = Math.Max(0, ch1PVNow - monitorTemp);
+                    // 빠른 추적: 증가 시 즉시, 감소 시 EMA(α=0.02)
+                    if (currentLag > observedThermalLag && rateOfChange > 0.05)
+                        observedThermalLag = currentLag;
+                    else
+                        observedThermalLag = observedThermalLag * 0.98 + currentLag * 0.02;
+                    double decelerationZone = Math.Max(5.0, currentLag * 1.5); // 현재 지연 기반
+
+                    // ★ 축적 에너지 분석: 현재 열 지연 기반 (과도 상태 인플레이션 방지)
+                    double storedEnergy = ch1PVNow - (targetTemperature + currentLag);
+                    // 근접도: 목표에 가까울수록 1, 멀수록 0
+                    double proximity = decelerationZone > 0
+                        ? Math.Max(0, 1.0 - distanceToTarget / decelerationZone) : 0;
+
                     if (error > 0)
                     {
                         double growthRate = integralGain;
-                        // 감속 구간: 적분 증가 속도를 거리 비례로 감속 (적분값 자체는 보존)
-                        if (decelerationZone > 0 && distanceToTarget > 0 && distanceToTarget < decelerationZone)
+                        // 감속구간 억제: 초과 에너지가 있을 때만 적용
+                        if (storedEnergy > 0 && decelerationZone > 0 && distanceToTarget > 0 && distanceToTarget < decelerationZone)
                             growthRate *= distanceToTarget / decelerationZone;
+                        if (storedEnergy > 0 && proximity > 0.5)
+                            growthRate *= (1.0 - proximity);
                         integralTerm += error * growthRate;
                     }
                     else
                     {
-                        integralTerm += error * Ki_norm * 3; // 오버슈트 시 3배속 감소 (감속 미적용)
+                        integralTerm += error * Ki_norm * 3;
+                    }
+
+                    // ★ 축적 에너지 기반 적분 감쇠: 초과 에너지가 있을 때만
+                    if (storedEnergy > 0 && proximity > 0.3 && integralTerm > 0)
+                    {
+                        double decayRate = (storedEnergy / Math.Max(1, observedThermalLag)) * proximity;
+                        integralTerm *= Math.Max(0.0, 1.0 - decayRate);
                     }
                     integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
 
-                    double newCh1Setpoint = rampedTarget + error * Kp + integralTerm;
-                    // ΔT 제한: CH1 SV가 샘플 온도 + maxDeltaT를 초과하지 않도록
-                    double deltaTLimit = _config.BakeoutMaxDeltaT > 0
-                        ? monitorTemp + _config.BakeoutMaxDeltaT
-                        : effectiveMaxTemp;
-                    double upperLimit = Math.Min(effectiveMaxTemp, deltaTLimit);
-                    newCh1Setpoint = Math.Max(rampedTarget * 0.8,
+                    // ★ D항: 변화율 이동평균 기반 (노이즈 내성)
+                    double dTerm = rateOfChange > 0 ? -Kd * rateOfChange : 0;
+
+                    // ★ 축적 에너지 보상: 근접도에 비례해 점진적 적용
+                    double energyCompensation = 0;
+                    if (storedEnergy > 0 && proximity > 0.3)
+                        energyCompensation = -storedEnergy * 0.5 * proximity;
+
+                    double newCh1Setpoint = rampedTarget + error * Kp + integralTerm + dTerm + energyCompensation;
+
+                    // 상한: 히터 최대 온도 (ΔT 제한은 더 이상 사용하지 않음)
+                    double upperLimit = effectiveMaxTemp;
+                    // ★ SV 하한: 오버슈트 보정 허용하되 실온 이하로는 불가
+                    double svLowerBound = Math.Max(initialMonitorTemp,
+                        Math.Max(monitorTemp - currentLag * 0.5, rampedTarget * 0.8));
+                    newCh1Setpoint = Math.Max(svLowerBound,
                         Math.Min(newCh1Setpoint, upperLimit));
 
-                    // ★ [#1] CH1 상한 또는 ΔT 제한 포화 + 샘플 정체 감지
+                    // ★ [#1] CH1 상한 포화 + 샘플 정체 감지
                     bool isAtMaxLimit = newCh1Setpoint >= effectiveMaxTemp - 1;
-                    bool isAtDeltaTLimit = _config.BakeoutMaxDeltaT > 0
-                        && newCh1Setpoint >= deltaTLimit - 1
-                        && deltaTLimit < effectiveMaxTemp;
-                    if ((isAtMaxLimit || isAtDeltaTLimit) && error > 5)
+                    if (isAtMaxLimit && error > 5)
                     {
                         if (stallCount == 0) stallBaselineTemp = monitorTemp;
                         stallCount++;
@@ -1788,22 +1873,12 @@ namespace VacX_OutSense.Core.AutoRun
                             double stallProgress = monitorTemp - stallBaselineTemp;
                             if (stallProgress < 2.0) // 300초 동안 2°C 미만 상승
                             {
-                                if (isAtDeltaTLimit && !isAtMaxLimit)
-                                {
-                                    // ΔT 제한이 병목 → 중단하지 않고 경고만 (ΔT를 늘리면 해결 가능)
-                                    LogWarning($"[경고] ΔT 제한({_config.BakeoutMaxDeltaT:F0}°C)으로 CH1 상승 제한됨, 샘플 정체 ({stallProgress:F1}°C/5분) — 계속 진행, ΔT 제한 증가 고려");
-                                }
-                                else
-                                {
-                                    LogError($"[중단] CH1 상한 포화 + 샘플 정체 ({stallProgress:F1}°C/5분) — 열 전달 부족 → 안전 종료 실행");
-                                    return false;
-                                }
+                                LogError($"[중단] CH1 상한({effectiveMaxTemp:F0}°C) 포화 + 샘플 정체 ({stallProgress:F1}°C/5분) — 열 전달 부족 → 안전 종료 실행");
+                                return false;
                             }
                             else
                             {
-                                // 느리지만 상승 중 → 리셋하고 계속
-                                string limitType = isAtDeltaTLimit ? "ΔT 제한" : "CH1 상한";
-                                LogWarning($"{limitType} 근접, 샘플 느린 상승 중 ({stallProgress:F1}°C/5분)");
+                                LogWarning($"CH1 상한 근접, 샘플 느린 상승 중 ({stallProgress:F1}°C/5분)");
                             }
                             stallCount = 0;
                         }
@@ -1811,6 +1886,49 @@ namespace VacX_OutSense.Core.AutoRun
                     else
                     {
                         stallCount = 0;
+                    }
+
+                    // ★ 도달 가능성 조기 예측 (초기 10분 후 판정)
+                    double elapsedMin = (DateTime.Now - waitStartTime).TotalMinutes;
+                    if (double.IsNaN(predictBaseline) && elapsedMin >= 2)
+                    {
+                        predictBaseline = monitorTemp;
+                        predictBaselineTime = elapsedMin;
+                    }
+                    if (!predictChecked && !double.IsNaN(predictBaseline) && elapsedMin >= predictBaselineTime + 10)
+                    {
+                        predictChecked = true;
+                        double tempRise = monitorTemp - predictBaseline;
+                        double minutesElapsed = elapsedMin - predictBaselineTime;
+                        double ratePerMin = tempRise / minutesElapsed; // °C/min
+
+                        if (ratePerMin > 0.01 && distanceToTarget > 0)
+                        {
+                            // 1차 지연 시스템: 승온율은 목표에 가까울수록 감소
+                            // 현재 승온율이 계속 유지된다 가정해도 도달 불가 시 → 실제론 더 느림
+                            double estimatedMinutes = distanceToTarget / ratePerMin;
+                            // 히터가 이미 최대 근처인데 승온율이 낮으면 → 평형 예측
+                            if (ch1PVNow >= effectiveMaxTemp - 5)
+                            {
+                                // 지수 감쇠 모델: T(t) = T_eq - (T_eq - T_now) × e^(-t/τ_eff)
+                                // τ_eff 추정: 현재 rate = (T_eq - T_now) / τ_eff → τ_eff = (T_eq - T_now) / rate
+                                // rate가 감소 중이면 T_eq ≈ T_now + rate × τ_eff
+                                // 간단 추정: 현재 rate와 남은 거리로 평형 추정
+                                // τ_eff 추정: 현재 열 지연과 승온율로 간접 추정
+                                double tauEstMin = (currentLag > 1 && ratePerMin > 0) ? currentLag / ratePerMin : 120;
+                                double estimatedEquilibrium = monitorTemp + ratePerMin * tauEstMin;
+                                if (estimatedEquilibrium < targetTemperature - reachTolerance)
+                                {
+                                    LogWarning($"[예측 경고] 히터 최대({effectiveMaxTemp:F0}°C) 근접 상태에서 승온율 {ratePerMin:F3}°C/min");
+                                    LogWarning($"  예상 평형 온도: ~{estimatedEquilibrium:F1}°C (목표: {targetTemperature:F1}°C) — 도달 불가 가능성");
+                                    LogWarning($"  히터 최대 온도 상향 또는 방열 조건 개선 필요");
+                                }
+                            }
+                        }
+                        else if (ratePerMin <= 0.01 && distanceToTarget > 5)
+                        {
+                            LogWarning($"[예측 경고] 10분간 승온율 {ratePerMin:F4}°C/min — 사실상 정체. 목표 도달 어려움 예상");
+                        }
                     }
 
                     // ★ [#5] CH1 PV 응답 검증
@@ -1845,7 +1963,7 @@ namespace VacX_OutSense.Core.AutoRun
                         if (setOk)
                         {
                             setTempFailCount = 0;
-                            LogInfo($"피드백: CH1 {lastCh1Setpoint:F1} → {newCh1Setpoint:F1}°C (램프목표:{rampedTarget:F1} P:{error * Kp:F1} I:{integralTerm:F1} 샘플:{monitorTemp:F1}°C)");
+                            LogInfo($"피드백: CH1 {lastCh1Setpoint:F1} → {newCh1Setpoint:F1}°C (램프목표:{rampedTarget:F1} P:{error * Kp:F1} I:{integralTerm:F1} D:{dTerm:F1} 샘플:{monitorTemp:F1}°C)");
                             lastCh1Setpoint = newCh1Setpoint;
                         }
                         else
@@ -1874,10 +1992,10 @@ namespace VacX_OutSense.Core.AutoRun
                     $"{ch1Info}  |  압력: {measurements.CurrentPressure:E2} Torr  |  대기: {waitElapsed:mm\\:ss}",
                     progressRatio);
 
-                if (monitorTemp >= targetTemperature)
+                if (monitorTemp >= targetTemperature - reachTolerance)
                 {
                     temperatureReached = true;
-                    LogInfo($"{monitorLabel} 목표 도달: {monitorTemp:F1}°C ≥ {targetTemperature:F1}°C (대기: {waitElapsed:mm\\:ss}, CH1 SV: {lastCh1Setpoint:F1}°C, I:{integralTerm:F1})");
+                    LogInfo($"{monitorLabel} 목표 도달: {monitorTemp:F1}°C ≈ {targetTemperature:F1}°C (허용오차 {reachTolerance:F1}°C, 대기: {waitElapsed:mm\\:ss}, CH1 SV: {lastCh1Setpoint:F1}°C, I:{integralTerm:F1})");
                 }
 
                 // ★ 정확한 주기 유지: 루프 처리시간을 빼고 잔여 시간만 대기
@@ -2068,27 +2186,50 @@ namespace VacX_OutSense.Core.AutoRun
                     }
                 }
 
-                // ── 베이크아웃 홀드 중 PI 피드백: 샘플 온도 능동 유지 (monitorCh ≠ 1) ──
+                // ── 베이크아웃 홀드 중 PID 피드백: 샘플 온도 능동 유지 (monitorCh ≠ 1) ──
                 if (usePIFeedback && _mainForm._tempController?.IsConnected == true)
                 {
                     double holdError = targetTemperature - monitorTempNow;
 
-                    // ★ [#6] 적분 업데이트 — dt 무관 정규화 (승온과 동일 Ki_norm 사용)
-                    // ★ [#2] 오버슈트 시 0 리셋 대신 점진적 감소
+                    // 홀드 중 변화율 (D항용)
+                    double holdRateOfChange = !double.IsNaN(prevMonitorTemp)
+                        ? (monitorTempNow - prevMonitorTemp) : 0;
+
+                    // ★ 변화율 이동평균 (홀드)
+                    smoothedRate = smoothedRate * 0.7 + holdRateOfChange * 0.3;
+
+                    // 적분 업데이트
                     if (holdError > 0)
                         integralTerm += holdError * Ki_norm;
                     else
                         integralTerm += holdError * Ki_norm * 3;
+
+                    // ★ 축적 에너지 기반 적분 감쇠: 온도 상승 중일 때만
+                    double holdCh1PV = measurements.HeaterCh1Temperature;
+                    double holdCurrentLag = Math.Max(0, holdCh1PV - monitorTempNow);
+                    double holdStoredEnergy = holdCh1PV - (targetTemperature + holdCurrentLag);
+                    if (holdStoredEnergy > 0 && smoothedRate > 0 && integralTerm > 0)
+                    {
+                        double decayRate = holdStoredEnergy / Math.Max(1, holdCurrentLag);
+                        integralTerm *= Math.Max(0.0, 1.0 - decayRate);
+                    }
                     integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
 
-                    double newCh1 = targetTemperature + holdError * Kp + integralTerm;
-                    // ΔT 제한: CH1 SV가 샘플 온도 + maxDeltaT를 초과하지 않도록
-                    double holdDeltaTLimit = _config.BakeoutMaxDeltaT > 0
-                        ? monitorTempNow + _config.BakeoutMaxDeltaT
-                        : effectiveMaxTemp;
-                    double holdUpperLimit = Math.Min(effectiveMaxTemp, holdDeltaTLimit);
-                    newCh1 = Math.Max(targetTemperature * 0.8,
-                        Math.Min(newCh1, holdUpperLimit));
+                    // D항: 이동평균 기반
+                    double holdDTerm = smoothedRate > 0 ? -Kd * smoothedRate : 0;
+
+                    // 축적 에너지 보상: 온도 상승 중일 때만 적용 (하강 시 회복 방해 방지)
+                    double holdEnergyComp = 0;
+                    if (holdStoredEnergy > 0 && smoothedRate > 0)
+                        holdEnergyComp = -holdStoredEnergy * 0.5;
+
+                    double newCh1 = targetTemperature + holdError * Kp + integralTerm + holdDTerm + holdEnergyComp;
+                    // 상한: 히터 최대 온도
+                    // SV 하한: 오버슈트 보정 허용하되 실온 이하 불가
+                    double holdSvLower = Math.Max(initialMonitorTemp,
+                        Math.Max(monitorTempNow - holdCurrentLag * 0.5, targetTemperature * 0.8));
+                    newCh1 = Math.Max(holdSvLower,
+                        Math.Min(newCh1, effectiveMaxTemp));
 
                     // ★ [Fix#2] 유의미한 변경만 전송 + 반환값 검증
                     if (Math.Abs(newCh1 - lastCh1Setpoint) > 0.5)
@@ -2105,7 +2246,7 @@ namespace VacX_OutSense.Core.AutoRun
                         if (setOk)
                         {
                             setTempFailCount = 0;
-                            LogInfo($"홀드 피드백: CH1 {lastCh1Setpoint:F1} → {newCh1:F1}°C (샘플:{monitorTempNow:F1} 오차:{holdError:F1} I:{integralTerm:F1})");
+                            LogInfo($"홀드 피드백: CH1 {lastCh1Setpoint:F1} → {newCh1:F1}°C (샘플:{monitorTempNow:F1} 오차:{holdError:F1} I:{integralTerm:F1} D:{holdDTerm:F1} E:{holdEnergyComp:F1})");
                             lastCh1Setpoint = newCh1;
                         }
                         else

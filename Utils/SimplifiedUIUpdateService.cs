@@ -157,6 +157,11 @@ namespace VacX_OutSense.Utils
                 snapshot.DryPump.HasError,
                 snapshot.DryPump.Warning
             );
+            _mainForm.SetDryPumpExtendedStatus(
+                snapshot.DryPump.Power,
+                snapshot.DryPump.RunningTime,
+                snapshot.DryPump.IsServiceDue
+            );
 
             // 터보펌프
             _mainForm.SetTurboPumpStatus(
@@ -167,6 +172,14 @@ namespace VacX_OutSense.Utils
                 snapshot.TurboPump.HasWarning,
                 snapshot.TurboPump.HasError,
                 snapshot.TurboPump.Warning
+            );
+            _mainForm.SetTurboPumpExtendedStatus(
+                snapshot.TurboPump.BearingTemperature,
+                snapshot.TurboPump.ElectronicsTemperature,
+                snapshot.TurboPump.RunningTime,
+                snapshot.TurboPump.IsReady,
+                snapshot.TurboPump.IsRemoteActive,
+                snapshot.TurboPump.IsInNormalOperation
             );
         }
 
@@ -211,6 +224,13 @@ namespace VacX_OutSense.Utils
             _mainForm.SetConnectionStatus("turbopump", snapshot.Connections.TurboPump);
             _mainForm.SetConnectionStatus("bathcirculator", snapshot.Connections.BathCirculator);
             _mainForm.SetConnectionStatus("tempcontroller", snapshot.Connections.TempController);
+
+            // 연결되지 않은 컴포넌트의 UI 패널 비활성화
+            _mainForm.SetPanelEnabled("iomodule", snapshot.Connections.IOModule);
+            _mainForm.SetPanelEnabled("drypump", snapshot.Connections.DryPump);
+            _mainForm.SetPanelEnabled("turbopump", snapshot.Connections.TurboPump);
+            _mainForm.SetPanelEnabled("bathcirculator", snapshot.Connections.BathCirculator);
+            _mainForm.SetPanelEnabled("tempcontroller", snapshot.Connections.TempController);
         }
 
         /// <summary>

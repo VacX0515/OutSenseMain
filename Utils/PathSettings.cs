@@ -26,7 +26,6 @@ namespace VacX_OutSense.Utils
 
         #region 기본 경로
 
-        private static readonly string AppBase = AppDomain.CurrentDomain.BaseDirectory;
         private static readonly string RootBase = @"C:\OutSense";
 
         public static string DefaultDataPath => Path.Combine(RootBase, "Data");

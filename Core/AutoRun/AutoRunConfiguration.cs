@@ -214,15 +214,20 @@ namespace VacX_OutSense.Core.AutoRun
         public int BakeoutRiseTimeoutMinutes { get; set; } = 0;
 
         /// <summary>
-        /// [Bakeout] 오버슈트 방지 감속 구간 (°C) — 목표 온도 이 값 전부터 적분항 감소 시작
-        /// 열 관성이 큰 시스템은 크게, 작은 시스템은 작게 설정. 0이면 감속 없음.
+        /// [Bakeout] 감속 구간 — 더 이상 사용하지 않음 (적응형 자동 계산으로 대체)
+        /// XML 하위호환을 위해 속성만 유지
         /// </summary>
-        public double BakeoutDecelerationZone { get; set; } = 10.0;
+        public double BakeoutDecelerationZone { get; set; } = 0;
 
         /// <summary>
         /// [Bakeout] PI 피드백 주기 (초) — CH1 SV 변경 간격
         /// </summary>
         public double BakeoutFeedbackIntervalSec { get; set; } = 5.0;
+
+        /// <summary>
+        /// [Bakeout] 목표 온도 도달 허용오차 (°C) — 목표 - 허용오차 이상이면 도달로 판정
+        /// </summary>
+        public double BakeoutTolerance { get; set; } = 1.0;
 
         /// <summary>
         /// [Bakeout] 샘플 온도 모니터링 채널 (1~5) — 하위호환용 (단일 채널)

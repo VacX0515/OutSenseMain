@@ -62,6 +62,18 @@ namespace VacX_OutSense.Models
         public string Warning { get; set; } = "";
         public bool HasWarning { get; set; }
         public bool HasError { get; set; }
+
+        // 터보펌프 추가 필드
+        public string BearingTemperature { get; set; } = "";
+        public string ElectronicsTemperature { get; set; } = "";
+        public string RunningTime { get; set; } = "";
+        public bool IsReady { get; set; }
+        public bool IsRemoteActive { get; set; }
+        public bool IsInNormalOperation { get; set; }
+
+        // 드라이펌프 추가 필드
+        public string Power { get; set; } = "";
+        public bool IsServiceDue { get; set; }
     }
 
     public class TemperatureUIData

@@ -97,10 +97,33 @@ namespace VacX_OutSense.Forms.UserControls
                     if (textBox != null)
                     {
                         textBox.ReadOnly = value;
+                        textBox.TabStop = !value;
                     }
                 }
             }
         }
+
+        /// <summary>
+        /// 텍스트 정렬
+        /// </summary>
+        [Category("모양")]
+        [Description("텍스트 정렬 (Left, Right, Center)")]
+        public HorizontalAlignment TextAlignment
+        {
+            get => textBox?.TextAlign ?? HorizontalAlignment.Left;
+            set
+            {
+                if (textBox != null)
+                    textBox.TextAlign = value;
+            }
+        }
+
+        /// <summary>
+        /// 포커스 불가 여부 (읽기 전용 표시용)
+        /// </summary>
+        [Category("동작")]
+        [Description("true이면 커서를 받지 않습니다")]
+        public bool NoFocus { get; set; } = false;
 
         /// <summary>
         /// 현재 텍스트 값
@@ -158,6 +181,11 @@ namespace VacX_OutSense.Forms.UserControls
             {
                 textBox.TextChanged += TextBox_TextChanged;
                 textBox.Validated += TextBox_Validated;
+                textBox.Enter += (s, e) =>
+                {
+                    if (NoFocus && Parent != null)
+                        Parent.Focus();
+                };
             }
         }
 
