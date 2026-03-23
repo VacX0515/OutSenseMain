@@ -400,7 +400,7 @@ namespace VacX_OutSense.Core.AutoRun
                    $"압력: {CurrentPressure:E2} Torr, " +
                    $"CH1: {HeaterCh1Temperature:F1}°C, " +
                    $"CH2: {HeaterCh2Temperature:F1}°C, " +
-                   $"터보: {TurboPumpSpeed} RPM";
+                   $"터보: {TurboPumpSpeed} Hz";
         }
 
         #endregion

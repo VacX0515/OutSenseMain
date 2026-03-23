@@ -5,6 +5,7 @@ using VacX_OutSense.Core.Communication.Interfaces;
 using VacX_OutSense.Core.Devices.Base;
 using VacX_OutSense.Core.Devices.IO_Module.Enum;
 using VacX_OutSense.Core.Devices.IO_Module.Models;
+using VacX_OutSense.Core.Safety;
 
 namespace VacX_OutSense.Core.Devices.IO_Module
 {
@@ -34,6 +35,9 @@ namespace VacX_OutSense.Core.Devices.IO_Module
     /// </summary>
     public class IO_Module : DeviceBase
     {
+        /// <summary>최상단 인터락 서비스 (MainForm 초기화 후 설정)</summary>
+        public SafetyInterlockService SafetyInterlock { get; set; }
+
         #region 상수
 
         // Modbus Function Codes
@@ -382,17 +386,64 @@ namespace VacX_OutSense.Core.Devices.IO_Module
 
         #region 밸브 제어 메서드
 
-        /// <summary>GV Solenoid (DO1)</summary>
-        public async Task<bool> ControlGateValveAsync(bool open) => await SetDigitalOutputAsync(1, open);
+        /// <summary>GV Solenoid (DO1) — 인터락 적용</summary>
+        public async Task<bool> ControlGateValveAsync(bool open)
+        {
+            if (SafetyInterlock != null)
+            {
+                bool allowed = open
+                    ? SafetyInterlock.CanOpenGateValve(out var reason)
+                    : SafetyInterlock.CanCloseGateValve(out reason);
+                if (!allowed)
+                {
+                    SafetyInterlock.Check(false, $"게이트밸브 {(open ? "열기" : "닫기")} 차단: {reason}");
+                    return false;
+                }
+            }
+            return await SetDigitalOutputAsync(1, open);
+        }
 
-        /// <summary>VV Solenoid (DO2)</summary>
-        public async Task<bool> ControlVentValveAsync(bool open) => await SetDigitalOutputAsync(2, open);
+        /// <summary>VV Solenoid (DO2) — 인터락 적용</summary>
+        public async Task<bool> ControlVentValveAsync(bool open)
+        {
+            if (SafetyInterlock != null && open)
+            {
+                if (!SafetyInterlock.CanOpenVentValve(out var reason))
+                {
+                    SafetyInterlock.Check(false, $"벤트밸브 열기 차단: {reason}");
+                    return false;
+                }
+            }
+            return await SetDigitalOutputAsync(2, open);
+        }
 
-        /// <summary>EV Solenoid (DO3)</summary>
-        public async Task<bool> ControlExhaustValveAsync(bool open) => await SetDigitalOutputAsync(3, open);
+        /// <summary>EV Solenoid (DO3) — 인터락 적용</summary>
+        public async Task<bool> ControlExhaustValveAsync(bool open)
+        {
+            if (SafetyInterlock != null && open)
+            {
+                if (!SafetyInterlock.CanOpenExhaustValve(out var reason))
+                {
+                    SafetyInterlock.Check(false, $"배기밸브 열기 차단: {reason}");
+                    return false;
+                }
+            }
+            return await SetDigitalOutputAsync(3, open);
+        }
 
-        /// <summary>IG HV (DO4)</summary>
-        public async Task<bool> ControlIonGaugeHVAsync(bool on) => await SetDigitalOutputAsync(4, on);
+        /// <summary>IG HV (DO4) — 인터락 적용</summary>
+        public async Task<bool> ControlIonGaugeHVAsync(bool on)
+        {
+            if (SafetyInterlock != null && on)
+            {
+                if (!SafetyInterlock.CanTurnOnIonGaugeHV(out var reason))
+                {
+                    SafetyInterlock.Check(false, $"이온게이지 HV ON 차단: {reason}");
+                    return false;
+                }
+            }
+            return await SetDigitalOutputAsync(4, on);
+        }
 
         // 동기 버전 (기존 호환성)
         public bool ControlGateValve(bool open) => Task.Run(async () => await ControlGateValveAsync(open)).Result;

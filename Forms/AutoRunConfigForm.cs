@@ -13,6 +13,15 @@ namespace VacX_OutSense.Forms
     {
         private AutoRunConfiguration _config;
         private ToolTip _toolTip;
+        private Label _lblHighVacuumTimeoutHours;
+        private Label _lblShutdownTimeoutHours;
+
+        private static string FormatSecondsToHM(int seconds)
+        {
+            int h = seconds / 3600;
+            int m = (seconds % 3600) / 60;
+            return h > 0 ? $"= {h}시간 {m}분" : $"= {m}분";
+        }
 
         public AutoRunConfiguration Configuration => _config;
 
@@ -23,7 +32,39 @@ namespace VacX_OutSense.Forms
             SetupToolTips();
             SetupHelpLabels();
             SetupHelpButton();
+            SetupChannelInterlock();
             LoadConfiguration();
+        }
+
+        private void SetupChannelInterlock()
+        {
+            chkBakeoutMonitorCh1.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh2.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh3.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh4.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh5.CheckedChanged += (s, e) => UpdateChannelInterlock();
+        }
+
+        private void UpdateChannelInterlock()
+        {
+            if (chkBakeoutMonitorCh1.Checked)
+            {
+                // CH1 선택 → 다른 채널 비활성화 + 해제
+                chkBakeoutMonitorCh2.Checked = false; chkBakeoutMonitorCh2.Enabled = false;
+                chkBakeoutMonitorCh3.Checked = false; chkBakeoutMonitorCh3.Enabled = false;
+                chkBakeoutMonitorCh4.Checked = false; chkBakeoutMonitorCh4.Enabled = false;
+                chkBakeoutMonitorCh5.Checked = false; chkBakeoutMonitorCh5.Enabled = false;
+                lblBakeoutMonitorChannel.Text = "모니터 채널 (TM4 PID):";
+            }
+            else
+            {
+                // CH1 해제 → 다른 채널 활성화
+                chkBakeoutMonitorCh2.Enabled = true;
+                chkBakeoutMonitorCh3.Enabled = true;
+                chkBakeoutMonitorCh4.Enabled = true;
+                chkBakeoutMonitorCh5.Enabled = true;
+                lblBakeoutMonitorChannel.Text = "모니터 채널 (MAX):";
+            }
         }
 
         private void LoadConfiguration()
@@ -39,6 +80,7 @@ namespace VacX_OutSense.Forms
             txtHeaterRampUpRate.Text = _config.HeaterRampUpRate.ToString("F1");
             txtTemperatureStabilityTolerance.Text = _config.TemperatureStabilityTolerance.ToString("F1");
             txtCoolingTargetTemperature.Text = _config.CoolingTargetTemperature.ToString("F1");
+            txtVentingStartTemperature.Text = _config.VentingStartTemperature.ToString("F1");
             txtVentTargetPressure.Text = _config.VentTargetPressure_kPa.ToString("F1");
 
             // 시간 설정 (총 분 → 시간 + 분)
@@ -83,11 +125,13 @@ namespace VacX_OutSense.Forms
             txtBakeoutHeaterMax.Text = _config.BakeoutHeaterMaxTemperature.ToString("F1");
             txtBakeoutMaxDeltaT.Text = _config.BakeoutMaxDeltaT.ToString("F0");
             txtBakeoutTolerance.Text = _config.BakeoutTolerance.ToString("F1");
+            txtBakeoutStabilization.Text = _config.BakeoutStabilizationSeconds.ToString();
             txtBakeoutRiseTimeout.Text = _config.BakeoutRiseTimeoutMinutes.ToString();
             txtBakeoutFeedbackInterval.Text = _config.BakeoutFeedbackIntervalSec.ToString("F1");
 
             // 실험 유형에 따라 컨트롤 표시/숨김
             UpdateExperimentTypeUI();
+            UpdateChannelInterlock();
         }
 
         private void SaveConfiguration()
@@ -105,6 +149,7 @@ namespace VacX_OutSense.Forms
                 _config.HeaterRampUpRate = double.Parse(txtHeaterRampUpRate.Text);
                 _config.TemperatureStabilityTolerance = double.Parse(txtTemperatureStabilityTolerance.Text);
                 _config.CoolingTargetTemperature = double.Parse(txtCoolingTargetTemperature.Text);
+                _config.VentingStartTemperature = double.Parse(txtVentingStartTemperature.Text);
                 _config.VentTargetPressure_kPa = double.Parse(txtVentTargetPressure.Text);
 
                 // 시간 설정 (시간 + 분 → 총 분)
@@ -147,6 +192,7 @@ namespace VacX_OutSense.Forms
                 _config.BakeoutHeaterMaxTemperature = double.Parse(txtBakeoutHeaterMax.Text);
                 _config.BakeoutMaxDeltaT = double.Parse(txtBakeoutMaxDeltaT.Text);
                 _config.BakeoutTolerance = double.Parse(txtBakeoutTolerance.Text);
+                _config.BakeoutStabilizationSeconds = int.Parse(txtBakeoutStabilization.Text);
                 _config.BakeoutRiseTimeoutMinutes = int.Parse(txtBakeoutRiseTimeout.Text);
                 _config.BakeoutFeedbackIntervalSec = double.Parse(txtBakeoutFeedbackInterval.Text);
             }
@@ -189,6 +235,8 @@ namespace VacX_OutSense.Forms
             txtBakeoutMaxDeltaT.Visible = isBakeout;
             lblBakeoutTolerance.Visible = isBakeout;
             txtBakeoutTolerance.Visible = isBakeout;
+            lblBakeoutStabilization.Visible = isBakeout;
+            txtBakeoutStabilization.Visible = isBakeout;
             lblBakeoutRiseTimeout.Visible = isBakeout;
             txtBakeoutRiseTimeout.Visible = isBakeout;
             lblBakeoutDecelZone.Visible = false;
@@ -214,26 +262,31 @@ namespace VacX_OutSense.Forms
             // 온도 탭: 베이크아웃 모드에서 항목이 4개(+허용오차)로 늘어나므로
             // TemperatureStabilityTolerance 이하 컨트롤을 아래로 이동
             int yTolerance = isBakeout ? 165 : 131;
-            int yShutdownHeader = isBakeout ? 275 : 175;
-            int yCooling = isBakeout ? 300 : 200;
-            int yVent = isBakeout ? 337 : 237;
-            int yNote = isBakeout ? 380 : 280;
+            int yShutdownHeader = isBakeout ? 295 : 175;
+            int yCooling = isBakeout ? 320 : 200;
+            int yVentTemp = isBakeout ? 357 : 237;
+            int yVentPressure = isBakeout ? 394 : 274;
+            int yNote = isBakeout ? 430 : 317;
 
             txtTemperatureStabilityTolerance.Location = new Point(230, yTolerance);
             lblTemperatureStabilityTolerance.Location = new Point(20, yTolerance + 3);
             lblShutdownTempHeader.Location = new Point(20, yShutdownHeader);
             txtCoolingTargetTemperature.Location = new Point(230, yCooling);
             lblCoolingTargetTemperature.Location = new Point(20, yCooling + 3);
-            txtVentTargetPressure.Location = new Point(230, yVent);
-            lblVentTargetPressure.Location = new Point(20, yVent + 3);
+            txtVentingStartTemperature.Location = new Point(230, yVentTemp);
+            lblVentingStartTemperature.Location = new Point(20, yVentTemp + 3);
+            txtVentTargetPressure.Location = new Point(230, yVentPressure);
+            lblVentTargetPressure.Location = new Point(20, yVentPressure + 3);
             lblTempNote.Location = new Point(20, yNote);
 
             // 온도 탭: 종료 시퀀스 설정은 HeaterOff일 때만 의미 있음
             bool showShutdownSettings = !isBakeout ||
-                (cmbBakeoutEndAction.SelectedIndex == 0); // HeaterOff
+                (cmbBakeoutEndAction.SelectedIndex == 0); // 냉각 → 벤트 → 종료
             lblShutdownTempHeader.Visible = showShutdownSettings;
             txtCoolingTargetTemperature.Visible = showShutdownSettings;
             lblCoolingTargetTemperature.Visible = showShutdownSettings;
+            txtVentingStartTemperature.Visible = showShutdownSettings;
+            lblVentingStartTemperature.Visible = showShutdownSettings;
             txtVentTargetPressure.Visible = showShutdownSettings;
             lblVentTargetPressure.Visible = showShutdownSettings;
         }
@@ -319,7 +372,8 @@ namespace VacX_OutSense.Forms
                 "일반적으로 1~5°C/h를 권장합니다.");
             _toolTip.SetToolTip(chkBakeoutMonitorCh1,
                 "CH1 = 히터 자체 센서.\n" +
-                "CH1만 선택 시 TM4 내장 PID로 직접 제어합니다.");
+                "CH1 선택 시 TM4 내장 PID + 기본 램프업으로 제어합니다.\n" +
+                "CH1과 다른 채널은 동시에 선택할 수 없습니다.");
             _toolTip.SetToolTip(chkBakeoutMonitorCh2,
                 "CH2 = 샘플 센서 2번.\n" +
                 "비-CH1 채널 선택 시 소프트웨어 PI 피드백으로 제어합니다.");
@@ -332,6 +386,12 @@ namespace VacX_OutSense.Forms
             _toolTip.SetToolTip(txtBakeoutMaxDeltaT,
                 "승온/홀드 중 CH1 SV가 샘플 온도 + 이 값을 초과하지 않습니다.\n" +
                 "불균일 가열 방지용입니다. 0이면 제한 없음 (절대 상한만 적용).");
+            _toolTip.SetToolTip(txtBakeoutStabilization,
+                "목표±허용오차 범위 내 + 변화율 안정 상태에서\n" +
+                "이 시간(초) 동안 연속 유지되어야 홀드 타이머가 시작됩니다.\n" +
+                "범위 이탈 또는 변화율 과대 시 카운터가 0으로 리셋됩니다.\n" +
+                "홀드(실험) 타이머 자체는 일시정지되지 않습니다.\n" +
+                "0이면 즉시 시작 (한 번 도달 시 바로 홀드).");
             _toolTip.SetToolTip(txtBakeoutRiseTimeout,
                 "목표 온도 도달까지 허용되는 최대 시간 (분).\n" +
                 "0이면 자동 계산 (램프 속도 기반 × 3 + 30분, 최소 60분).");
@@ -346,6 +406,9 @@ namespace VacX_OutSense.Forms
                 "모니터 온도가 목표±이 범위 안이면 안정 상태로 간주합니다.");
             _toolTip.SetToolTip(txtCoolingTargetTemperature,
                 "종료 시 이 온도 이하로 냉각되면 밸브를 닫고 마무리합니다.");
+            _toolTip.SetToolTip(txtVentingStartTemperature,
+                "CH1이 이 온도 이하로 내려가야 벤트 밸브를 엽니다.\n" +
+                "너무 뜨거운 상태에서 벤트하면 챔버 과열 위험이 있습니다.");
             _toolTip.SetToolTip(txtVentTargetPressure,
                 "벤트 밸브를 열어 이 압력(kPa) 이상이 되면 대기압 도달로 판단합니다.");
 
@@ -357,9 +420,9 @@ namespace VacX_OutSense.Forms
                 "승온 시간은 포함되지 않습니다.");
             _toolTip.SetToolTip(nudBakeoutHoldMinutes, "유지 시간의 분 부분");
             _toolTip.SetToolTip(cmbBakeoutEndAction,
-                "히터 OFF: 전체 셧다운 시퀀스 실행 (냉각→벤트→종료)\n" +
-                "현재 온도 유지: 홀드 완료 후 온도 유지하며 대기\n" +
-                "알림만: 소리만 울리고 수동 조작 대기");
+                "냉각→벤트→종료: 히터 OFF 후 냉각 대기 → 벤트 → 펌프 정지 (전체 셧다운)\n" +
+                "온도 유지: 홀드 완료 후 현재 온도를 유지하며 수동 종료 대기\n" +
+                "알림만: 소리만 울리고 현재 상태를 유지");
             _toolTip.SetToolTip(nudDataLoggingIntervalSeconds,
                 "데이터 파일에 온도/압력을 기록하는 간격입니다.\n" +
                 "너무 짧으면 파일이 커지고, 너무 길면 데이터 해상도가 낮아집니다.");
@@ -420,6 +483,27 @@ namespace VacX_OutSense.Forms
                 Name = "lblTimeoutGuide"
             };
             tabTimeout.Controls.Add(lblTimeoutGuide);
+
+            // 고진공/종료 타임아웃 시간 변환 표시
+            _lblHighVacuumTimeoutHours = new Label
+            {
+                Location = new Point(345, 212), Size = new Size(80, 20),
+                ForeColor = Color.DimGray, Font = new Font(Font.FontFamily, 8f),
+                Text = FormatSecondsToHM((int)nudHighVacuumTimeout.Value)
+            };
+            tabTimeout.Controls.Add(_lblHighVacuumTimeoutHours);
+            nudHighVacuumTimeout.ValueChanged += (s, ev) =>
+                _lblHighVacuumTimeoutHours.Text = FormatSecondsToHM((int)nudHighVacuumTimeout.Value);
+
+            _lblShutdownTimeoutHours = new Label
+            {
+                Location = new Point(345, 282), Size = new Size(80, 20),
+                ForeColor = Color.DimGray, Font = new Font(Font.FontFamily, 8f),
+                Text = FormatSecondsToHM((int)nudShutdownTimeout.Value)
+            };
+            tabTimeout.Controls.Add(_lblShutdownTimeoutHours);
+            nudShutdownTimeout.ValueChanged += (s, ev) =>
+                _lblShutdownTimeoutHours.Text = FormatSecondsToHM((int)nudShutdownTimeout.Value);
 
             // 시간 탭: 기존 컨트롤 아래 안내 (Y=140)
             var lblTimeGuide = new Label
@@ -482,7 +566,7 @@ namespace VacX_OutSense.Forms
   5. 이온게이지   — 고진공 압력 측정 시작
   6. 고진공 대기   — 히터 시작 압력까지 대기
   7. 히터 시작    — CH1 가열 시작
-  8. 실험 진행    — 승온 → 홀드 (데이터 기록)
+  8. 실험 진행    — 승온 → 안정화 대기 → 홀드 (데이터 기록)
   9. 종료 시퀀스   — 냉각 → 벤트 → 밸브 → 펌프 정지
 
 ■ 베이크아웃 모니터 채널
@@ -502,10 +586,26 @@ namespace VacX_OutSense.Forms
   · CH1 상한: BakeoutHeaterMaxTemperature 초과 불가
   · 센서 이상 시: 해당 채널 제외 후 나머지로 계속
 
+■ 안정화 유지 시간 (베이크아웃)
+  목표 온도 ± 허용오차 범위 내에서 설정 시간 동안
+  연속으로 유지되어야 홀드 타이머가 시작됩니다.
+
+  판정 조건 (모두 충족 시 카운트):
+  · 샘플 온도가 목표 ± 허용오차 범위 내
+  · 온도 변화율이 충분히 작음 (0.3°C/사이클 미만)
+
+  도중에 범위를 벗어나거나 변화율이 크면 카운터가
+  0으로 리셋되어 처음부터 다시 카운트합니다.
+  0초로 설정하면 한 번 도달 시 즉시 홀드를 시작합니다.
+  (기본값: 600초 = 10분)
+
+  ※ 안정화 시간은 승온 단계에만 적용됩니다.
+     홀드(실험) 타이머는 일시정지되지 않습니다.
+
 ■ 종료 동작 (베이크아웃)
-  · 히터 OFF: 냉각 → 벤팅 시작 온도 대기 → 벤트 → 완전 종료
-  · 현재 온도 유지: 홀드 완료 후 온도를 유지하며 대기
-  · 알림만: 소리만 울리고 수동 조작 대기
+  · 냉각→벤트→종료: 히터 OFF → 벤팅 시작 온도 대기 → 벤트 → 완전 종료
+  · 온도 유지: 홀드 완료 후 현재 온도를 유지하며 수동 종료 대기
+  · 알림만: 소리만 울리고 현재 상태 유지
 
 ■ 안전 기능
   · 벤팅 시작 온도: CH1이 설정 온도 이하로 냉각되어야 벤트

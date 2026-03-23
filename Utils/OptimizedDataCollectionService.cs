@@ -109,9 +109,25 @@ namespace VacX_OutSense.Utils
         {
             if (_latestData.TryGetValue("AI_Data", out var aiObj) && aiObj is AnalogInputValues aiData)
             {
-                // IG HV ON이면 이온게이지 압력, 아니면 피라니 압력
                 var doData = GetLatestDOData();
-                if (doData != null && doData.IsIonGaugeHVOn && _mainForm._ionGauge != null)
+                bool useIonGauge = false;
+
+                if (_mainForm._ionGauge != null)
+                {
+                    if (_mainForm._ionGauge.Model == Core.Devices.Gauges.IonGaugeModel.PTR90)
+                    {
+                        // PTR90: HV ON 불필요 — 자체 Cold Cathode 관리, 피라니가 1E-2 이하면 사용
+                        double piraniP = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
+                        useIonGauge = piraniP > 0 && piraniP < 1E-2;
+                    }
+                    else
+                    {
+                        // PTR225: HV ON 상태일 때만 사용
+                        useIonGauge = doData?.IsIonGaugeHVOn == true;
+                    }
+                }
+
+                if (useIonGauge)
                 {
                     double igVoltage = aiData.ExpansionVoltageValues[2];
                     var igCal = _mainForm._tempCalibrationConfig?.IonGauge;
@@ -121,6 +137,7 @@ namespace VacX_OutSense.Utils
                     if (ionPressure > 0)
                         return ionPressure;
                 }
+
                 return _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
             }
             return 0;
@@ -654,7 +671,7 @@ namespace VacX_OutSense.Utils
                 {
                     var status = _mainForm._turboPump.Status;
                     snapshot.TurboPump.Status = _mainForm._turboPump.GetStatusText();
-                    snapshot.TurboPump.Speed = $"{status.CurrentSpeed} RPM";
+                    snapshot.TurboPump.Speed = $"{status.CurrentSpeed} Hz";
                     snapshot.TurboPump.Current = $"{status.MotorCurrent:F2} A";
                     snapshot.TurboPump.Temperature = $"{status.MotorTemperature} °C";
                     snapshot.TurboPump.BearingTemperature = $"{status.BearingTemperature} °C";

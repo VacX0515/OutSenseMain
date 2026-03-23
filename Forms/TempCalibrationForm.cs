@@ -34,7 +34,7 @@ namespace VacX_OutSense.Forms
 
         private void InitializeUI()
         {
-            Text = "센서 캘리브레이션";
+            Text = "센서 / 게이지 교정";
             Size = new Size(560, 530);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;

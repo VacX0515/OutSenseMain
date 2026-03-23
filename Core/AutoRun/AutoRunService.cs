@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using VacX_OutSense.Core.Control;
+using VacX_OutSense.Core.Devices.Gauges;
 using VacX_OutSense.Core.Devices.TempController;
 using VacX_OutSense.Utils;
 
@@ -89,6 +90,11 @@ namespace VacX_OutSense.Core.AutoRun
         /// 현재 설정
         /// </summary>
         public AutoRunConfiguration Configuration => _config;
+
+        /// <summary>
+        /// 베이크아웃 열 특성 실시간 계수
+        /// </summary>
+        public ThermalCharacteristics ThermalParams { get; } = new ThermalCharacteristics();
 
         /// <summary>
         /// 실험 시작 시간 (온도 도달 후 카운트 시작 시점)
@@ -265,26 +271,57 @@ namespace VacX_OutSense.Core.AutoRun
                 _isExperimentTimerRunning = false;
             }
 
-            // NOTE: _runningTask?.Wait()를 사용하지 않음
-            // UI 스레드에서 Wait()하면 백그라운드 태스크의 Invoke()와 데드락 발생
-            // _isRunning = false + Cancel()이면 태스크가 자체 종료됨
-
-            // ★ 안전장치: 백그라운드 태스크가 Cancel을 감지하기 전에 SV를 쓸 수 있으므로
-            //   Stop() 시점에 히터를 명시적으로 정지 (TM4에서 SV 쓰기가 채널 재시작을 유발할 수 있음)
-            if (_currentStepNumber >= 7 && _mainForm._tempController?.IsConnected == true)
-            {
-                try
-                {
-                    _mainForm._tempController.Stop(1);
-                    LogWarning("히터 CH1 강제 정지 (AutoRun 중지 시 안전장치)");
-                }
-                catch { /* 통신 실패 무시 — 최선의 노력 */ }
-            }
-
             CurrentState = AutoRunState.Aborted;
             AutoRunStateSnapshot.Clear();
             _stopwatch.Stop();
             EnableManualControls(true);
+        }
+
+        /// <summary>
+        /// Stop 후 백그라운드 태스크 완료 대기 (UI에서 호출)
+        /// </summary>
+        public async Task WaitForStopAsync(int timeoutMs = 5000)
+        {
+            if (_runningTask == null) return;
+            try
+            {
+                await Task.WhenAny(_runningTask, Task.Delay(timeoutMs));
+                if (!_runningTask.IsCompleted)
+                    LogWarning("AutoRun 태스크가 아직 종료되지 않았습니다 (타임아웃)");
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 종료 시퀀스만 단독 실행 (사용자 중지 후 안전 종료용)
+        /// </summary>
+        public async Task RunShutdownSequenceAsync()
+        {
+            try
+            {
+                CurrentState = AutoRunState.ShuttingDown;
+                LogInfo("── 종료 시퀀스 시작 (수동) ──");
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(_config.ShutdownTimeout));
+                bool success = await FullShutdownAsync(cts.Token);
+
+                if (success)
+                    LogInfo("── 종료 시퀀스 완료 ──");
+                else
+                    LogWarning("── 종료 시퀀스 일부 실패 ──");
+            }
+            catch (OperationCanceledException)
+            {
+                LogError($"종료 시퀀스 타임아웃 ({_config.ShutdownTimeout}초 초과) — 시퀀스 강제 중단");
+            }
+            catch (Exception ex)
+            {
+                LogError($"종료 시퀀스 오류: {ex.Message}");
+            }
+            finally
+            {
+                CurrentState = AutoRunState.Idle;
+            }
         }
 
         public void Pause()
@@ -468,13 +505,20 @@ namespace VacX_OutSense.Core.AutoRun
                     if (result != StepResult.Success) goto Cleanup;
                 }
 
-                // 단계 5: 이온게이지 활성화
+                // 단계 5: 이온게이지 활성화 (PTR225 사용 시에만)
                 if (startFromStep <= 5)
                 {
-                    _currentStepNumber = 5;
-                    result = await ExecuteStepAsync(AutoRunState.ActivatingIonGauge, ActivateIonGaugeAsync,
-                        _config.IonGaugeActivationTimeout, cancellationToken);
-                    if (result != StepResult.Success) goto Cleanup;
+                    if (_mainForm._ionGauge?.Model == IonGaugeModel.PTR225)
+                    {
+                        _currentStepNumber = 5;
+                        result = await ExecuteStepAsync(AutoRunState.ActivatingIonGauge, ActivateIonGaugeAsync,
+                            _config.IonGaugeActivationTimeout, cancellationToken);
+                        if (result != StepResult.Success) goto Cleanup;
+                    }
+                    else
+                    {
+                        LogInfo("이온게이지 모델이 PTR225가 아님 — 이온게이지 활성화 단계 스킵");
+                    }
                 }
 
                 // 단계 6: 고진공 대기
@@ -551,7 +595,8 @@ namespace VacX_OutSense.Core.AutoRun
 
                 CurrentState = AutoRunState.Completed;
                 AutoRunStateSnapshot.Clear();
-                LogInfo("=== AutoRun 시퀀스 정상 완료 ===");
+                var totalTime = DateTime.Now - _startTime;
+                LogInfo($"=== AutoRun 시퀀스 정상 완료 (총 소요시간: {totalTime:hh\\:mm\\:ss}) ===");
 
             Cleanup:
                 if (result != StepResult.Success)
@@ -559,7 +604,8 @@ namespace VacX_OutSense.Core.AutoRun
                     string resultDesc = result == StepResult.Aborted ? "사용자 중단"
                         : result == StepResult.Timeout ? "시간 초과"
                         : "실패";
-                    LogError($"=== AutoRun 종료 (결과: {resultDesc}, 단계: {_currentStepNumber}/{TOTAL_STEPS}) ===");
+                    var totalElapsed = DateTime.Now - _startTime;
+                    LogError($"=== AutoRun 종료 (결과: {resultDesc}, 단계: {_currentStepNumber}/{TOTAL_STEPS}, 총 경과: {totalElapsed:hh\\:mm\\:ss}) ===");
 
                     CurrentState = result == StepResult.Aborted
                         ? AutoRunState.Aborted
@@ -625,8 +671,10 @@ namespace VacX_OutSense.Core.AutoRun
         {
             CurrentState = state;
             int maxRetry = maxRetryOverride >= 0 ? maxRetryOverride : _config.MaxRetryCount;
-            LogInfo($"단계 {_currentStepNumber}/{TOTAL_STEPS}: {GetStateDescription(state)} 시작" +
-                (maxRetry == 0 ? " (재시도 없음)" : $" (최대 재시도: {maxRetry}회)"));
+            var stepStartTime = DateTime.Now;
+            string stepName = GetStateDescription(state);
+            LogInfo($"── 단계 {_currentStepNumber}/{TOTAL_STEPS}: {stepName} 시작 ──" +
+                (maxRetry == 0 ? " (재시도 없음)" : $" (최대 재시도: {maxRetry}회, 타임아웃: {timeoutSeconds}초)"));
 
             var stepCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             stepCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
@@ -654,20 +702,24 @@ namespace VacX_OutSense.Core.AutoRun
                         success = await stepAction(stepCts.Token);
                         if (success)
                         {
-                            LogInfo($"단계 {_currentStepNumber} 완료");
+                            var stepElapsed = DateTime.Now - stepStartTime;
+                            string stepSummary = GetStepCompletionSummary(state);
+                            LogInfo($"── 단계 {_currentStepNumber} 완료: {stepName} [{stepElapsed:mm\\:ss}] {stepSummary} ──");
                             return StepResult.Success;
                         }
                     }
                     catch (OperationCanceledException) when (stepCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                     {
-                        LogError($"[중단] 단계 {_currentStepNumber} 시간 초과 ({timeoutSeconds}초)");
+                        var stepElapsed = DateTime.Now - stepStartTime;
+                        LogError($"[중단] 단계 {_currentStepNumber} {stepName} 시간 초과 ({timeoutSeconds}초, 경과: {stepElapsed:mm\\:ss})");
                         return StepResult.Timeout;
                     }
 
                     retryCount++;
                 }
 
-                LogError($"[중단] 단계 {_currentStepNumber} 실패" +
+                var failElapsed = DateTime.Now - stepStartTime;
+                LogError($"[중단] 단계 {_currentStepNumber} {stepName} 실패 [{failElapsed:mm\\:ss}]" +
                     (maxRetry > 0 ? $" (재시도 {maxRetry}회 초과)" : " — 재시도 불가 단계"));
                 return StepResult.Failed;
             }
@@ -1108,13 +1160,14 @@ namespace VacX_OutSense.Core.AutoRun
                 await Task.Delay(1000, cancellationToken);
 
                 var currentSpeed = _mainForm._turboPump.Status?.CurrentSpeed ?? 0;
-                UpdateProgress($"터보펌프 가속 중... ({currentSpeed} RPM)", 50 + (currentSpeed * 50 / targetSpeed));
+                UpdateProgress($"터보펌프 가속 중... ({currentSpeed} Hz)", 50 + (currentSpeed * 50 / targetSpeed));
 
                 // ── 가속 중 압력 모니터링 (IG 조기 활성화 + 히터 조기 진행) ──
                 var currentMeasurements = await GetCurrentMeasurementsAsync();
 
-                // DO 기반으로 IG HV 상태 확인
-                if (!igActivatedDuringAccel && _mainForm._ioModule?.IsConnected == true)
+                // DO 기반으로 IG HV 상태 확인 (PTR225 사용 시에만)
+                if (!igActivatedDuringAccel && _mainForm._ionGauge?.Model == IonGaugeModel.PTR225
+                    && _mainForm._ioModule?.IsConnected == true)
                 {
                     var doData = _mainForm._ioModule.LastValidDOValues;
                     if (doData?.IsIonGaugeHVOn != true)
@@ -1141,13 +1194,13 @@ namespace VacX_OutSense.Core.AutoRun
                     currentMeasurements.CurrentPressure <= _config.TargetPressureForHeater)
                 {
                     LogInfo($"터보펌프 가속 중 히터 시작 압력 도달 ({currentMeasurements.CurrentPressure:E2} Torr ≤ {_config.TargetPressureForHeater:E2}) — 정격 속도 대기 생략, 다음 단계 진행");
-                    UpdateProgress($"터보펌프 가속 중 ({currentSpeed} RPM) — 압력 조건 충족, 조기 진행", 100);
+                    UpdateProgress($"터보펌프 가속 중 ({currentSpeed} Hz) — 압력 조건 충족, 조기 진행", 100);
                     return true;
                 }
 
                 if (currentSpeed >= targetSpeed * 0.95)
                 {
-                    LogInfo($"터보펌프 정격 속도 도달: {currentSpeed} RPM");
+                    LogInfo($"터보펌프 정격 속도 도달: {currentSpeed} Hz");
                     UpdateProgress("터보펌프 시작 완료", 100);
                     return true;
                 }
@@ -1450,12 +1503,15 @@ namespace VacX_OutSense.Core.AutoRun
             LogInfo($"{monitorLabel} 목표 온도({targetTemperature:F1}°C) 도달 대기 중...");
 
             // PID 제어 상태 (베이크아웃 전용)
-            const double Kp = 1.5;
-            // ★ [#6 해결] 적분 속도를 dt 무관하게 정규화 — °C/초² 단위
-            //   실제 적분 증분 = error × Ki_norm (dt 곱하지 않음, 매 루프 1회 고정)
+            // ★ 적응형 게인: 기본값을 관측된 열지연으로 스케일링
+            //   열지연이 클수록(응답 느림) → Kp 감소, Kd 증가 (진동 방지, 선행 제동)
+            //   열지연이 작을수록(응답 빠름) → Kp 증가, Kd 감소 (빠른 추종)
+            const double Kp_base = 1.5;
             const double Ki_norm = 0.01;       // 정규화 적분 게인 (°C/회)
-            const double Kd = 3.0;             // 미분 게인 — 상승 속도에 비례해 SV 억제
-            double observedThermalLag = 0;     // 관측된 열 지연 (CH1 PV − 샘플) — 적응형 감속 구간용
+            const double Kd_base = 3.0;
+            double Kp = Kp_base;               // 아래에서 열지연 기반으로 조정
+            double Kd = Kd_base;
+            double observedThermalLag = 0;     // 관측된 열 지연 (CH1 PV − 샘플) — 적응형 감속 구간용 (아래에서 실측 초기화)
             double smoothedRate = 0;           // 변화율 이동평균 (노이즈 필터)
             double integralTerm = 0;           // 적분 기여값 (°C)
             double maxIntegral = IsBakeoutMode
@@ -1513,6 +1569,16 @@ namespace VacX_OutSense.Core.AutoRun
                 ? _mainForm._tempController.Status.ChannelStatus[0].PresentValue
                     / (_mainForm._tempController.Status.ChannelStatus[0].Dot == 1 ? 10.0 : 1.0)
                 : GetMonitorChannelTemperature();
+
+            // ★ observedThermalLag 초기화: 현재 CH1 PV와 샘플 온도 차이로 실측
+            if (usePIFeedback)
+            {
+                var ch1Init = _mainForm._tempController.Status.ChannelStatus[0];
+                double ch1PvInit = ch1Init.Dot == 1 ? ch1Init.PresentValue / 10.0 : ch1Init.PresentValue;
+                observedThermalLag = Math.Max(0, ch1PvInit - initialMonitorTemp);
+                if (observedThermalLag > 0)
+                    LogInfo($"초기 열지연 실측: {observedThermalLag:F1}°C (CH1={ch1PvInit:F1}, 샘플={initialMonitorTemp:F1})");
+            }
 
             double tempGap = Math.Max(targetTemperature - initialMonitorTemp, 1);
             int riseTimeoutMinutes;
@@ -1630,6 +1696,15 @@ namespace VacX_OutSense.Core.AutoRun
             bool temperatureReached = false;
             var waitStartTime = DateTime.Now;
             double reachTolerance = _config.BakeoutTolerance > 0 ? _config.BakeoutTolerance : 1.0;
+            // ★ 안정화 유지 시간: 목표±허용오차 범위를 이 시간 동안 연속 유지해야 도달로 판정
+            int stabilizationRequired = IsBakeoutMode ? _config.BakeoutStabilizationSeconds : 0;
+            int stableCount = 0; // 안정 범위 내 연속 체크 횟수
+            int stableCountRequired = stabilizationRequired > 0
+                ? Math.Max(1, (int)Math.Ceiling(stabilizationRequired / feedbackIntervalSec))
+                : 0;
+            double _prevStableSV = lastCh1Setpoint;
+            if (stabilizationRequired > 0)
+                LogInfo($"안정화 유지 조건: 목표±{reachTolerance:F1}°C 범위에서 {stabilizationRequired}초 연속 유지 후 홀드 시작 (SV 변동 <0.5°C/사이클)");
             // 도달 가능성 예측: 초기 5분간 승온율 관측
             double predictBaseline = double.NaN;
             double predictBaselineTime = 0;
@@ -1697,6 +1772,20 @@ namespace VacX_OutSense.Core.AutoRun
                         LogError($"[중단] {monitorLabel} 전체 센서 에러 → 안전 종료 실행");
                         return false;
                     }
+                }
+
+                // ★ 센서 읽기 실패 (0 반환) 또는 NaN 체크
+                if (double.IsNaN(monitorTemp) || (usePIFeedback && monitorTemp <= 0))
+                {
+                    sensorAnomalyCount++;
+                    LogWarning($"[경고] {monitorLabel} 무효 온도: {monitorTemp:F1}°C [{sensorAnomalyCount}/{maxSensorAnomalies}] — 피드백 건너뜀");
+                    if (sensorAnomalyCount >= maxSensorAnomalies)
+                    {
+                        LogError($"[중단] {monitorLabel} 무효 온도 연속 {maxSensorAnomalies}회 → 안전 종료 실행");
+                        return false;
+                    }
+                    await Task.Delay((int)(feedbackIntervalSec * 1000), cancellationToken);
+                    continue;
                 }
 
                 // ★ [#4] 센서 이상값 체크 (모든 모드 — 에러 플래그 없이 비정상 값)
@@ -1808,18 +1897,32 @@ namespace VacX_OutSense.Core.AutoRun
                     double distanceToTarget = targetTemperature - monitorTemp;
                     double ch1PVNow = measurements.HeaterCh1Temperature;
                     double currentLag = Math.Max(0, ch1PVNow - monitorTemp);
-                    // 빠른 추적: 증가 시 즉시, 감소 시 EMA(α=0.02)
-                    if (currentLag > observedThermalLag && rateOfChange > 0.05)
-                        observedThermalLag = currentLag;
-                    else
-                        observedThermalLag = observedThermalLag * 0.98 + currentLag * 0.02;
-                    double decelerationZone = Math.Max(5.0, currentLag * 1.5); // 현재 지연 기반
-
-                    // ★ 축적 에너지 분석: 현재 열 지연 기반 (과도 상태 인플레이션 방지)
-                    double storedEnergy = ch1PVNow - (targetTemperature + currentLag);
+                    double decelerationZone = Math.Max(5.0, currentLag * 1.5);
                     // 근접도: 목표에 가까울수록 1, 멀수록 0
                     double proximity = decelerationZone > 0
                         ? Math.Max(0, 1.0 - distanceToTarget / decelerationZone) : 0;
+
+                    // 빠른 추적: 증가 시 즉시, 감소 시 EMA
+                    //   목표 근처(proximity>0.5)에서는 감쇠를 늦춰 과도기 SV 하한 보호
+                    if (currentLag > observedThermalLag && rateOfChange > 0.05)
+                        observedThermalLag = currentLag;
+                    else
+                    {
+                        double emaAlpha = proximity > 0.5 ? 0.005 : 0.02;
+                        observedThermalLag = observedThermalLag * (1 - emaAlpha) + currentLag * emaAlpha;
+                    }
+
+                    // ★ 적응형 게인 스케일링: 열지연 기반
+                    //   기준: 열지연 20°C → 게인 1.0배 (기본)
+                    //   열지연 40°C → Kp 0.7배, Kd 1.4배 (느린 시스템 → 진동 방지)
+                    //   열지연 10°C → Kp 1.3배, Kd 0.7배 (빠른 시스템 → 빠른 추종)
+                    double lagScale = observedThermalLag > 1 ? 20.0 / observedThermalLag : 1.0;
+                    lagScale = Math.Max(0.5, Math.Min(lagScale, 2.0)); // 0.5~2.0배 제한
+                    Kp = Kp_base * Math.Sqrt(lagScale);   // 제곱근으로 완만하게
+                    Kd = Kd_base / Math.Sqrt(lagScale);
+
+                    // ★ 축적 에너지 분석: 현재 열 지연 기반 (과도 상태 인플레이션 방지)
+                    double storedEnergy = ch1PVNow - (targetTemperature + currentLag);
 
                     if (error > 0)
                     {
@@ -1833,47 +1936,117 @@ namespace VacX_OutSense.Core.AutoRun
                     }
                     else
                     {
-                        integralTerm += error * Ki_norm * 3;
+                        // ★ 언더슛 방지: 음의 적분 속도를 완화 (3x → 1.5x)
+                        integralTerm += error * Ki_norm * 1.5;
                     }
 
-                    // ★ 축적 에너지 기반 적분 감쇠: 초과 에너지가 있을 때만
-                    if (storedEnergy > 0 && proximity > 0.3 && integralTerm > 0)
+                    // ★ 축적 에너지 기반 적분 감쇠: 유의미한 초과 에너지(>2°C)가 있을 때만
+                    //   평형 근처(storedEnergy≈0)에서는 감쇠하지 않아 적분 유지
+                    if (storedEnergy > 2.0 && proximity > 0.3 && integralTerm > 0)
                     {
-                        double decayRate = (storedEnergy / Math.Max(1, observedThermalLag)) * proximity;
-                        integralTerm *= Math.Max(0.0, 1.0 - decayRate);
+                        double decayRate = ((storedEnergy - 2.0) / Math.Max(1, observedThermalLag)) * proximity;
+                        decayRate = Math.Min(decayRate, 0.05); // 1사이클당 최대 5% 감쇠
+                        integralTerm *= (1.0 - decayRate);
                     }
-                    integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
+                    // ★ 정상상태에서 열지연 보상을 위한 적분 최소값 유지
+                    double minIntegralForLag = proximity > 0.3 ? observedThermalLag * 0.85 : 0;
+                    integralTerm = Math.Max(minIntegralForLag, Math.Min(integralTerm, maxIntegral));
 
-                    // ★ D항: 변화율 이동평균 기반 (노이즈 내성)
-                    double dTerm = rateOfChange > 0 ? -Kd * rateOfChange : 0;
+                    // ★ 모델 기반 적분 수렴 가속: 적분이 추정값보다 낮을 때만 빠르게 올림
+                    //   추정값보다 높을 때는 PI 자체 조절에 맡김 (잘못된 추정으로 하향 방지)
+                    if (proximity > 0.5 && observedThermalLag > 1)
+                    {
+                        double estimatedSteadyIntegral = observedThermalLag * 0.9;
+                        if (integralTerm < estimatedSteadyIntegral - 1.0)
+                        {
+                            double boostGap = estimatedSteadyIntegral - integralTerm;
+                            integralTerm += boostGap * 0.2;
+                            integralTerm = Math.Max(minIntegralForLag, Math.Min(integralTerm, maxIntegral));
+                        }
+                    }
+
+                    // ★ D항: 양방향 — 상승 시 억제, 하강 시 복구 가속
+                    double dTerm = -Kd * rateOfChange;
 
                     // ★ 축적 에너지 보상: 근접도에 비례해 점진적 적용
+                    //   과도한 보상은 언더슛을 유발하므로 계수를 완화 (0.5 → 0.15)
                     double energyCompensation = 0;
                     if (storedEnergy > 0 && proximity > 0.3)
-                        energyCompensation = -storedEnergy * 0.5 * proximity;
+                        energyCompensation = -storedEnergy * 0.15 * proximity;
 
                     double newCh1Setpoint = rampedTarget + error * Kp + integralTerm + dTerm + energyCompensation;
 
+                    // ★ NaN 방어: PI 계산 결과가 비정상이면 이전 SV 유지
+                    if (double.IsNaN(newCh1Setpoint) || double.IsInfinity(newCh1Setpoint))
+                    {
+                        LogWarning($"[경고] PI 출력 NaN/Inf — 이전 SV {lastCh1Setpoint:F1}°C 유지 (e={error:F1} I={integralTerm:F1} D={dTerm:F1} E={energyCompensation:F1})");
+                        newCh1Setpoint = lastCh1Setpoint;
+                    }
+
                     // 상한: 히터 최대 온도 (ΔT 제한은 더 이상 사용하지 않음)
                     double upperLimit = effectiveMaxTemp;
-                    // ★ SV 하한: 오버슈트 보정 허용하되 실온 이하로는 불가
-                    double svLowerBound = Math.Max(initialMonitorTemp,
-                        Math.Max(monitorTemp - currentLag * 0.5, rampedTarget * 0.8));
+                    // ★ SV 하한: 정상상태에서 CH1은 목표+열지연 이상이어야 함
+                    //   승온 중 관측된 열지연을 기반으로 정상상태 SV를 추정
+                    double estimatedSteadyStateSV = rampedTarget + observedThermalLag * 0.85;
+                    double svLowerBound = Math.Max(estimatedSteadyStateSV,
+                        monitorTemp - currentLag * 0.3);
                     newCh1Setpoint = Math.Max(svLowerBound,
                         Math.Min(newCh1Setpoint, upperLimit));
 
+                    // ★ SV 감소 속도 제한: 3단계
+                    if (newCh1Setpoint < lastCh1Setpoint)
+                    {
+                        if (monitorTemp < targetTemperature)
+                        {
+                            // 목표 미만 → 완전 차단
+                            newCh1Setpoint = lastCh1Setpoint;
+                        }
+                        else if (monitorTemp <= targetTemperature + reachTolerance)
+                        {
+                            // 목표~목표+허용오차 → 미세 감소 (0.1°C/사이클)
+                            newCh1Setpoint = Math.Max(newCh1Setpoint, lastCh1Setpoint - 0.1);
+                        }
+                        else
+                        {
+                            // 오버슈트 → 서서히 감소 (0.3°C/사이클)
+                            newCh1Setpoint = Math.Max(newCh1Setpoint, lastCh1Setpoint - 0.3);
+                        }
+                    }
+
+                    // ★ 열 특성 계수 갱신 (UI 표시용)
+                    double heatingMV = _mainForm._tempController.Status.ChannelStatus[0].HeatingMV;
+                    ThermalParams.ThermalLag = observedThermalLag;
+                    ThermalParams.CurrentLag = currentLag;
+                    ThermalParams.SampleRate = smoothedRate;
+                    ThermalParams.Kp = Kp;
+                    ThermalParams.Kd = Kd;
+                    ThermalParams.IntegralTerm = integralTerm;
+                    ThermalParams.StoredEnergy = storedEnergy;
+                    ThermalParams.Proximity = proximity;
+                    ThermalParams.EstimatedSteadyStateSV = estimatedSteadyStateSV;
+                    // 시정수 추정: 열지연 / 변화율 (변화율 > 0일 때만 유의미)
+                    ThermalParams.EstimatedThermalTimeConstant = smoothedRate > 0.01
+                        ? observedThermalLag / smoothedRate * feedbackIntervalSec : 0;
+                    // 열저항 추정: 열지연 / 히터출력% (상대값)
+                    ThermalParams.EstimatedThermalResistance = heatingMV > 1
+                        ? observedThermalLag / (heatingMV / 10.0) : 0;
+
                     // ★ [#1] CH1 상한 포화 + 샘플 정체 감지
+                    //   목표까지 거리가 멀 때만 정체로 판정 (error > 10°C)
+                    //   목표 근처에서는 열평형에 의해 승온 속도가 자연스럽게 느려지므로 정체가 아님
                     bool isAtMaxLimit = newCh1Setpoint >= effectiveMaxTemp - 1;
-                    if (isAtMaxLimit && error > 5)
+                    if (isAtMaxLimit && error > 10)
                     {
                         if (stallCount == 0) stallBaselineTemp = monitorTemp;
                         stallCount++;
                         if (stallCount >= maxStallCount)
                         {
                             double stallProgress = monitorTemp - stallBaselineTemp;
-                            if (stallProgress < 2.0) // 300초 동안 2°C 미만 상승
+                            // 정체 기준: 목표까지 거리의 10% 미만 상승 (최소 1°C)
+                            double minProgress = Math.Max(1.0, error * 0.1);
+                            if (stallProgress < minProgress)
                             {
-                                LogError($"[중단] CH1 상한({effectiveMaxTemp:F0}°C) 포화 + 샘플 정체 ({stallProgress:F1}°C/5분) — 열 전달 부족 → 안전 종료 실행");
+                                LogError($"[중단] CH1 상한({effectiveMaxTemp:F0}°C) 포화 + 샘플 정체 ({stallProgress:F1}°C/5분, 필요:{minProgress:F1}°C) — 열 전달 부족 → 안전 종료 실행");
                                 return false;
                             }
                             else
@@ -1948,7 +2121,7 @@ namespace VacX_OutSense.Core.AutoRun
                     }
 
                     // ★ [Fix#2] 유의미한 변경(>0.5°C)만 전송 + 반환값 검증
-                    if (Math.Abs(newCh1Setpoint - lastCh1Setpoint) > 0.5)
+                    if (Math.Abs(newCh1Setpoint - lastCh1Setpoint) > 0.2)
                     {
                         var ch1Status = _mainForm._tempController.Status.ChannelStatus[0];
                         short rawValue = ch1Status.Dot == 1
@@ -1988,14 +2161,66 @@ namespace VacX_OutSense.Core.AutoRun
                 string ch1Info = IsBakeoutMode
                     ? $"CH1: {measurements.HeaterCh1Temperature:F1}°C (SV:{lastCh1Setpoint:F1})"
                     : $"CH1: {measurements.HeaterCh1Temperature:F1}°C";
-                UpdateProgress($"온도 상승 중  {monitorLabel}: {monitorTemp:F1}°C → {targetTemperature:F1}°C  |  " +
+                string tempDirection = monitorTemp < targetTemperature - reachTolerance ? "승온 중"
+                    : monitorTemp > targetTemperature + reachTolerance ? "냉각 대기"
+                    : "안정화 대기";
+                UpdateProgress($"{tempDirection}  {monitorLabel}: {monitorTemp:F1}°C → {targetTemperature:F1}°C  |  " +
                     $"{ch1Info}  |  압력: {measurements.CurrentPressure:E2} Torr  |  대기: {waitElapsed:mm\\:ss}",
                     progressRatio);
 
-                if (monitorTemp >= targetTemperature - reachTolerance)
+                // ★ 안정화 판정: 목표±허용오차 범위 내 연속 유지
+                // ★ 안정화 판정: 온도 범위 + 변화율 + SV 안정성
+                //   범위에 진입만 하고 아직 변하는 중이면 안정화가 아님
+                //   SV가 크게 변하는 중이면 곧 샘플 온도도 변할 것이므로 진짜 안정이 아님
+                double absRate = usePIFeedback ? Math.Abs(smoothedRate) : 0;
+                double svChange = Math.Abs(lastCh1Setpoint - _prevStableSV);
+                bool svStable = !usePIFeedback || svChange < 0.5;
+                _prevStableSV = lastCh1Setpoint;
+                bool inStableRange = monitorTemp >= targetTemperature - reachTolerance
+                    && monitorTemp <= targetTemperature + reachTolerance
+                    && absRate < 0.3
+                    && svStable; // SV도 안정되어야 함
+
+                if (stableCountRequired <= 0)
                 {
-                    temperatureReached = true;
-                    LogInfo($"{monitorLabel} 목표 도달: {monitorTemp:F1}°C ≈ {targetTemperature:F1}°C (허용오차 {reachTolerance:F1}°C, 대기: {waitElapsed:mm\\:ss}, CH1 SV: {lastCh1Setpoint:F1}°C, I:{integralTerm:F1})");
+                    // 안정화 시간 미설정 (0초): 기존 동작 — 한 번 도달하면 즉시 홀드
+                    if (monitorTemp >= targetTemperature - reachTolerance)
+                    {
+                        temperatureReached = true;
+                        LogInfo($"{monitorLabel} 목표 도달: {monitorTemp:F1}°C ≈ {targetTemperature:F1}°C (허용오차 {reachTolerance:F1}°C, 대기: {waitElapsed:mm\\:ss}, CH1 SV: {lastCh1Setpoint:F1}°C, I:{integralTerm:F1})");
+                    }
+                }
+                else
+                {
+                    // 안정화 시간 설정됨: 범위 내 연속 유지 확인
+                    if (inStableRange)
+                    {
+                        stableCount++;
+                        if (stableCount == 1)
+                            LogInfo($"{monitorLabel} 목표 범위 진입: {monitorTemp:F1}°C (안정화 대기 시작 0/{stabilizationRequired}초)");
+                        if (stableCount % (int)(30 / feedbackIntervalSec) == 0 && stableCount < stableCountRequired)
+                            LogInfo($"안정화 유지 중: {monitorTemp:F1}°C ({(int)(stableCount * feedbackIntervalSec)}/{stabilizationRequired}초)");
+                        if (stableCount >= stableCountRequired)
+                        {
+                            temperatureReached = true;
+                            LogInfo($"{monitorLabel} 안정화 완료: {monitorTemp:F1}°C ≈ {targetTemperature:F1}°C (±{reachTolerance:F1}°C 범위에서 {stabilizationRequired}초 유지, 대기: {waitElapsed:mm\\:ss}, CH1 SV: {lastCh1Setpoint:F1}°C, I:{integralTerm:F1})");
+                        }
+                    }
+                    else
+                    {
+                        if (stableCount > 0)
+                        {
+                            bool tempInRange = monitorTemp >= targetTemperature - reachTolerance
+                                && monitorTemp <= targetTemperature + reachTolerance;
+                            string reason = !tempInRange
+                                ? $"범위 이탈 ({monitorTemp:F1}°C)"
+                                : !svStable
+                                ? $"SV 변동 과대 ({svChange:F1}°C)"
+                                : $"변화율 과대 ({absRate:F2}°C/cyc)";
+                            LogInfo($"안정화 리셋: {reason}, {(int)(stableCount * feedbackIntervalSec)}초 유지 후 리셋");
+                        }
+                        stableCount = 0;
+                    }
                 }
 
                 // ★ 정확한 주기 유지: 루프 처리시간을 빼고 잔여 시간만 대기
@@ -2080,6 +2305,21 @@ namespace VacX_OutSense.Core.AutoRun
                 double monitorTempNow = !usePIFeedback
                     ? measurements.HeaterCh1Temperature
                     : GetMonitorChannelTemperature();
+
+                // ★ 센서 읽기 실패 (0 반환) 또는 NaN 체크 (홀드)
+                if (double.IsNaN(monitorTempNow) || (usePIFeedback && monitorTempNow <= 0))
+                {
+                    sensorAnomalyCount++;
+                    LogWarning($"[경고] 홀드 중 {monitorLabel} 무효 온도: {monitorTempNow:F1}°C [{sensorAnomalyCount}/{maxSensorAnomalies}] — 피드백 건너뜀");
+                    if (sensorAnomalyCount >= maxSensorAnomalies)
+                    {
+                        LogError($"[중단] 홀드 중 {monitorLabel} 무효 온도 연속 {maxSensorAnomalies}회 → 안전 종료 실행");
+                        return false;
+                    }
+                    holdIterationCount++;
+                    await Task.Delay((int)(holdLoopIntervalSec * 1000), cancellationToken);
+                    continue;
+                }
 
                 // ★ [#4] 센서 에러 플래그 체크 (모든 모드 — 모니터 채널 전체 에러 시 중단)
                 {
@@ -2186,53 +2426,52 @@ namespace VacX_OutSense.Core.AutoRun
                     }
                 }
 
-                // ── 베이크아웃 홀드 중 PID 피드백: 샘플 온도 능동 유지 (monitorCh ≠ 1) ──
+                // ── 베이크아웃 홀드 중 PI 피드백: 단순 PI로 온도 유지 ──
+                //   홀드는 이미 평형 상태 → 감쇠/에너지보상 불필요
+                //   적분은 승온에서 찾은 정상상태 값을 유지하며 미세 조정만 수행
                 if (usePIFeedback && _mainForm._tempController?.IsConnected == true)
                 {
                     double holdError = targetTemperature - monitorTempNow;
 
-                    // 홀드 중 변화율 (D항용)
+                    // 변화율 (D항용)
                     double holdRateOfChange = !double.IsNaN(prevMonitorTemp)
                         ? (monitorTempNow - prevMonitorTemp) : 0;
-
-                    // ★ 변화율 이동평균 (홀드)
                     smoothedRate = smoothedRate * 0.7 + holdRateOfChange * 0.3;
 
-                    // 적분 업데이트
-                    if (holdError > 0)
-                        integralTerm += holdError * Ki_norm;
-                    else
-                        integralTerm += holdError * Ki_norm * 3;
-
-                    // ★ 축적 에너지 기반 적분 감쇠: 온도 상승 중일 때만
-                    double holdCh1PV = measurements.HeaterCh1Temperature;
-                    double holdCurrentLag = Math.Max(0, holdCh1PV - monitorTempNow);
-                    double holdStoredEnergy = holdCh1PV - (targetTemperature + holdCurrentLag);
-                    if (holdStoredEnergy > 0 && smoothedRate > 0 && integralTerm > 0)
-                    {
-                        double decayRate = holdStoredEnergy / Math.Max(1, holdCurrentLag);
-                        integralTerm *= Math.Max(0.0, 1.0 - decayRate);
-                    }
+                    // 적분: 대칭 속도로 미세 조정 (홀드에서는 공격적 감소 불필요)
+                    integralTerm += holdError * Ki_norm;
                     integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
 
-                    // D항: 이동평균 기반
-                    double holdDTerm = smoothedRate > 0 ? -Kd * smoothedRate : 0;
+                    // D항: 양방향
+                    double holdDTerm = -Kd * smoothedRate;
 
-                    // 축적 에너지 보상: 온도 상승 중일 때만 적용 (하강 시 회복 방해 방지)
-                    double holdEnergyComp = 0;
-                    if (holdStoredEnergy > 0 && smoothedRate > 0)
-                        holdEnergyComp = -holdStoredEnergy * 0.5;
+                    double holdCh1PV = measurements.HeaterCh1Temperature;
 
-                    double newCh1 = targetTemperature + holdError * Kp + integralTerm + holdDTerm + holdEnergyComp;
-                    // 상한: 히터 최대 온도
-                    // SV 하한: 오버슈트 보정 허용하되 실온 이하 불가
-                    double holdSvLower = Math.Max(initialMonitorTemp,
-                        Math.Max(monitorTempNow - holdCurrentLag * 0.5, targetTemperature * 0.8));
-                    newCh1 = Math.Max(holdSvLower,
-                        Math.Min(newCh1, effectiveMaxTemp));
+                    double newCh1 = targetTemperature + holdError * Kp + integralTerm + holdDTerm;
+
+                    // NaN 방어
+                    if (double.IsNaN(newCh1) || double.IsInfinity(newCh1))
+                    {
+                        LogWarning($"[경고] 홀드 PI 출력 NaN/Inf — 이전 SV {lastCh1Setpoint:F1}°C 유지");
+                        newCh1 = lastCh1Setpoint;
+                    }
+
+                    // SV 제한
+                    newCh1 = Math.Max(targetTemperature, Math.Min(newCh1, effectiveMaxTemp));
+
+                    // ★ SV 감소 속도 제한: 3단계 (홀드)
+                    if (newCh1 < lastCh1Setpoint)
+                    {
+                        if (monitorTempNow < targetTemperature)
+                            newCh1 = lastCh1Setpoint;
+                        else if (monitorTempNow <= targetTemperature + reachTolerance)
+                            newCh1 = Math.Max(newCh1, lastCh1Setpoint - 0.1);
+                        else
+                            newCh1 = Math.Max(newCh1, lastCh1Setpoint - 0.3);
+                    }
 
                     // ★ [Fix#2] 유의미한 변경만 전송 + 반환값 검증
-                    if (Math.Abs(newCh1 - lastCh1Setpoint) > 0.5)
+                    if (Math.Abs(newCh1 - lastCh1Setpoint) > 0.2)
                     {
                         var ch1Status = _mainForm._tempController.Status.ChannelStatus[0];
                         short rawValue = ch1Status.Dot == 1
@@ -2246,7 +2485,7 @@ namespace VacX_OutSense.Core.AutoRun
                         if (setOk)
                         {
                             setTempFailCount = 0;
-                            LogInfo($"홀드 피드백: CH1 {lastCh1Setpoint:F1} → {newCh1:F1}°C (샘플:{monitorTempNow:F1} 오차:{holdError:F1} I:{integralTerm:F1} D:{holdDTerm:F1} E:{holdEnergyComp:F1})");
+                            LogInfo($"홀드 피드백: CH1 {lastCh1Setpoint:F1} → {newCh1:F1}°C (샘플:{monitorTempNow:F1} 오차:{holdError:F1} I:{integralTerm:F1} D:{holdDTerm:F1})");
                             lastCh1Setpoint = newCh1;
                         }
                         else
@@ -2396,70 +2635,29 @@ namespace VacX_OutSense.Core.AutoRun
         {
             UpdateProgress("종료 시퀀스 시작...", 0);
 
-            // 1. 히터 CH1 끄기 (칠러 PID는 쿨링을 위해 유지)
+            // 1. 히터 CH1 끄기 (펌프/칠러는 유지 — 진공 보호)
             if (_mainForm._tempController?.IsConnected == true)
             {
                 UpdateProgress("히터 CH1 종료 중...", 3);
                 _mainForm._tempController.Stop(1);
-                await Task.Delay(1000, cancellationToken);
-                LogInfo("히터 CH1 정지");
+                await SafeDelay(1000, cancellationToken);
+                LogInfo("히터 CH1 정지 (펌프 유지 중)");
             }
+            cancellationToken.ThrowIfCancellationRequested();
 
-            // 2. 이온게이지 HV OFF
-            UpdateProgress("이온게이지 HV 끄는 중...", 6);
-            await _mainForm._ioModule.ControlIonGaugeHVAsync(false);
-            await Task.Delay(1000, cancellationToken);
-
-            // 3. 터보펌프 정지 + 완전 감속 대기
-            if (_mainForm._turboPump?.IsConnected == true && _mainForm._turboPump.Status?.IsRunning == true)
-            {
-                UpdateProgress("터보펌프 정지 중...", 9);
-                _mainForm._turboPump.Stop();
-
-                int waitCount = 0;
-                while (_mainForm._turboPump.Status?.CurrentSpeed > 0 && waitCount < 600)
-                {
-                    await Task.Delay(1000, cancellationToken);
-                    var speed = _mainForm._turboPump.Status?.CurrentSpeed ?? 0;
-
-                    if (waitCount % 10 == 0)
-                    {
-                        LogInfo($"터보펌프 감속 중: {speed} RPM");
-                    }
-
-                    UpdateProgress($"터보펌프 감속 중... ({speed} RPM)", 9 + (int)(13.0 * (1.0 - speed / 24000.0)));
-                    waitCount++;
-                }
-
-                LogInfo("터보펌프 완전 정지 확인");
-            }
-
-            // 4. 게이트 밸브 닫기 (터보펌프 완전 정지 후)
-            UpdateProgress("게이트 밸브 닫는 중...", 22);
-            if (!await _mainForm._ioModule.ControlGateValveAsync(false))
-            {
-                LogWarning("게이트 밸브 닫기 실패");
-            }
-            await Task.Delay(2000, cancellationToken);
-
-            // 5. 드라이펌프 정지 (벤트 전에 반드시 정지 — 대기압 역류 방지)
-            if (_mainForm._dryPump?.IsConnected == true && _mainForm._dryPump.Status?.IsRunning == true)
-            {
-                UpdateProgress("드라이펌프 정지 중...", 24);
-                _mainForm._dryPump.Stop();
-                await Task.Delay(3000, cancellationToken);
-                LogInfo("드라이펌프 정지 완료");
-            }
-
-            // 5-1. 벤팅 시작 온도 대기 (챔버 과열 방지)
+            // 2. 벤팅 시작 온도 대기 (펌프 가동 상태에서 냉각 — 진공 유지로 산화 방지)
             if (_mainForm._tempController?.IsConnected == true)
             {
                 int ventTempWait = 0;
                 int ventTempMaxWait = 5400; // 최대 90분
                 bool ventTempReady = false;
 
+                LogInfo($"벤팅 온도 대기 시작 (펌프 유지 중, 목표: ≤{_config.VentingStartTemperature}°C)");
+
                 while (!ventTempReady && ventTempWait < ventTempMaxWait)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     var status = _mainForm._tempController.Status;
                     double ch1Temp = status.ChannelStatus[0].Dot == 0
                         ? status.ChannelStatus[0].PresentValue
@@ -2473,23 +2671,67 @@ namespace VacX_OutSense.Core.AutoRun
                     }
 
                     if (ventTempWait % 60 == 0)
-                    {
-                        LogInfo($"벤팅 대기 중: CH1={ch1Temp:F1}°C (목표: ≤{_config.VentingStartTemperature}°C)");
-                    }
+                        LogInfo($"냉각 대기 중: CH1={ch1Temp:F1}°C (목표: ≤{_config.VentingStartTemperature}°C, 펌프 유지)");
 
                     UpdateProgress(
-                        $"벤팅 온도 대기 중... CH1: {ch1Temp:F1}°C → ≤{_config.VentingStartTemperature}°C",
-                        24 + (int)(3.0 * ventTempWait / ventTempMaxWait));
+                        $"냉각 대기 중 (펌프 유지)  CH1: {ch1Temp:F1}°C → ≤{_config.VentingStartTemperature}°C",
+                        3 + (int)(20.0 * ventTempWait / ventTempMaxWait));
 
-                    await Task.Delay(5000, cancellationToken);
+                    await SafeDelay(5000, cancellationToken);
                     ventTempWait += 5;
                 }
 
                 if (!ventTempReady)
-                {
-                    LogWarning($"벤팅 시작 온도 대기 타임아웃 — 현재 온도로 벤트를 진행합니다.");
-                }
+                    LogWarning($"벤팅 시작 온도 대기 타임아웃 — 현재 온도로 진행합니다.");
             }
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // 3. 이온게이지 HV OFF
+            UpdateProgress("이온게이지 HV 끄는 중...", 24);
+            await _mainForm._ioModule.ControlIonGaugeHVAsync(false);
+            await SafeDelay(1000, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // 4. 터보펌프 정지 + 완전 감속 대기
+            if (_mainForm._turboPump?.IsConnected == true && _mainForm._turboPump.Status?.IsRunning == true)
+            {
+                UpdateProgress("터보펌프 정지 중...", 26);
+                _mainForm._turboPump.Stop();
+
+                int waitCount = 0;
+                while (_mainForm._turboPump.Status?.CurrentSpeed > 0 && waitCount < 600)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await SafeDelay(1000, cancellationToken);
+                    var speed = _mainForm._turboPump.Status?.CurrentSpeed ?? 0;
+
+                    if (waitCount % 10 == 0)
+                        LogInfo($"터보펌프 감속 중: {speed} Hz");
+
+                    UpdateProgress($"터보펌프 감속 중... ({speed} Hz)", 26 + (int)(10.0 * (1.0 - speed / 630.0)));
+                    waitCount++;
+                }
+
+                LogInfo("터보펌프 완전 정지 확인");
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // 5. 게이트 밸브 닫기 (터보펌프 완전 정지 후)
+            UpdateProgress("게이트 밸브 닫는 중...", 37);
+            if (!await _mainForm._ioModule.ControlGateValveAsync(false))
+                LogWarning("게이트 밸브 닫기 실패");
+            await SafeDelay(2000, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // 6. 드라이펌프 정지 (벤트 전에 반드시 정지 — 대기압 역류 방지)
+            if (_mainForm._dryPump?.IsConnected == true && _mainForm._dryPump.Status?.IsRunning == true)
+            {
+                UpdateProgress("드라이펌프 정지 중...", 39);
+                _mainForm._dryPump.Stop();
+                await SafeDelay(3000, cancellationToken);
+                LogInfo("드라이펌프 정지 완료");
+            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             // 6. 벤트 밸브 열기 → ATM 스위치 목표 압력 도달 대기
             UpdateProgress("벤트 밸브 여는 중...", 27);
@@ -2505,6 +2747,7 @@ namespace VacX_OutSense.Core.AutoRun
 
             while (!atmReached && ventWaitCount < ventMaxWait)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var measurements = await GetCurrentMeasurementsAsync();
                 double atmPressure = measurements.AtmPressure;
 
@@ -2546,6 +2789,7 @@ namespace VacX_OutSense.Core.AutoRun
 
             while (!coolingComplete && coolWaitCount < coolMaxWait)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 double ch1Temp = 0;
 
                 if (_mainForm._tempController?.IsConnected == true)
@@ -2580,6 +2824,8 @@ namespace VacX_OutSense.Core.AutoRun
             {
                 LogWarning("CH1 쿨링 타임아웃 — 밸브를 닫고 계속 진행합니다.");
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             // 7. 벤트 밸브 닫기
             UpdateProgress("벤트 밸브 닫는 중...", 82);
@@ -2676,7 +2922,7 @@ namespace VacX_OutSense.Core.AutoRun
 
                             if (waitCount % 10 == 0)
                             {
-                                LogWarning($"터보펌프 감속 중: {speed} RPM");
+                                LogWarning($"터보펌프 감속 중: {speed} Hz");
                             }
                             waitCount++;
                         }
@@ -2744,13 +2990,24 @@ namespace VacX_OutSense.Core.AutoRun
                         measurements.AtmPressure = _mainForm._atmSwitch?.ConvertVoltageToPressureInkPa(aiData.ExpansionVoltageValues[0]) ?? 0;
                         measurements.CurrentPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
 
-                        // ★ IG HV 상태: DO 기반
-                        if (doData?.IsIonGaugeHVOn == true && measurements.CurrentPressure < 1E-3)
+                        // ★ 이온게이지 압력: PTR90은 HV 불필요, PTR225는 HV ON 필요
+                        if (_mainForm._ionGauge != null && measurements.CurrentPressure < 1E-2)
                         {
-                            var ionPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[2]) ?? 0;
-                            if (ionPressure > 0 && ionPressure < measurements.CurrentPressure)
+                            bool useIG = _mainForm._ionGauge.Model == IonGaugeModel.PTR90
+                                ? measurements.CurrentPressure > 0
+                                : doData?.IsIonGaugeHVOn == true;
+
+                            if (useIG)
                             {
-                                measurements.CurrentPressure = ionPressure;
+                                double igVoltage = aiData.ExpansionVoltageValues[2];
+                                var igCal = _mainForm._tempCalibrationConfig?.IonGauge;
+                                if (igCal != null) igVoltage = igCal.ApplyVoltageOffset(igVoltage);
+                                double ionPressure = _mainForm._ionGauge.ConvertVoltageToPressureInTorr(igVoltage);
+                                if (igCal != null) ionPressure = igCal.Apply(ionPressure);
+                                if (ionPressure > 0 && ionPressure < measurements.CurrentPressure)
+                                {
+                                    measurements.CurrentPressure = ionPressure;
+                                }
                             }
                         }
                     }
@@ -2999,6 +3256,115 @@ namespace VacX_OutSense.Core.AutoRun
         }
 
         /// <summary>
+        /// 단계 완료 시 요약 정보 생성
+        /// </summary>
+        /// <summary>현재 압력 동기 조회 (UI 표시용)</summary>
+        private double GetCurrentPressureSync()
+        {
+            try
+            {
+                if (_mainForm._ioModule?.IsConnected != true) return 0;
+                var aiData = _mainForm._ioModule.LastValidAIValues;
+                if (aiData == null) return 0;
+
+                var doData = _mainForm._ioModule.LastValidDOValues;
+                bool useIG = false;
+                if (_mainForm._ionGauge != null)
+                {
+                    if (_mainForm._ionGauge.Model == IonGaugeModel.PTR90)
+                    {
+                        double piraniP = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
+                        useIG = piraniP > 0 && piraniP < 1E-2;
+                    }
+                    else
+                    {
+                        useIG = doData?.IsIonGaugeHVOn == true;
+                    }
+                }
+
+                if (useIG)
+                {
+                    double igVoltage = aiData.ExpansionVoltageValues[2];
+                    var igCal = _mainForm._tempCalibrationConfig?.IonGauge;
+                    if (igCal != null) igVoltage = igCal.ApplyVoltageOffset(igVoltage);
+                    double ionPressure = _mainForm._ionGauge.ConvertVoltageToPressureInTorr(igVoltage);
+                    if (igCal != null) ionPressure = igCal.Apply(ionPressure);
+                    if (ionPressure > 0) return ionPressure;
+                }
+
+                return _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
+            }
+            catch { return 0; }
+        }
+
+        private string GetStepCompletionSummary(AutoRunState state)
+        {
+            try
+            {
+                switch (state)
+                {
+                    case AutoRunState.StartingDryPump:
+                    {
+                        var p = GetCurrentPressureSync();
+                        return p > 0 ? $"압력: {p:E1} Torr" : "";
+                    }
+                    case AutoRunState.StartingTurboPump:
+                    {
+                        int speed = _mainForm._turboPump?.Status?.CurrentSpeed ?? 0;
+                        var p = GetCurrentPressureSync();
+                        return $"속도: {speed} RPM, 압력: {(p > 0 ? $"{p:E1} Torr" : "N/A")}";
+                    }
+                    case AutoRunState.ActivatingIonGauge:
+                    {
+                        var p = GetCurrentPressureSync();
+                        return p > 0 ? $"압력: {p:E2} Torr" : "";
+                    }
+                    case AutoRunState.WaitingHighVacuum:
+                    {
+                        var p = GetCurrentPressureSync();
+                        return p > 0 ? $"도달 압력: {p:E2} Torr" : "";
+                    }
+                    case AutoRunState.StartingHeater:
+                    {
+                        if (_mainForm._tempController?.IsConnected == true)
+                        {
+                            var ch1 = _mainForm._tempController.Status.ChannelStatus[0];
+                            double pv = ch1.Dot == 1 ? ch1.PresentValue / 10.0 : ch1.PresentValue;
+                            double sv = ch1.Dot == 1 ? ch1.SetValue / 10.0 : ch1.SetValue;
+                            return $"CH1: {pv:F1}°C (SV:{sv:F1})";
+                        }
+                        return "";
+                    }
+                    case AutoRunState.RunningExperiment:
+                    {
+                        var tp = ThermalParams;
+                        if (_mainForm._tempController?.IsConnected == true)
+                        {
+                            double sampleTemp = IsBakeoutMode ? GetMonitorChannelTemperature()
+                                : _mainForm._tempController.Status.ChannelStatus[0].PresentValue
+                                  / (_mainForm._tempController.Status.ChannelStatus[0].Dot == 1 ? 10.0 : 1.0);
+                            return $"샘플: {sampleTemp:F1}°C, 열지연: {tp.ThermalLag:F1}°C, 정상SV: {tp.EstimatedSteadyStateSV:F1}°C";
+                        }
+                        return "";
+                    }
+                    case AutoRunState.ShuttingDown:
+                    {
+                        if (_mainForm._tempController?.IsConnected == true)
+                        {
+                            var ch1 = _mainForm._tempController.Status.ChannelStatus[0];
+                            double pv = ch1.Dot == 1 ? ch1.PresentValue / 10.0 : ch1.PresentValue;
+                            return $"CH1: {pv:F1}°C";
+                        }
+                        return "";
+                    }
+                    default:
+                        return "";
+                }
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>
         /// 실행 요약 생성
         /// </summary>
         private string GenerateSummary(StepResult result)
@@ -3049,6 +3415,13 @@ namespace VacX_OutSense.Core.AutoRun
             AsyncLoggingService.Instance.LogInfo($"{LogPrefix} {message}");
         }
 
+        /// <summary>CancellationToken 취소 시 예외 대신 조기 리턴</summary>
+        private async Task SafeDelay(int ms, CancellationToken ct)
+        {
+            try { await Task.Delay(ms, ct); }
+            catch (OperationCanceledException) { }
+        }
+
         private void LogWarning(string message)
         {
             AsyncLoggingService.Instance.LogWarning($"{LogPrefix} {message}");
@@ -3091,5 +3464,34 @@ namespace VacX_OutSense.Core.AutoRun
         }
 
         #endregion
+    }
+
+    /// <summary>
+    /// 베이크아웃 열 특성 실시간 계수
+    /// </summary>
+    public class ThermalCharacteristics
+    {
+        /// <summary>관측된 열지연 CH1-샘플 (°C)</summary>
+        public double ThermalLag { get; set; }
+        /// <summary>현재 열지연 CH1 PV - 샘플 (°C)</summary>
+        public double CurrentLag { get; set; }
+        /// <summary>샘플 온도 변화율 (°C/사이클)</summary>
+        public double SampleRate { get; set; }
+        /// <summary>적응형 Kp</summary>
+        public double Kp { get; set; }
+        /// <summary>적응형 Kd</summary>
+        public double Kd { get; set; }
+        /// <summary>적분항 (°C)</summary>
+        public double IntegralTerm { get; set; }
+        /// <summary>축적 에너지 (°C)</summary>
+        public double StoredEnergy { get; set; }
+        /// <summary>근접도 (0~1)</summary>
+        public double Proximity { get; set; }
+        /// <summary>추정 정상상태 SV (°C)</summary>
+        public double EstimatedSteadyStateSV { get; set; }
+        /// <summary>열 시정수 추정 (초) — 열지연/변화율 기반</summary>
+        public double EstimatedThermalTimeConstant { get; set; }
+        /// <summary>열저항 추정 (°C/W 상대값) — 열지연/히터출력 기반</summary>
+        public double EstimatedThermalResistance { get; set; }
     }
 }

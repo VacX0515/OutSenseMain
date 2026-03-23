@@ -38,6 +38,16 @@ namespace VacX_OutSense.Core.Safety
         /// </summary>
         public bool VentValve_AutoOpenExhaustAtHighPressure { get; set; } = true;
 
+        /// <summary>
+        /// 벤트/배기밸브: CH1 온도가 이 값 이상이면 열기 차단 (고온 벤트 방지)
+        /// </summary>
+        public bool VentExhaust_BlockIfHighTemperature { get; set; } = true;
+
+        /// <summary>
+        /// 벤트/배기밸브 차단 온도 (°C)
+        /// </summary>
+        public double VentExhaust_MaxTemperature { get; set; } = 125.0;
+
         #endregion
 
         #region 드라이펌프 인터락

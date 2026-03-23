@@ -50,6 +50,8 @@
             lblShutdownTempHeader = new Label();
             txtCoolingTargetTemperature = new TextBox();
             lblCoolingTargetTemperature = new Label();
+            txtVentingStartTemperature = new TextBox();
+            lblVentingStartTemperature = new Label();
             txtVentTargetPressure = new TextBox();
             lblVentTargetPressure = new Label();
             tabTime = new TabPage();
@@ -266,7 +268,7 @@
             lblBakeoutTargetTemp.Visible = false;
             //
             txtBakeoutRampRate = new TextBox();
-            txtBakeoutRampRate.Location = new Point(230, 57);
+            txtBakeoutRampRate.Location = new Point(230, 50);
             txtBakeoutRampRate.Name = "txtBakeoutRampRate";
             txtBakeoutRampRate.Size = new Size(120, 23);
             txtBakeoutRampRate.TabIndex = 22;
@@ -274,7 +276,7 @@
             //
             lblBakeoutRampRate = new Label();
             lblBakeoutRampRate.AutoSize = true;
-            lblBakeoutRampRate.Location = new Point(20, 60);
+            lblBakeoutRampRate.Location = new Point(20, 53);
             lblBakeoutRampRate.Name = "lblBakeoutRampRate";
             lblBakeoutRampRate.Size = new Size(155, 15);
             lblBakeoutRampRate.TabIndex = 23;
@@ -285,7 +287,7 @@
             //
             lblBakeoutMonitorChannel = new Label();
             lblBakeoutMonitorChannel.AutoSize = true;
-            lblBakeoutMonitorChannel.Location = new Point(20, 95);
+            lblBakeoutMonitorChannel.Location = new Point(20, 83);
             lblBakeoutMonitorChannel.Name = "lblBakeoutMonitorChannel";
             lblBakeoutMonitorChannel.Size = new Size(120, 15);
             lblBakeoutMonitorChannel.TabIndex = 24;
@@ -296,35 +298,35 @@
             //
             chkBakeoutMonitorCh1 = new CheckBox();
             chkBakeoutMonitorCh1.Text = "CH1";
-            chkBakeoutMonitorCh1.Location = new Point(150, 93);
+            chkBakeoutMonitorCh1.Location = new Point(150, 81);
             chkBakeoutMonitorCh1.Size = new Size(52, 20);
             chkBakeoutMonitorCh1.TabIndex = 25;
             chkBakeoutMonitorCh1.Visible = false;
 
             chkBakeoutMonitorCh2 = new CheckBox();
             chkBakeoutMonitorCh2.Text = "CH2";
-            chkBakeoutMonitorCh2.Location = new Point(204, 93);
+            chkBakeoutMonitorCh2.Location = new Point(204, 81);
             chkBakeoutMonitorCh2.Size = new Size(52, 20);
             chkBakeoutMonitorCh2.TabIndex = 26;
             chkBakeoutMonitorCh2.Visible = false;
 
             chkBakeoutMonitorCh3 = new CheckBox();
             chkBakeoutMonitorCh3.Text = "CH3";
-            chkBakeoutMonitorCh3.Location = new Point(258, 93);
+            chkBakeoutMonitorCh3.Location = new Point(258, 81);
             chkBakeoutMonitorCh3.Size = new Size(52, 20);
             chkBakeoutMonitorCh3.TabIndex = 27;
             chkBakeoutMonitorCh3.Visible = false;
 
             chkBakeoutMonitorCh4 = new CheckBox();
             chkBakeoutMonitorCh4.Text = "CH4";
-            chkBakeoutMonitorCh4.Location = new Point(312, 93);
+            chkBakeoutMonitorCh4.Location = new Point(312, 81);
             chkBakeoutMonitorCh4.Size = new Size(52, 20);
             chkBakeoutMonitorCh4.TabIndex = 28;
             chkBakeoutMonitorCh4.Visible = false;
 
             chkBakeoutMonitorCh5 = new CheckBox();
             chkBakeoutMonitorCh5.Text = "CH5";
-            chkBakeoutMonitorCh5.Location = new Point(366, 93);
+            chkBakeoutMonitorCh5.Location = new Point(366, 81);
             chkBakeoutMonitorCh5.Size = new Size(52, 20);
             chkBakeoutMonitorCh5.TabIndex = 29;
             chkBakeoutMonitorCh5.Visible = false;
@@ -333,7 +335,7 @@
             //
             lblBakeoutHeaterMax = new Label();
             lblBakeoutHeaterMax.AutoSize = true;
-            lblBakeoutHeaterMax.Location = new Point(20, 123);
+            lblBakeoutHeaterMax.Location = new Point(20, 113);
             lblBakeoutHeaterMax.Name = "lblBakeoutHeaterMax";
             lblBakeoutHeaterMax.Size = new Size(155, 15);
             lblBakeoutHeaterMax.TabIndex = 30;
@@ -343,7 +345,7 @@
             // txtBakeoutHeaterMax
             //
             txtBakeoutHeaterMax = new TextBox();
-            txtBakeoutHeaterMax.Location = new Point(230, 120);
+            txtBakeoutHeaterMax.Location = new Point(230, 110);
             txtBakeoutHeaterMax.Name = "txtBakeoutHeaterMax";
             txtBakeoutHeaterMax.Size = new Size(120, 23);
             txtBakeoutHeaterMax.TabIndex = 31;
@@ -353,7 +355,7 @@
             //
             lblBakeoutMaxDeltaT = new Label();
             lblBakeoutMaxDeltaT.AutoSize = true;
-            lblBakeoutMaxDeltaT.Location = new Point(20, 153);
+            lblBakeoutMaxDeltaT.Location = new Point(20, 143);
             lblBakeoutMaxDeltaT.Name = "lblBakeoutMaxDeltaT";
             lblBakeoutMaxDeltaT.Size = new Size(200, 15);
             lblBakeoutMaxDeltaT.TabIndex = 32;
@@ -363,7 +365,7 @@
             // txtBakeoutMaxDeltaT
             //
             txtBakeoutMaxDeltaT = new TextBox();
-            txtBakeoutMaxDeltaT.Location = new Point(230, 150);
+            txtBakeoutMaxDeltaT.Location = new Point(230, 140);
             txtBakeoutMaxDeltaT.Name = "txtBakeoutMaxDeltaT";
             txtBakeoutMaxDeltaT.Size = new Size(120, 23);
             txtBakeoutMaxDeltaT.TabIndex = 33;
@@ -373,7 +375,7 @@
             //
             lblBakeoutTolerance = new Label();
             lblBakeoutTolerance.AutoSize = true;
-            lblBakeoutTolerance.Location = new Point(20, 183);
+            lblBakeoutTolerance.Location = new Point(20, 173);
             lblBakeoutTolerance.Name = "lblBakeoutTolerance";
             lblBakeoutTolerance.Size = new Size(200, 15);
             lblBakeoutTolerance.TabIndex = 50;
@@ -382,16 +384,36 @@
             // txtBakeoutTolerance
             //
             txtBakeoutTolerance = new TextBox();
-            txtBakeoutTolerance.Location = new Point(230, 180);
+            txtBakeoutTolerance.Location = new Point(230, 170);
             txtBakeoutTolerance.Name = "txtBakeoutTolerance";
             txtBakeoutTolerance.Size = new Size(120, 23);
             txtBakeoutTolerance.TabIndex = 51;
+            //
+            // lblBakeoutStabilization
+            //
+            lblBakeoutStabilization = new Label();
+            lblBakeoutStabilization.AutoSize = true;
+            lblBakeoutStabilization.Location = new Point(20, 203);
+            lblBakeoutStabilization.Name = "lblBakeoutStabilization";
+            lblBakeoutStabilization.Size = new Size(200, 15);
+            lblBakeoutStabilization.TabIndex = 52;
+            lblBakeoutStabilization.Text = "안정화 유지 시간 (초):";
+            lblBakeoutStabilization.Visible = false;
+            //
+            // txtBakeoutStabilization
+            //
+            txtBakeoutStabilization = new TextBox();
+            txtBakeoutStabilization.Location = new Point(230, 200);
+            txtBakeoutStabilization.Name = "txtBakeoutStabilization";
+            txtBakeoutStabilization.Size = new Size(120, 23);
+            txtBakeoutStabilization.TabIndex = 53;
+            txtBakeoutStabilization.Visible = false;
             //
             // lblBakeoutRiseTimeout
             //
             lblBakeoutRiseTimeout = new Label();
             lblBakeoutRiseTimeout.AutoSize = true;
-            lblBakeoutRiseTimeout.Location = new Point(20, 213);
+            lblBakeoutRiseTimeout.Location = new Point(20, 233);
             lblBakeoutRiseTimeout.Name = "lblBakeoutRiseTimeout";
             lblBakeoutRiseTimeout.Size = new Size(200, 15);
             lblBakeoutRiseTimeout.TabIndex = 34;
@@ -401,7 +423,7 @@
             // txtBakeoutRiseTimeout
             //
             txtBakeoutRiseTimeout = new TextBox();
-            txtBakeoutRiseTimeout.Location = new Point(230, 210);
+            txtBakeoutRiseTimeout.Location = new Point(230, 230);
             txtBakeoutRiseTimeout.Name = "txtBakeoutRiseTimeout";
             txtBakeoutRiseTimeout.Size = new Size(120, 23);
             txtBakeoutRiseTimeout.TabIndex = 35;
@@ -411,7 +433,7 @@
             //
             lblBakeoutDecelZone = new Label();
             lblBakeoutDecelZone.AutoSize = true;
-            lblBakeoutDecelZone.Location = new Point(20, 213);
+            lblBakeoutDecelZone.Location = new Point(20, 233);
             lblBakeoutDecelZone.Name = "lblBakeoutDecelZone";
             lblBakeoutDecelZone.Size = new Size(200, 15);
             lblBakeoutDecelZone.TabIndex = 36;
@@ -421,7 +443,7 @@
             // txtBakeoutDecelZone
             //
             txtBakeoutDecelZone = new TextBox();
-            txtBakeoutDecelZone.Location = new Point(230, 210);
+            txtBakeoutDecelZone.Location = new Point(230, 230);
             txtBakeoutDecelZone.Name = "txtBakeoutDecelZone";
             txtBakeoutDecelZone.Size = new Size(120, 23);
             txtBakeoutDecelZone.TabIndex = 37;
@@ -431,7 +453,7 @@
             //
             lblBakeoutFeedbackInterval = new Label();
             lblBakeoutFeedbackInterval.AutoSize = true;
-            lblBakeoutFeedbackInterval.Location = new Point(20, 243);
+            lblBakeoutFeedbackInterval.Location = new Point(20, 263);
             lblBakeoutFeedbackInterval.Name = "lblBakeoutFeedbackInterval";
             lblBakeoutFeedbackInterval.Size = new Size(200, 15);
             lblBakeoutFeedbackInterval.TabIndex = 38;
@@ -441,7 +463,7 @@
             // txtBakeoutFeedbackInterval
             //
             txtBakeoutFeedbackInterval = new TextBox();
-            txtBakeoutFeedbackInterval.Location = new Point(230, 240);
+            txtBakeoutFeedbackInterval.Location = new Point(230, 260);
             txtBakeoutFeedbackInterval.Name = "txtBakeoutFeedbackInterval";
             txtBakeoutFeedbackInterval.Size = new Size(120, 23);
             txtBakeoutFeedbackInterval.TabIndex = 39;
@@ -472,6 +494,8 @@
             tabTemperature.Controls.Add(txtBakeoutMaxDeltaT);
             tabTemperature.Controls.Add(lblBakeoutTolerance);
             tabTemperature.Controls.Add(txtBakeoutTolerance);
+            tabTemperature.Controls.Add(lblBakeoutStabilization);
+            tabTemperature.Controls.Add(txtBakeoutStabilization);
             tabTemperature.Controls.Add(lblBakeoutRiseTimeout);
             tabTemperature.Controls.Add(txtBakeoutRiseTimeout);
             tabTemperature.Controls.Add(lblBakeoutDecelZone);
@@ -481,6 +505,8 @@
             tabTemperature.Controls.Add(lblShutdownTempHeader);
             tabTemperature.Controls.Add(txtCoolingTargetTemperature);
             tabTemperature.Controls.Add(lblCoolingTargetTemperature);
+            tabTemperature.Controls.Add(txtVentingStartTemperature);
+            tabTemperature.Controls.Add(lblVentingStartTemperature);
             tabTemperature.Controls.Add(txtVentTargetPressure);
             tabTemperature.Controls.Add(lblVentTargetPressure);
             tabTemperature.Location = new Point(4, 24);
@@ -563,27 +589,43 @@
             lblCoolingTargetTemperature.Size = new Size(152, 15);
             lblCoolingTargetTemperature.TabIndex = 10;
             lblCoolingTargetTemperature.Text = "쿨링 목표 온도 (°C):";
-            // 
+            //
+            // txtVentingStartTemperature
+            //
+            txtVentingStartTemperature.Location = new Point(230, 237);
+            txtVentingStartTemperature.Name = "txtVentingStartTemperature";
+            txtVentingStartTemperature.Size = new Size(120, 23);
+            txtVentingStartTemperature.TabIndex = 13;
+            //
+            // lblVentingStartTemperature
+            //
+            lblVentingStartTemperature.AutoSize = true;
+            lblVentingStartTemperature.Location = new Point(20, 240);
+            lblVentingStartTemperature.Name = "lblVentingStartTemperature";
+            lblVentingStartTemperature.Size = new Size(175, 15);
+            lblVentingStartTemperature.TabIndex = 12;
+            lblVentingStartTemperature.Text = "벤팅 시작 온도 (°C):";
+            //
             // txtVentTargetPressure
-            // 
-            txtVentTargetPressure.Location = new Point(230, 237);
+            //
+            txtVentTargetPressure.Location = new Point(230, 274);
             txtVentTargetPressure.Name = "txtVentTargetPressure";
             txtVentTargetPressure.Size = new Size(120, 23);
-            txtVentTargetPressure.TabIndex = 13;
-            // 
+            txtVentTargetPressure.TabIndex = 15;
+            //
             // lblVentTargetPressure
-            // 
+            //
             lblVentTargetPressure.AutoSize = true;
-            lblVentTargetPressure.Location = new Point(20, 240);
+            lblVentTargetPressure.Location = new Point(20, 277);
             lblVentTargetPressure.Name = "lblVentTargetPressure";
             lblVentTargetPressure.Size = new Size(175, 15);
-            lblVentTargetPressure.TabIndex = 12;
+            lblVentTargetPressure.TabIndex = 14;
             lblVentTargetPressure.Text = "벤트 목표 압력 (kPa, ATM):";
             // 
             // lblTempNote
             // 
             lblTempNote.ForeColor = SystemColors.GrayText;
-            lblTempNote.Location = new Point(20, 280);
+            lblTempNote.Location = new Point(20, 317);
             lblTempNote.Name = "lblTempNote";
             lblTempNote.Size = new Size(400, 40);
             lblTempNote.TabIndex = 14;
@@ -647,10 +689,10 @@
             cmbBakeoutEndAction = new ComboBox();
             cmbBakeoutEndAction.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbBakeoutEndAction.FormattingEnabled = true;
-            cmbBakeoutEndAction.Items.AddRange(new object[] { "히터 OFF (전체 셧다운)", "현재 온도 유지", "알림만 (수동 조작)" });
+            cmbBakeoutEndAction.Items.AddRange(new object[] { "냉각 → 벤트 → 종료 (전체 셧다운)", "온도 유지 (수동 종료 대기)", "알림만 (현재 상태 유지)" });
             cmbBakeoutEndAction.Location = new Point(150, 59);
             cmbBakeoutEndAction.Name = "cmbBakeoutEndAction";
-            cmbBakeoutEndAction.Size = new Size(200, 23);
+            cmbBakeoutEndAction.Size = new Size(280, 23);
             cmbBakeoutEndAction.TabIndex = 36;
             cmbBakeoutEndAction.Visible = false;
             //
@@ -772,10 +814,11 @@
             // nudShutdownTimeout
             // 
             nudShutdownTimeout.Location = new Point(260, 280);
-            nudShutdownTimeout.Maximum = new decimal(new int[] { 14400, 0, 0, 0 });
-            nudShutdownTimeout.Minimum = new decimal(new int[] { 1800, 0, 0, 0 });
+            nudShutdownTimeout.Maximum = new decimal(new int[] { 86400, 0, 0, 0 });
+            nudShutdownTimeout.Minimum = new decimal(new int[] { 600, 0, 0, 0 });
             nudShutdownTimeout.Name = "nudShutdownTimeout";
-            nudShutdownTimeout.Size = new Size(100, 23);
+            nudShutdownTimeout.Size = new Size(80, 23);
+            nudShutdownTimeout.Increment = new decimal(new int[] { 600, 0, 0, 0 });
             nudShutdownTimeout.TabIndex = 15;
             nudShutdownTimeout.Value = new decimal(new int[] { 7200, 0, 0, 0 });
             // 
@@ -810,10 +853,11 @@
             // nudHighVacuumTimeout
             // 
             nudHighVacuumTimeout.Location = new Point(260, 210);
-            nudHighVacuumTimeout.Maximum = new decimal(new int[] { 7200, 0, 0, 0 });
+            nudHighVacuumTimeout.Maximum = new decimal(new int[] { 86400, 0, 0, 0 });
             nudHighVacuumTimeout.Minimum = new decimal(new int[] { 60, 0, 0, 0 });
             nudHighVacuumTimeout.Name = "nudHighVacuumTimeout";
-            nudHighVacuumTimeout.Size = new Size(100, 23);
+            nudHighVacuumTimeout.Size = new Size(80, 23);
+            nudHighVacuumTimeout.Increment = new decimal(new int[] { 600, 0, 0, 0 });
             nudHighVacuumTimeout.TabIndex = 11;
             nudHighVacuumTimeout.Value = new decimal(new int[] { 3600, 0, 0, 0 });
             // 
@@ -1152,6 +1196,8 @@
         private System.Windows.Forms.TextBox txtBakeoutMaxDeltaT;
         private System.Windows.Forms.Label lblBakeoutTolerance;
         private System.Windows.Forms.TextBox txtBakeoutTolerance;
+        private System.Windows.Forms.Label lblBakeoutStabilization;
+        private System.Windows.Forms.TextBox txtBakeoutStabilization;
         private System.Windows.Forms.Label lblBakeoutRiseTimeout;
         private System.Windows.Forms.TextBox txtBakeoutRiseTimeout;
         private System.Windows.Forms.Label lblBakeoutDecelZone;
@@ -1204,6 +1250,8 @@
         private System.Windows.Forms.Label lblShutdownTempHeader;
         private System.Windows.Forms.TextBox txtCoolingTargetTemperature;
         private System.Windows.Forms.Label lblCoolingTargetTemperature;
+        private System.Windows.Forms.TextBox txtVentingStartTemperature;
+        private System.Windows.Forms.Label lblVentingStartTemperature;
         private System.Windows.Forms.TextBox txtVentTargetPressure;
         private System.Windows.Forms.Label lblVentTargetPressure;
 

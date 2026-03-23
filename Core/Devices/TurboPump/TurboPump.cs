@@ -92,8 +92,8 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         private const int STS_REMOTE_ACTIVE = 0x8000;          // Bit 15: 원격 제어 활성화됨
 
         // 주파수 범위 상수 (매뉴얼 p.19, 21)
-        private const ushort FREQ_MIN_SETPOINT = 600;          // Parameter 24 최소값
-        private const ushort FREQ_MAX_SETPOINT = 1200;         // Parameter 24 최대값
+        private const ushort FREQ_MIN_SETPOINT = 600;          // Parameter 24 최소값 (매뉴얼 p.19)
+        private const ushort FREQ_MAX_SETPOINT = 1200;         // Parameter 24 최대값 (매뉴얼 p.19)
         private const ushort FREQ_MIN_STANDBY = 0;             // Parameter 150 최소값
         private const ushort FREQ_MAX_STANDBY = 1200;          // Parameter 150 최대값
         private const ushort FREQ_DEFAULT_SETPOINT = 980;      // Parameter 24 기본값
@@ -877,6 +877,11 @@ namespace VacX_OutSense.Core.Devices.TurboPump
                 if (ReadParameter(PARAM_WARNING_BITS1, out code))
                     _currentStatus.WarningCode = code;
 
+                // ★ 추가: 런타임 읽기 (P184, u16, 단위: h)
+                ushort hours;
+                if (ReadParameter(184, out hours))
+                    _currentStatus.RunningTimeHours = hours;
+
                 _lastStatusUpdateTime = DateTime.Now;
                 return true;
             }
@@ -916,10 +921,11 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         {
             try
             {
-                uint runningHours;
-                if (ReadParameter32Bit(60, out runningHours))
+                // P184: Converter operating hours (u16, h)
+                ushort runningHours;
+                if (ReadParameter(184, out runningHours))
                 {
-                    _currentStatus.RunningTimeHours = runningHours / 100; // 0.01h 단위
+                    _currentStatus.RunningTimeHours = runningHours;
                 }
             }
             catch (Exception ex)

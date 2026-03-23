@@ -230,6 +230,12 @@ namespace VacX_OutSense.Core.AutoRun
         public double BakeoutTolerance { get; set; } = 1.0;
 
         /// <summary>
+        /// [Bakeout] 온도 안정화 유지 시간 (초) — 목표±허용오차 범위 내에서 이 시간 동안
+        /// 연속 유지되어야 홀드 타이머가 시작됨. 0이면 즉시 시작 (기존 동작).
+        /// </summary>
+        public int BakeoutStabilizationSeconds { get; set; } = 600;
+
+        /// <summary>
         /// [Bakeout] 샘플 온도 모니터링 채널 (1~5) — 하위호환용 (단일 채널)
         /// </summary>
         public int BakeoutMonitorChannel { get; set; } = 2;
@@ -431,6 +437,7 @@ namespace VacX_OutSense.Core.AutoRun
             BakeoutRiseTimeoutMinutes = defaultConfig.BakeoutRiseTimeoutMinutes;
             BakeoutDecelerationZone = defaultConfig.BakeoutDecelerationZone;
             BakeoutFeedbackIntervalSec = defaultConfig.BakeoutFeedbackIntervalSec;
+            BakeoutStabilizationSeconds = defaultConfig.BakeoutStabilizationSeconds;
             BakeoutMonitorChannel = defaultConfig.BakeoutMonitorChannel;
             BakeoutMonitorCh1 = defaultConfig.BakeoutMonitorCh1;
             BakeoutMonitorCh2 = defaultConfig.BakeoutMonitorCh2;
