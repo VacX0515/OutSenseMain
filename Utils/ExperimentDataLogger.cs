@@ -191,17 +191,26 @@ namespace VacX_OutSense.Utils
                             sb.Append(",,,,");
                         }
 
-                        // CH3~5 (PV only)
-                        for (int i = 2; i < 5; i++)
+                        // CH3~8 (PV, SV, MV, Status)
+                        for (int i = 2; i < 8; i++)
                         {
-                            sb.Append(',');
-                            sb.Append(i < channels.Length ? channels[i].PresentValue : "");
+                            if (i < channels.Length)
+                            {
+                                sb.Append(','); sb.Append(channels[i].PresentValue);
+                                sb.Append(','); sb.Append(channels[i].SetValue);
+                                sb.Append(','); sb.Append(channels[i].HeatingMV?.Replace(" %", ""));
+                                sb.Append(','); sb.Append(channels[i].Status);
+                            }
+                            else
+                            {
+                                sb.Append(",,,,");
+                            }
                         }
                     }
                     else
                     {
-                        // 온도 컨트롤러 미연결 시 빈 칸
-                        sb.Append(",,,,,,,,,,,");
+                        // 온도 컨트롤러 미연결 시 빈 칸 (8채널 × 4컬럼)
+                        for (int i = 0; i < 32; i++) sb.Append(',');
                     }
 
                     // 추가 AI
@@ -279,10 +288,15 @@ namespace VacX_OutSense.Utils
                 // 칠러
                 "Chiller_Status", "Chiller_CurrentTemp", "Chiller_TargetTemp",
 
-                // 온도 컨트롤러
-                "CH1_PV(°C)", "CH1_SV(°C)", "CH1_MV(%)", "CH1_Status",
-                "CH2_PV(°C)", "CH2_SV(°C)", "CH2_MV(%)", "CH2_Status",
-                "CH3_PV(°C)", "CH4_PV(°C)", "CH5_PV(°C)",
+                // 온도 컨트롤러 (메인 4 + 확장 4)
+                "M1_PV(°C)", "M1_SV(°C)", "M1_MV(%)", "M1_Status",
+                "M2_PV(°C)", "M2_SV(°C)", "M2_MV(%)", "M2_Status",
+                "M3_PV(°C)", "M3_SV(°C)", "M3_MV(%)", "M3_Status",
+                "M4_PV(°C)", "M4_SV(°C)", "M4_MV(%)", "M4_Status",
+                "E1_PV(°C)", "E1_SV(°C)", "E1_MV(%)", "E1_Status",
+                "E2_PV(°C)", "E2_SV(°C)", "E2_MV(%)", "E2_Status",
+                "E3_PV(°C)", "E3_SV(°C)", "E3_MV(%)", "E3_Status",
+                "E4_PV(°C)", "E4_SV(°C)", "E4_MV(%)", "E4_Status",
 
                 // 추가
                 "AdditionalAI(V)"

@@ -31,44 +31,43 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.label = new System.Windows.Forms.Label();
-            this.textBox = new System.Windows.Forms.TextBox();
-            this.SuspendLayout();
+            label = new Label();
+            textBox = new TextBox();
+            SuspendLayout();
             // 
             // label
             // 
-            this.label.AutoSize = true;
-            this.label.Location = new System.Drawing.Point(3, 6);
-            this.label.Name = "label";
-            this.label.Size = new System.Drawing.Size(45, 15);
-            this.label.TabIndex = 0;
-            this.label.Text = "레이블:";
-            this.label.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.label.MaximumSize = new System.Drawing.Size(80, 0); // 최대 너비 설정, 높이는 자동 조정
-            this.label.Padding = new System.Windows.Forms.Padding(0, 0, 0, 2); // 하단 여백 추가
-                                                                               // 
-                                                                               // textBox
-                                                                               // 
-            this.textBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
-            this.textBox.Location = new System.Drawing.Point(90, 3);
-            this.textBox.Name = "textBox";
-            this.textBox.Size = new System.Drawing.Size(150, 23);
-            this.textBox.TabIndex = 1;
+            label.AutoSize = true;
+            label.Location = new Point(3, 6);
+            label.MaximumSize = new Size(80, 0);
+            label.Name = "label";
+            label.Padding = new Padding(0, 0, 0, 2);
+            label.Size = new Size(46, 17);
+            label.TabIndex = 0;
+            label.Text = "레이블:";
+            label.TextAlign = ContentAlignment.MiddleRight;
+            label.TextChanged += Label_TextChanged;
+            // 
+            // textBox
+            // 
+            textBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            textBox.Location = new Point(90, 3);
+            textBox.Name = "textBox";
+            textBox.Size = new Size(150, 23);
+            textBox.TabIndex = 1;
+            textBox.TextAlign = HorizontalAlignment.Center;
             // 
             // BindableTextBox
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.Controls.Add(this.textBox);
-            this.Controls.Add(this.label);
-            this.Name = "BindableTextBox";
-            this.Size = new System.Drawing.Size(250, 30);
-            this.Padding = new System.Windows.Forms.Padding(0, 0, 0, 3); // 컨트롤 전체 하단 여백 추가
-            this.ResumeLayout(false);
-            this.PerformLayout();
-
-            // 라벨 텍스트 변경 시 컨트롤 높이 조정을 위한 이벤트 핸들러 추가
-            this.label.TextChanged += new System.EventHandler(this.Label_TextChanged);
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            Controls.Add(textBox);
+            Controls.Add(label);
+            Name = "BindableTextBox";
+            Padding = new Padding(0, 0, 0, 3);
+            Size = new Size(250, 30);
+            ResumeLayout(false);
+            PerformLayout();
         }
 
         private void Label_TextChanged(object sender, System.EventArgs e)

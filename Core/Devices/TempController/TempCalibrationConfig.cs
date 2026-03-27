@@ -12,14 +12,14 @@ namespace VacX_OutSense.Core.Devices.TempController
     /// </summary>
     public class TempCalibrationConfig
     {
-        public ChannelCalibration[] Channels { get; set; } = new ChannelCalibration[5];
+        public ChannelCalibration[] Channels { get; set; } = new ChannelCalibration[8];
 
         /// <summary>이온게이지 캘리브레이션</summary>
         public GaugeCalibration IonGauge { get; set; } = new GaugeCalibration();
 
         public TempCalibrationConfig()
         {
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 8; i++)
                 Channels[i] = new ChannelCalibration();
         }
 

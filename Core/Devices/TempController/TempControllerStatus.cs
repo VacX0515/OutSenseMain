@@ -534,11 +534,11 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// 기본 생성자 (5채널 지원: 메인 2 + 확장 3)
+        /// 기본 생성자 (8채널 지원: 메인 4 + 확장 4)
         /// </summary>
         public TemperatureControllerStatus()
         {
-            _channelCount = 5;  // 메인 2채널 + 확장 3채널
+            _channelCount = 8;  // 메인 4채널 + 확장 4채널
             _channelStatus = new ChannelStatus[_channelCount];
             _modelName = "";
 
@@ -547,7 +547,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 _channelStatus[i] = new ChannelStatus
                 {
                     ChannelNumber = i + 1,
-                    IsExpansionChannel = (i >= 2)  // CH3 이상은 확장 채널
+                    IsExpansionChannel = false  // 모든 채널 동일 제어
                 };
             }
         }

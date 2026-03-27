@@ -19,6 +19,9 @@ namespace VacX_OutSense.Core.Safety
 
         public InterlockConfiguration Config { get; set; }
 
+        /// <summary>종료 시퀀스 모드 — 인터락 우회 (밸브 열기 등)</summary>
+        public bool ShutdownSequenceMode { get; set; }
+
         /// <summary>인터락 위반 시 발생 (로그/알림용)</summary>
         public event EventHandler<string> InterlockViolation;
 
@@ -34,13 +37,17 @@ namespace VacX_OutSense.Core.Safety
         public bool CanOpenVentValve(out string reason)
         {
             reason = null;
+            // 고온 인터락은 종료 시퀀스에서도 항상 적용
+            if (!CheckHighTemperatureBlock(out reason))
+                return false;
+            if (!CheckHeaterRunningBlock(out reason))
+                return false;
+            if (ShutdownSequenceMode) return true; // 나머지(터보펌프 등)는 우회
             if (Config.VentValve_BlockIfTurboRunning && IsTurboPumpRunning())
             {
                 reason = "터보펌프 작동 중에는 벤트 밸브를 열 수 없습니다.";
                 return false;
             }
-            if (!CheckHighTemperatureBlock(out reason))
-                return false;
             return true;
         }
 
@@ -48,13 +55,32 @@ namespace VacX_OutSense.Core.Safety
         public bool CanOpenExhaustValve(out string reason)
         {
             reason = null;
+            // 고온 인터락은 종료 시퀀스에서도 항상 적용
+            if (!CheckHighTemperatureBlock(out reason))
+                return false;
+            if (!CheckHeaterRunningBlock(out reason))
+                return false;
+            if (ShutdownSequenceMode) return true; // 나머지(터보펌프 등)는 우회
             if (Config.ExhaustValve_BlockIfTurboRunning && IsTurboPumpRunning())
             {
                 reason = "터보펌프 작동 중에는 배기 밸브를 열 수 없습니다.";
                 return false;
             }
-            if (!CheckHighTemperatureBlock(out reason))
+            return true;
+        }
+
+        /// <summary>히터 작동 중 벤트/배기 밸브 차단 체크</summary>
+        private bool CheckHeaterRunningBlock(out string reason)
+        {
+            reason = null;
+            if (!Config.VentExhaust_BlockIfHeaterRunning)
+                return true;
+
+            if (IsHeaterRunning())
+            {
+                reason = "히터가 작동 중에는 벤트/배기 밸브를 열 수 없습니다. 히터를 먼저 정지하세요.";
                 return false;
+            }
             return true;
         }
 
@@ -321,6 +347,16 @@ namespace VacX_OutSense.Core.Safety
 
         private bool IsTurboPumpRunning() =>
             _mainForm._turboPump?.Status?.IsRunning ?? false;
+
+        private bool IsHeaterRunning()
+        {
+            try
+            {
+                if (_mainForm._tempController?.IsConnected != true) return false;
+                return _mainForm._tempController.Status.ChannelStatus[0].IsRunning;
+            }
+            catch { return false; }
+        }
 
         private double GetCh1Temperature()
         {

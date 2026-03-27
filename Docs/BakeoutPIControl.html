@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>베이크아웃 PI 제어 로직</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<style>
+body{font-family:'Malgun Gothic',sans-serif;background:#1a1a2e;color:#e0e0e0;max-width:1200px;margin:0 auto;padding:20px}
+h1{color:#00d4ff;border-bottom:2px solid #00d4ff;padding-bottom:10px}
+h2{color:#ffd700;margin-top:40px;border-left:4px solid #ffd700;padding-left:12px}
+h3{color:#7fff7f}
+table{border-collapse:collapse;width:100%;margin:15px 0}
+th{background:#2a2a4a;color:#00d4ff;padding:10px;text-align:left;border:1px solid #444}
+td{padding:8px 10px;border:1px solid #444;background:#1e1e3a}
+code{background:#2a2a4a;padding:2px 6px;border-radius:3px;color:#ff9;font-family:Consolas,monospace}
+pre{background:#0d0d1a;padding:15px;border-radius:8px;border:1px solid #333;overflow-x:auto}
+.mermaid{background:#fff;padding:20px;border-radius:10px;margin:20px 0}
+.box{background:#1e1e3a;border:1px solid #444;border-radius:10px;padding:20px;margin:15px 0}
+.warn{border-left:4px solid #ff6b6b;padding-left:12px;margin:10px 0}
+.info{border-left:4px solid #00d4ff;padding-left:12px;margin:10px 0}
+.formula{background:#0d0d1a;border:1px solid #ffd700;border-radius:8px;padding:15px;margin:10px 0;font-family:Consolas;font-size:14px}
+</style>
+</head>
+<body>
+<h1>베이크아웃 PI 제어 로직 문서</h1>
+<p style="color:#aaa">VacX OutSense System Controller v2.3+</p>
+
+<h2>1. 전체 실행 흐름</h2>
+<div class="mermaid">
+flowchart TD
+    A[RunExperimentAsync] --> B{모니터 채널}
+    B -->|CH1| C[TM4 하드웨어 PID + 램프]
+    B -->|CH2~8| D[소프트웨어 PI 피드백]
+    D --> E[1단계: 승온]
+    E --> F{안정화 완료?}
+    F -->|No| E
+    F -->|Yes| G[2단계: 홀드]
+    G --> H{유지시간 완료?}
+    H -->|No| G
+    H -->|Yes| I[종료 시퀀스]
+    C --> J[TM4 자체 제어]
+    J --> F
+
+    style A fill:#1a5276,color:#fff
+    style E fill:#7d3c98,color:#fff
+    style G fill:#1e8449,color:#fff
+    style I fill:#c0392b,color:#fff
+</div>
+
+<h2>2. 승온 PI 피드백 구조</h2>
+<div class="mermaid">
+flowchart LR
+    subgraph 입력
+        RT[rampedTarget<br>초기+시간x속도]
+        MT[샘플 온도<br>모니터 채널]
+    end
+
+    subgraph PI제어
+        E[error = RT - MT]
+        P[P항: error x Kp]
+        I[I항: 누적 error x Ki]
+        D_[D항: -Kd x 변화율]
+        EC[에너지보상]
+    end
+
+    subgraph 제한
+        UL[상한: min<br>히터Max, RT+Lag*1.5]
+        LL[하한: RT+Lag*0.85]
+        SR[감소속도 3단계]
+    end
+
+    RT --> E
+    MT --> E
+    E --> P & I & D_ & EC
+    P & I & D_ & EC --> SV[CH1 SV]
+    SV --> UL & LL & SR
+    UL & LL & SR --> OUT[최종 CH1 SV]
+
+    style RT fill:#e74c3c,color:#fff
+    style MT fill:#3498db,color:#fff
+    style SV fill:#f39c12,color:#fff
+    style OUT fill:#2ecc71,color:#fff
+</div>
+
+<h2>3. 적응형 게인 스케일링</h2>
+<div class="box">
+<div class="formula">
+lagScale = observedThermalLag / 20.0 &nbsp;&nbsp;(클램프: 0.3 ~ 2.0)<br>
+Kp = 1.5 x sqrt(lagScale)<br>
+Kd = 3.0 / sqrt(lagScale)
+</div>
+<table>
+<tr><th>열지연</th><th>lagScale</th><th>Kp</th><th>Kd</th><th>시스템 특성</th></tr>
+<tr><td>2°C</td><td>0.3</td><td><b>0.82</b></td><td>5.48</td><td>빠른 응답 → 오버슈트 억제</td></tr>
+<tr><td>10°C</td><td>0.5</td><td>1.06</td><td>4.24</td><td>중간</td></tr>
+<tr><td>20°C</td><td>1.0</td><td>1.50</td><td>3.00</td><td>기준</td></tr>
+<tr><td>40°C</td><td>2.0</td><td><b>2.12</b></td><td>2.12</td><td>느린 응답 → 빠른 추종</td></tr>
+</table>
+</div>
+
+<h2>4. SV 제한 메커니즘</h2>
+<div class="mermaid">
+flowchart TD
+    PI[PI 출력] --> C1{NaN/Inf?}
+    C1 -->|Yes| KEEP[이전 SV 유지]
+    C1 -->|No| C2[상한 적용]
+    C2 --> C3[하한 적용]
+    C3 --> C4{샘플 < 목표?}
+    C4 -->|Yes| BLOCK[SV 감소 차단]
+    C4 -->|No| C5{샘플 ≤ 목표+허용오차?}
+    C5 -->|Yes| SLOW[최대 0.1°C/cyc 감소]
+    C5 -->|No| MED[최대 0.3°C/cyc 감소]
+    BLOCK & SLOW & MED --> FINAL[최종 SV]
+
+    style BLOCK fill:#c0392b,color:#fff
+    style SLOW fill:#e67e22,color:#fff
+    style MED fill:#f1c40f,color:#000
+    style FINAL fill:#2ecc71,color:#fff
+</div>
+
+<div class="box">
+<h3>SV 상한</h3>
+<div class="formula">
+upperLimit = min(effectiveMaxTemp, rampedTarget + max(observedThermalLag, 5) x 1.5)
+</div>
+<p class="info">열지연이 작은 시스템에서 CH1 SV가 과도하게 올라가는 것을 방지</p>
+
+<h3>SV 하한</h3>
+<div class="formula">
+lowerBound = max(rampedTarget + observedThermalLag x 0.85, 샘플온도 - currentLag x 0.3)
+</div>
+<p class="info">정상상태에서 CH1이 목표+열지연 이상을 유지하도록 보장</p>
+</div>
+
+<h2>5. 안정화 판정</h2>
+<div class="mermaid">
+flowchart TD
+    A[매 PI 사이클] --> B{온도 범위 내?<br>목표 ± 허용오차}
+    B -->|No| R[카운터 리셋 → 0]
+    B -->|Yes| C{변화율 < 0.3°C/cyc?}
+    C -->|No| R
+    C -->|Yes| D{SV 변동 < 0.5°C?}
+    D -->|No| R
+    D -->|Yes| E[카운터++]
+    E --> F{카운터 ≥ 600초?}
+    F -->|No| A
+    F -->|Yes| G[안정화 완료!<br>홀드 진입]
+
+    style R fill:#c0392b,color:#fff
+    style G fill:#2ecc71,color:#fff
+    style E fill:#3498db,color:#fff
+</div>
+
+<h2>6. 홀드 PI (2단계)</h2>
+<div class="box">
+<div class="formula">
+newCh1SV = targetTemp + holdError x Kp + integralTerm + dTerm
+</div>
+<table>
+<tr><th>항목</th><th>승온 단계</th><th>홀드 단계</th></tr>
+<tr><td>감쇠</td><td>storedEnergy > 2°C, 최대 5%/cyc</td><td><b>없음</b></td></tr>
+<tr><td>에너지보상</td><td>-storedEnergy x 0.15 x proximity</td><td><b>없음</b></td></tr>
+<tr><td>적분 Ki</td><td>양: Ki, 음: Ki x 1.5</td><td><b>대칭 Ki</b></td></tr>
+<tr><td>SV 감소 제한</td><td>3단계</td><td>3단계 (동일)</td></tr>
+</table>
+<p class="info">홀드는 이미 평형 상태 → 감쇠/보상이 오히려 언더슛을 유발하므로 제거</p>
+</div>
+
+<h2>7. 종료 시퀀스</h2>
+<div class="mermaid">
+flowchart TD
+    A[히터 CH1 정지] --> B[냉각 대기<br>펌프 유지, 진공 보호]
+    B --> C{CH1 ≤ 125°C?}
+    C -->|No, 대기| B
+    C -->|Yes| D[IG HV OFF]
+    D --> E[터보펌프 정지 + 감속 대기]
+    E --> F[게이트 밸브 닫기]
+    F --> G[드라이펌프 정지]
+    G --> H[벤트 밸브 열기]
+    H --> I{ATM 도달?}
+    I -->|No, 대기| H
+    I -->|Yes| J[배기 밸브 열기]
+    J --> K{CH1 ≤ 50°C?}
+    K -->|No, 쿨링| J
+    K -->|Yes| L[배기 밸브 닫기]
+    L --> M[벤트 밸브 닫기]
+    M --> N[칠러 PID 정지]
+    N --> O[완료]
+
+    style A fill:#c0392b,color:#fff
+    style B fill:#e67e22,color:#fff
+    style H fill:#3498db,color:#fff
+    style O fill:#2ecc71,color:#fff
+</div>
+
+<div class="warn">
+<b>인터락</b>: CH1 > 125°C에서 벤트/배기 밸브 열기 차단 (종료 시퀀스에서도 항상 적용)<br>
+125°C까지는 펌프가 작동 상태에서 자연냉각 → 고온 산화 방지
+</div>
+
+<h2>8. 안전 워치독</h2>
+<div class="mermaid">
+flowchart LR
+    subgraph 감지
+        W1[칠러 정지]
+        W2[드라이펌프 정지]
+        W3[게이트밸브 닫힘]
+        W4[CH1 > 상한+20°C]
+        W5[압력 > 1 Torr]
+    end
+
+    subgraph 동작
+        S1[터보 자동 정지]
+        S2[히터 자동 정지]
+    end
+
+    W1 & W2 & W3 & W5 --> S1
+    W4 --> S2
+
+    style S1 fill:#c0392b,color:#fff
+    style S2 fill:#e74c3c,color:#fff
+</div>
+
+<h2>9. 열 특성 실시간 표시</h2>
+<div class="box">
+<pre style="color:#0f0;font-size:13px">
+[열특성] 열지연:25.3°C  현재Lag:24.1°C  변화율:0.12°C/cyc  시정수:1054초  열저항:3.42  Kp:1.33 Kd:3.37  I:21.5  정상SV:221.5°C
+</pre>
+<table>
+<tr><th>항목</th><th>계산</th></tr>
+<tr><td>열지연</td><td>observedThermalLag (EMA 추적, 피크 포착)</td></tr>
+<tr><td>시정수</td><td>열지연 / 변화율 x 피드백주기</td></tr>
+<tr><td>열저항</td><td>열지연 / (히터출력% / 10)</td></tr>
+<tr><td>정상SV</td><td>target + observedThermalLag x 0.85</td></tr>
+</table>
+</div>
+
+<script>mermaid.initialize({theme:'default',securityLevel:'loose'});</script>
+</body>
+</html>

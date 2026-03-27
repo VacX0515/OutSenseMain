@@ -92,11 +92,11 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         private const int STS_REMOTE_ACTIVE = 0x8000;          // Bit 15: 원격 제어 활성화됨
 
         // 주파수 범위 상수 (매뉴얼 p.19, 21)
-        private const ushort FREQ_MIN_SETPOINT = 600;          // Parameter 24 최소값 (매뉴얼 p.19)
-        private const ushort FREQ_MAX_SETPOINT = 1200;         // Parameter 24 최대값 (매뉴얼 p.19)
+        private const ushort FREQ_MIN_SETPOINT = 60;           // 최소 주파수
+        private const ushort FREQ_MAX_SETPOINT = 630;          // TURBOVAC 1300 정격 주파수 (실측 최대)
         private const ushort FREQ_MIN_STANDBY = 0;             // Parameter 150 최소값
-        private const ushort FREQ_MAX_STANDBY = 1200;          // Parameter 150 최대값
-        private const ushort FREQ_DEFAULT_SETPOINT = 980;      // Parameter 24 기본값
+        private const ushort FREQ_MAX_STANDBY = 630;           // Parameter 150 최대값
+        private const ushort FREQ_DEFAULT_SETPOINT = 630;      // Parameter 24 기본값 (정격)
         private const ushort FREQ_DEFAULT_STANDBY = 250;       // Parameter 150 기본값
 
         #endregion

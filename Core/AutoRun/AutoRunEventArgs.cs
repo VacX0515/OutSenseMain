@@ -263,6 +263,11 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         public double HeaterCh2SetTemperature { get; set; }
 
+        /// <summary>
+        /// 전체 채널 온도 (8채널)
+        /// </summary>
+        public double[] ChannelTemperatures { get; set; } = new double[8];
+
         #endregion
 
         #region 펌프 상태

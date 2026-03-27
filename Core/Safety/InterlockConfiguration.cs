@@ -48,6 +48,11 @@ namespace VacX_OutSense.Core.Safety
         /// </summary>
         public double VentExhaust_MaxTemperature { get; set; } = 125.0;
 
+        /// <summary>
+        /// 벤트/배기밸브: 히터 작동 중 열기 차단
+        /// </summary>
+        public bool VentExhaust_BlockIfHeaterRunning { get; set; } = true;
+
         #endregion
 
         #region 드라이펌프 인터락

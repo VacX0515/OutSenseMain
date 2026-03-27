@@ -724,7 +724,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 온도 컨트롤러 데이터 처리 (5채널: 메인 2 + 확장 3)
+        /// 온도 컨트롤러 데이터 처리 (8채널: 메인 2 + 확장 3)
         /// </summary>
         private void ProcessTempControllerData(UIDataSnapshot snapshot, object tempStatus)
         {
@@ -734,8 +734,8 @@ namespace VacX_OutSense.Utils
                 {
                     var status = _mainForm._tempController.Status;
 
-                    // 전체 채널 처리 (최대 5채널)
-                    int totalChannels = Math.Min(5, status.ChannelStatus.Length);
+                    // 전체 채널 처리 (최대 8채널)
+                    int totalChannels = Math.Min(8, status.ChannelStatus.Length);
 
                     for (int i = 0; i < totalChannels; i++)
                     {
@@ -809,7 +809,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 버튼 상태 계산 (5채널 지원)
+        /// 버튼 상태 계산 (8채널 지원)
         /// </summary>
         private void CalculateButtonStates(UIDataSnapshot snapshot)
         {
@@ -851,11 +851,11 @@ namespace VacX_OutSense.Utils
                     snapshot.ButtonStates.BathCirculatorStopEnabled = snapshot.Connections.BathCirculator && status.IsRunning;
                 }
 
-                // 온도컨트롤러 버튼 상태 (5채널)
+                // 온도컨트롤러 버튼 상태 (8채널)
                 if (_mainForm._tempController?.Status != null)
                 {
                     var status = _mainForm._tempController.Status;
-                    int totalChannels = Math.Min(5, status.ChannelStatus.Length);
+                    int totalChannels = Math.Min(8, status.ChannelStatus.Length);
 
                     for (int i = 0; i < totalChannels; i++)
                     {

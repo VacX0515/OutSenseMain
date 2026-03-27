@@ -206,6 +206,8 @@ namespace VacX_OutSense
         private InterlockConfiguration _interlockConfig;
         internal SafetyInterlockService _safetyInterlock;
         private AutoRunLock _autoRunLock;
+        private Panel _chamberWorkOverlay;
+        private bool _chamberWorkMode;
         #endregion
 
         #region 통신 포트 설정
@@ -289,6 +291,106 @@ namespace VacX_OutSense
                 this.Focus();
             }
         }
+
+        #region 챔버 작업 모드
+
+        private void EnterChamberWorkMode()
+        {
+            if (_autoRunService?.IsRunning == true)
+            {
+                MessageBox.Show("AutoRun 실행 중에는 챔버 작업 모드를 사용할 수 없습니다.",
+                    "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (MessageBox.Show("챔버 작업 모드로 전환합니다.\n\n모든 장비 조작이 차단되고 화면에 작업 중 표시가 나타납니다.\n작업 완료 버튼을 누르면 해제됩니다.",
+                "챔버 작업 모드", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK)
+                return;
+
+            _chamberWorkMode = true;
+            LogInfo("챔버 작업 모드 진입");
+
+            // 오버레이 패널 생성
+            _chamberWorkOverlay = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(180, 0, 0, 0), // 반투명 검정
+            };
+
+            var lblWork = new Label
+            {
+                Text = "챔버 작업 중",
+                Font = new Font("맑은 고딕", 36F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(255, 255, 200, 0),
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.None,
+                AutoSize = false,
+                Size = new Size(600, 80),
+            };
+
+            var lblSub = new Label
+            {
+                Text = "장비 조작이 차단되었습니다\n챔버 작업이 완료되면 아래 버튼을 눌러주세요",
+                Font = new Font("맑은 고딕", 12F),
+                ForeColor = Color.White,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.None,
+                AutoSize = false,
+                Size = new Size(600, 60),
+            };
+
+            var btnExit = new Button
+            {
+                Text = "작업 완료",
+                Font = new Font("맑은 고딕", 16F, FontStyle.Bold),
+                Size = new Size(200, 60),
+                BackColor = Color.FromArgb(0, 150, 0),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+            };
+            btnExit.Click += (s2, e2) => ExitChamberWorkMode();
+
+            // 중앙 정렬
+            _chamberWorkOverlay.Resize += (s2, e2) =>
+            {
+                lblWork.Location = new Point((_chamberWorkOverlay.Width - lblWork.Width) / 2, _chamberWorkOverlay.Height / 2 - 120);
+                lblSub.Location = new Point((_chamberWorkOverlay.Width - lblSub.Width) / 2, _chamberWorkOverlay.Height / 2 - 30);
+                btnExit.Location = new Point((_chamberWorkOverlay.Width - btnExit.Width) / 2, _chamberWorkOverlay.Height / 2 + 50);
+            };
+
+            _chamberWorkOverlay.Controls.Add(lblWork);
+            _chamberWorkOverlay.Controls.Add(lblSub);
+            _chamberWorkOverlay.Controls.Add(btnExit);
+
+            Controls.Add(_chamberWorkOverlay);
+            _chamberWorkOverlay.BringToFront();
+
+            // 초기 위치 설정
+            lblWork.Location = new Point((_chamberWorkOverlay.Width - lblWork.Width) / 2, _chamberWorkOverlay.Height / 2 - 120);
+            lblSub.Location = new Point((_chamberWorkOverlay.Width - lblSub.Width) / 2, _chamberWorkOverlay.Height / 2 - 30);
+            btnExit.Location = new Point((_chamberWorkOverlay.Width - btnExit.Width) / 2, _chamberWorkOverlay.Height / 2 + 50);
+
+            menuStrip.Enabled = false;
+        }
+
+        private void ExitChamberWorkMode()
+        {
+            _chamberWorkMode = false;
+
+            if (_chamberWorkOverlay != null)
+            {
+                Controls.Remove(_chamberWorkOverlay);
+                _chamberWorkOverlay.Dispose();
+                _chamberWorkOverlay = null;
+            }
+
+            menuStrip.Enabled = true;
+            LogInfo("챔버 작업 모드 해제");
+        }
+
+        #endregion
 
         /// <summary>
         /// 안전 워치독 트리거 — 장비 자동 정지
@@ -533,8 +635,8 @@ namespace VacX_OutSense
                 {
                     _tempController = new TempController(
                         _commManagers[PortAutoDetectionService.DEVICE_TEMP_CONTROLLER],
-                        deviceAddress: 1, numChannels: 2,
-                        expansionSlaveAddress: 2, expansionChannels: 3);
+                        deviceAddress: 1, numChannels: 4,
+                        expansionSlaveAddress: 2, expansionChannels: 4);
                 }
 
                 _atmSwitch = new ATMswitch();
@@ -1041,9 +1143,9 @@ namespace VacX_OutSense
             _lblMeasCH1 = new Label
             {
                 Location = new Point(380, 18),
-                Size = new Size(370, 18),
-                Text = "CH1: --",
-                Font = new Font("맑은 고딕", 9F)
+                Size = new Size(740, 18),
+                Text = "온도: --",
+                Font = new Font("맑은 고딕", 8F)
             };
             _lblMeasPump = new Label
             {
@@ -1055,9 +1157,9 @@ namespace VacX_OutSense
             _lblMeasSample = new Label
             {
                 Location = new Point(380, 38),
-                Size = new Size(370, 18),
-                Text = "샘플: --",
-                Font = new Font("맑은 고딕", 9F)
+                Size = new Size(740, 18),
+                Text = "확장: --",
+                Font = new Font("맑은 고딕", 8F)
             };
             _lblMeasConfig = new Label
             {
@@ -1152,15 +1254,15 @@ namespace VacX_OutSense
             ScottPlot.Fonts.Default = "Malgun Gothic";
 
             // 데이터 버퍼 초기화
-            _tempChartBuffers = new ChartDataBuffer[5];
-            for (int i = 0; i < 5; i++)
+            _tempChartBuffers = new ChartDataBuffer[8];
+            for (int i = 0; i < 8; i++)
                 _tempChartBuffers[i] = new ChartDataBuffer(3600);
             _pressureChartBuffer = new ChartDataBuffer(3600);
 
             // ── 온도 차트 ──
             _groupBoxTempChart = new GroupBox
             {
-                Text = "Temperature — CH1(Red) CH2(Blue) CH3(Green) CH4(Orange) CH5(Purple)",
+                Text = "Temperature — M1~4 / E1~4",
                 Location = new Point(10, 508),
                 Size = new Size(560, 310)
             };
@@ -1303,7 +1405,7 @@ namespace VacX_OutSense
                 if (_tempController?.IsConnected == true)
                 {
                     var channels = _tempController.Status.ChannelStatus;
-                    for (int i = 0; i < Math.Min(5, channels.Length); i++)
+                    for (int i = 0; i < Math.Min(8, channels.Length); i++)
                     {
                         var ch = channels[i];
                         // 센서 에러 없고, 값이 유효 범위(-50~1500°C)인 경우만 수집
@@ -1339,15 +1441,18 @@ namespace VacX_OutSense
 
                 ScottPlot.Color[] chColors =
                 {
-                    ScottPlot.Color.FromHex("#E74C3C"),  // CH1 빨강
-                    ScottPlot.Color.FromHex("#3498DB"),  // CH2 파랑
-                    ScottPlot.Color.FromHex("#2ECC71"),  // CH3 초록
-                    ScottPlot.Color.FromHex("#E67E22"),  // CH4 주황
-                    ScottPlot.Color.FromHex("#9B59B6")   // CH5 보라
+                    ScottPlot.Color.FromHex("#E74C3C"),  // M-1 빨강
+                    ScottPlot.Color.FromHex("#3498DB"),  // M-2 파랑
+                    ScottPlot.Color.FromHex("#2ECC71"),  // M-3 초록
+                    ScottPlot.Color.FromHex("#E67E22"),  // M-4 주황
+                    ScottPlot.Color.FromHex("#9B59B6"),  // E-1 보라
+                    ScottPlot.Color.FromHex("#1ABC9C"),  // E-2 청록
+                    ScottPlot.Color.FromHex("#F39C12"),  // E-3 금색
+                    ScottPlot.Color.FromHex("#95A5A6")   // E-4 회색
                 };
-                string[] chNames = { "CH1(Heater)", "CH2", "CH3", "CH4", "CH5" };
+                string[] chNames = { "M-1(Heater)", "M-2", "M-3", "M-4", "E-1", "E-2", "E-3", "E-4" };
 
-                for (int i = 0; i < 5; i++)
+                for (int i = 0; i < 8; i++)
                 {
                     var (xs, ys) = _tempChartBuffers[i].GetData();
                     if (xs.Length >= 2)
@@ -2142,73 +2247,52 @@ namespace VacX_OutSense
                     _lblMeasPressure.ForeColor = Color.Gray;
                 }
 
-                // ── CH1 온도 (PV / SV) ──
+                // ── 전체 채널 온도 표시 ──
                 if (_tempController?.IsConnected == true)
                 {
-                    var ch1 = _tempController.Status.ChannelStatus[0];
-                    double ch1PV = ch1.Dot == 1 ? ch1.PresentValue / 10.0 : ch1.PresentValue;
-                    double ch1SV = ch1.Dot == 1 ? ch1.SetValue / 10.0 : ch1.SetValue;
-                    bool ch1Running = ch1.IsRunning;
-                    _lblMeasCH1.Text = ch1Running
-                        ? $"CH1: {ch1PV:F1}°C (SV:{ch1SV:F1})"
-                        : $"CH1: {ch1PV:F1}°C (정지)";
-                    _lblMeasCH1.ForeColor = Color.Black;
-                }
-                else
-                {
-                    _lblMeasCH1.Text = "CH1: 미연결";
-                    _lblMeasCH1.ForeColor = Color.Gray;
-                }
+                    var allCh = _tempController.Status.ChannelStatus;
+                    int count = Math.Min(8, allCh.Length);
 
-                // ── 샘플/칠러 온도 (다중 채널 지원) ──
-                bool isBakeout = _autoRunConfig?.ExperimentType == ExperimentType.Bakeout;
-                if (isBakeout && _tempController?.IsConnected == true)
-                {
-                    var monitorChannels = _autoRunConfig.GetBakeoutMonitorChannels();
-                    var allChStatus = _tempController.Status.ChannelStatus;
-                    double maxTemp = double.MinValue;
-                    var chTexts = new System.Collections.Generic.List<string>();
-                    foreach (int ch in monitorChannels)
+                    // CH1 라인: 메인 채널 (M-1~4)
+                    var mainParts = new System.Collections.Generic.List<string>();
+                    for (int i = 0; i < Math.Min(4, count); i++)
                     {
-                        int idx = ch - 1;
-                        if (idx < 0 || idx >= allChStatus.Length) continue;
-                        var chS = allChStatus[idx];
-                        double pv = chS.Dot == 1 ? chS.PresentValue / 10.0 : chS.PresentValue;
-                        if (!string.IsNullOrEmpty(chS.SensorError))
-                            chTexts.Add($"{ch}:ERR");
-                        else
-                        {
-                            chTexts.Add($"{ch}:{pv:F1}");
-                            if (pv > maxTemp) maxTemp = pv;
-                        }
+                        var ch = allCh[i];
+                        if (!string.IsNullOrEmpty(ch.SensorError)) { mainParts.Add($"M{i + 1}:ERR"); continue; }
+                        double pv = ch.Dot == 1 ? ch.PresentValue / 10.0 : ch.PresentValue;
+                        string sv = ch.IsRunning ? $"(SV:{(ch.Dot == 1 ? ch.SetValue / 10.0 : ch.SetValue):F0})" : "";
+                        mainParts.Add($"M{i + 1}:{pv:F1}{sv}");
                     }
-                    double target = _autoRunConfig.BakeoutTargetTemperature;
-                    double tol = _autoRunConfig.BakeoutTolerance > 0 ? _autoRunConfig.BakeoutTolerance : 1.0;
-                    string targetRange = $"목표:{target:F0}±{tol:F0}°C";
-                    if (monitorChannels.Count == 1)
+                    _lblMeasCH1.Text = string.Join("  ", mainParts);
+                    _lblMeasCH1.ForeColor = Color.Black;
+
+                    // 샘플 라인: 확장 채널 (E-1~4) + 목표 온도
+                    var expParts = new System.Collections.Generic.List<string>();
+                    for (int i = 4; i < count; i++)
                     {
-                        double singlePV = maxTemp > double.MinValue ? maxTemp : 0;
-                        _lblMeasSample.Text = $"CH{monitorChannels[0]}(샘플): {singlePV:F1}°C ({targetRange})";
-                        _lblMeasSample.ForeColor = Math.Abs(singlePV - target) > tol ? Color.OrangeRed : Color.Green;
+                        var ch = allCh[i];
+                        if (!string.IsNullOrEmpty(ch.SensorError)) { expParts.Add($"E{i - 3}:ERR"); continue; }
+                        double pv = ch.Dot == 1 ? ch.PresentValue / 10.0 : ch.PresentValue;
+                        expParts.Add($"E{i - 3}:{pv:F1}");
+                    }
+                    bool isBakeout = _autoRunConfig?.ExperimentType == ExperimentType.Bakeout;
+                    if (isBakeout)
+                    {
+                        double target = _autoRunConfig.BakeoutTargetTemperature;
+                        double tol = _autoRunConfig.BakeoutTolerance > 0 ? _autoRunConfig.BakeoutTolerance : 1.0;
+                        _lblMeasSample.Text = $"{string.Join("  ", expParts)}  (목표:{target:F0}±{tol:F0}°C)";
                     }
                     else
                     {
-                        double displayMax = maxTemp > double.MinValue ? maxTemp : 0;
-                        _lblMeasSample.Text = $"샘플(CH{string.Join(",", chTexts)}): MAX {displayMax:F1}°C ({targetRange})";
-                        _lblMeasSample.ForeColor = Math.Abs(displayMax - target) > tol ? Color.OrangeRed : Color.Green;
+                        _lblMeasSample.Text = string.Join("  ", expParts);
                     }
-                }
-                else if (!isBakeout && _tempController?.IsConnected == true)
-                {
-                    var ch2 = _tempController.Status.ChannelStatus[1];
-                    double ch2PV = ch2.Dot == 1 ? ch2.PresentValue / 10.0 : ch2.PresentValue;
-                    _lblMeasSample.Text = $"칠러(CH2): {ch2PV:F1}°C";
                     _lblMeasSample.ForeColor = Color.Black;
                 }
                 else
                 {
-                    _lblMeasSample.Text = isBakeout ? "샘플: 미연결" : "칠러: 미연결";
-                    _lblMeasSample.ForeColor = Color.Gray;
+                    _lblMeasCH1.Text = "온도: 미연결";
+                    _lblMeasCH1.ForeColor = Color.Gray;
+                    _lblMeasSample.Text = "";
                 }
 
                 // ── 펌프 상태 ──
@@ -2234,9 +2318,10 @@ namespace VacX_OutSense
                 _lblMeasPump.ForeColor = Color.Black;
 
                 // ── 설정값 요약 ──
+                bool isBakeoutMode = _autoRunConfig?.ExperimentType == ExperimentType.Bakeout;
                 if (_lblMeasConfig != null && _autoRunConfig != null)
                 {
-                    if (isBakeout)
+                    if (isBakeoutMode)
                     {
                         _lblMeasConfig.Text = $"[설정] 목표:{_autoRunConfig.BakeoutTargetTemperature:F0}°C  " +
                             $"램프:{_autoRunConfig.BakeoutRampRate:F0}°C/h  " +
@@ -2256,7 +2341,7 @@ namespace VacX_OutSense
                 }
 
                 // ── 열 특성 계수 (베이크아웃 PI 피드백 시) ──
-                if (isBakeout && _lblMeasThermal != null && _autoRunService?.IsRunning == true)
+                if (isBakeoutMode && _lblMeasThermal != null && _autoRunService?.IsRunning == true)
                 {
                     var tp = _autoRunService.ThermalParams;
                     if (tp.ThermalLag > 0)
@@ -2564,20 +2649,16 @@ namespace VacX_OutSense
 
                     if (snapshot.Connections.TempController && _tempController?.Status != null)
                     {
-                        DataLoggerService.Instance.LogDataAsync("TempController", new List<string>
+                        var tcData = new List<string>();
+                        for (int i = 0; i < Math.Min(8, snapshot.TempController.Channels.Length); i++)
                         {
-                            snapshot.TempController.Channels[0].PresentValue,
-                            snapshot.TempController.Channels[0].SetValue,
-                            snapshot.TempController.Channels[0].HeatingMV.Replace(" %", ""),
-                            snapshot.TempController.Channels[0].Status,
-                            snapshot.TempController.Channels[1].PresentValue,
-                            snapshot.TempController.Channels[1].SetValue,
-                            snapshot.TempController.Channels[1].HeatingMV.Replace(" %", ""),
-                            snapshot.TempController.Channels[1].Status,
-                            snapshot.TempController.Channels[2].PresentValue,
-                            snapshot.TempController.Channels[3].PresentValue,
-                            snapshot.TempController.Channels[4].PresentValue
-                        });
+                            var ch = snapshot.TempController.Channels[i];
+                            tcData.Add(ch?.PresentValue ?? "");
+                            tcData.Add(ch?.SetValue ?? "");
+                            tcData.Add(ch?.HeatingMV?.Replace(" %", "") ?? "");
+                            tcData.Add(ch?.Status ?? "");
+                        }
+                        DataLoggerService.Instance.LogDataAsync("TempController", tcData);
                     }
                 }
                 catch (Exception ex)
@@ -2836,6 +2917,9 @@ namespace VacX_OutSense
                     case 3: if (txtCh3PresentValue != null) txtCh3PresentValue.Text = $"{presentValue}℃"; break;
                     case 4: if (txtCh4PresentValue != null) txtCh4PresentValue.Text = $"{presentValue}℃"; break;
                     case 5: if (txtCh5PresentValue != null) txtCh5PresentValue.Text = $"{presentValue}℃"; break;
+                    case 6: if (txtCh6PresentValue != null) txtCh6PresentValue.Text = $"{presentValue}℃"; break;
+                    case 7: if (txtCh7PresentValue != null) txtCh7PresentValue.Text = $"{presentValue}℃"; break;
+                    case 8: if (txtCh8PresentValue != null) txtCh8PresentValue.Text = $"{presentValue}℃"; break;
                 }
 
                 // 상세 정보는 선택된 채널만 업데이트
@@ -3585,13 +3669,23 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             finally { btnCh1AutoTuning.Enabled = true; }
         }
 
+        private int _lastSelectedChannel = -1;
+
         private void cmbTempChannel_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (_tempController == null || !_tempController.IsConnected)
                 return;
 
-            int ch = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
+            int selectedIdx = cmbTempChannel?.SelectedIndex ?? -1;
+            if (selectedIdx < 0 || selectedIdx == _lastSelectedChannel)
+                return;
+            _lastSelectedChannel = selectedIdx;
+
+            int ch = selectedIdx + 1;
             int chIdx = ch - 1;
+
+            if (chIdx >= _tempController.Status.ChannelStatus.Length)
+                return;
 
             try
             {
@@ -4085,7 +4179,10 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
 
             if (_tempController?.Status?.ChannelStatus == null) return;
 
-            for (int i = 0; i < Math.Min(5, _tempController.Status.ChannelStatus.Length); i++)
+            int chCount = Math.Min(8, Math.Min(
+                _tempCalibrationConfig.Channels.Length,
+                _tempController.Status.ChannelStatus.Length));
+            for (int i = 0; i < chCount; i++)
             {
                 var cal = _tempCalibrationConfig.Channels[i];
                 var ch = _tempController.Status.ChannelStatus[i];
@@ -5037,10 +5134,16 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             DataLoggerService.Instance.StartLogging("BathCirculator", new List<string>
                 { "Status", "CurrentTemp(°C)", "TargetTemp(°C)", "Mode", "Time", "HasError", "HasWarning" });
 
-            DataLoggerService.Instance.StartLogging("TempController", new List<string>
-                { "Ch1_PV(°C)", "Ch1_SV(°C)", "Ch1_HeatingMV(%)", "Ch1_Status",
-                  "Ch2_PV(°C)", "Ch2_SV(°C)", "Ch2_HeatingMV(%)", "Ch2_Status",
-                  "Ch3_PV(°C)", "Ch4_PV(°C)", "Ch5_PV(°C)" });
+            var tcHeaders = new List<string>();
+            string[] chNames = { "M1", "M2", "M3", "M4", "E1", "E2", "E3", "E4" };
+            foreach (var n in chNames)
+            {
+                tcHeaders.Add($"{n}_PV(°C)");
+                tcHeaders.Add($"{n}_SV(°C)");
+                tcHeaders.Add($"{n}_MV(%)");
+                tcHeaders.Add($"{n}_Status");
+            }
+            DataLoggerService.Instance.StartLogging("TempController", tcHeaders);
 
             DataLoggerService.Instance.StartLogging("ChillerPID", new List<string>
                 { "Ch2_PV(°C)", "Ch2_Target(°C)", "PID_Output", "Chiller_Setpoint(°C)",
@@ -5188,6 +5291,16 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             };
             menuTools.DropDownItems.Add(menuBakeoutSim);
             menuStrip.Items.Add(menuTools);
+
+            // 챔버 작업 모드 버튼 (메뉴바 우측 독립)
+            var menuChamberWork = new ToolStripMenuItem("챔버 작업")
+            {
+                BackColor = Color.FromArgb(255, 200, 50),
+                Font = new Font("맑은 고딕", 9F, FontStyle.Bold),
+                Alignment = ToolStripItemAlignment.Right
+            };
+            menuChamberWork.Click += (s, e) => EnterChamberWorkMode();
+            menuStrip.Items.Add(menuChamberWork);
         }
 
         private void ToggleLogging(bool enable)
@@ -5338,6 +5451,15 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
+            // 챔버 작업 모드 중 종료 차단
+            if (_chamberWorkMode)
+            {
+                MessageBox.Show("챔버 작업 중에는 프로그램을 종료할 수 없습니다.",
+                    "잠금", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                e.Cancel = true;
+                return;
+            }
+
             // AutoRun 실행 중 잠금 체크
             if (_autoRunLock?.IsLocked == true)
             {

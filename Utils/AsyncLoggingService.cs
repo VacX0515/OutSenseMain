@@ -421,7 +421,7 @@ namespace VacX_OutSense.Utils
                 case "BathCirculator":
                     return "Timestamp,Status,CurrentTemp,TargetTemp,Mode,Time,HasError,HasWarning";
                 case "TempController":
-                    return "Timestamp,Ch1_PV,Ch1_SV,Ch1_MV,Ch1_Status,Ch2_PV,Ch2_SV,Ch2_MV,Ch2_Status";
+                    return "Timestamp,M1_PV,M1_SV,M1_MV,M1_Status,M2_PV,M2_SV,M2_MV,M2_Status,M3_PV,M3_SV,M3_MV,M3_Status,M4_PV,M4_SV,M4_MV,M4_Status,E1_PV,E1_SV,E1_MV,E1_Status,E2_PV,E2_SV,E2_MV,E2_Status,E3_PV,E3_SV,E3_MV,E3_Status,E4_PV,E4_SV,E4_MV,E4_Status";
                 default:
                     return "Timestamp,Data1,Data2,Data3,Data4";
             }

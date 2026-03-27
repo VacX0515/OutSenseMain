@@ -544,10 +544,15 @@ namespace VacX_OutSense.Forms
                     double proximity = decelZone > 0
                         ? Math.Max(0, 1.0 - distToTarget / decelZone) : 0;
 
+                    // 적응형 게인
+                    double lagScale = observedThermalLag > 1 ? observedThermalLag / 20.0 : 0.5;
+                    lagScale = Math.Max(0.3, Math.Min(lagScale, 2.0));
+                    double effKp = Kp * Math.Sqrt(lagScale);
+                    double effKd = Kd / Math.Sqrt(lagScale);
+
                     if (error > 0)
                     {
                         double growthRate = integralGain;
-                        // 감속구간 억제: 초과 에너지가 있을 때만 적용
                         if (storedEnergy > 0 && decelZone > 0 && distToTarget > 0 && distToTarget < decelZone)
                             growthRate *= distToTarget / decelZone;
                         if (storedEnergy > 0 && proximity > 0.5)
@@ -556,36 +561,59 @@ namespace VacX_OutSense.Forms
                     }
                     else
                     {
-                        integralTerm += error * Ki_norm * 3;
+                        integralTerm += error * Ki_norm * 1.5;
                     }
 
-                    // 축적 에너지 기반 적분 감쇠: 초과 에너지가 있을 때만
-                    if (storedEnergy > 0 && proximity > 0.3 && integralTerm > 0)
+                    // 적분 감쇠: storedEnergy > 2°C일 때만
+                    if (storedEnergy > 2.0 && proximity > 0.3 && integralTerm > 0)
                     {
-                        double decayRate = (storedEnergy / Math.Max(1, observedThermalLag)) * proximity;
-                        integralTerm *= Math.Max(0.0, 1.0 - decayRate);
+                        double decayRate = ((storedEnergy - 2.0) / Math.Max(1, observedThermalLag)) * proximity;
+                        decayRate = Math.Min(decayRate, 0.05);
+                        integralTerm *= (1.0 - decayRate);
                     }
-                    integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
+                    double minIntegralForLag = proximity > 0.3 ? observedThermalLag * 0.85 : 0;
+                    integralTerm = Math.Max(minIntegralForLag, Math.Min(integralTerm, maxIntegral));
 
-                    // D항: 이동평균 기반
-                    double dTerm = rateOfChange > 0 ? -Kd * rateOfChange : 0;
+                    // 모델 기반 적분 수렴 가속 (상향만)
+                    if (proximity > 0.5 && observedThermalLag > 1)
+                    {
+                        double estI = observedThermalLag * 0.9;
+                        if (integralTerm < estI - 1.0)
+                            integralTerm += (estI - integralTerm) * 0.2;
+                    }
 
-                    // 축적 에너지 보상: 근접도에 비례해 점진적 적용
+                    // D항: 양방향
+                    double dTerm = -effKd * rateOfChange;
+
+                    // 에너지 보상
                     double energyComp = 0;
                     if (storedEnergy > 0 && proximity > 0.3)
-                        energyComp = -storedEnergy * 0.5 * proximity;
+                        energyComp = -storedEnergy * 0.15 * proximity;
 
                     // PID 출력 → CH1 SV
-                    double newSV = rampedTarget + error * Kp + integralTerm + dTerm + energyComp;
+                    double newSV = rampedTarget + error * effKp + integralTerm + dTerm + energyComp;
 
-                    // 상한: 히터 최대 온도
-                    double upperLimit = effectiveMax;
-                    // SV 하한: 오버슈트 보정 허용하되 실온 이하로는 불가
-                    double svLowerBound = Math.Max(initialTemp,
-                        Math.Max(monitorTemp - currentLag * 0.5, rampedTarget * 0.8));
+                    // 상한: rampedTarget + 열지연 기반 vs 히터 최대
+                    double svCeiling = rampedTarget + Math.Max(observedThermalLag, 5) * 1.5;
+                    double upperLimit = Math.Min(effectiveMax, svCeiling);
+                    // 하한
+                    double estimatedSteadySV = rampedTarget + observedThermalLag * 0.85;
+                    double svLowerBound = Math.Max(estimatedSteadySV, monitorTemp - currentLag * 0.3);
                     newSV = Math.Max(svLowerBound, Math.Min(newSV, upperLimit));
 
+                    // SV 감소 속도 제한
+                    if (newSV < lastSetpoint)
+                    {
+                        if (monitorTemp < targetTemp)
+                            newSV = lastSetpoint;
+                        else if (monitorTemp <= targetTemp + tolerance)
+                            newSV = Math.Max(newSV, lastSetpoint - 0.1);
+                        else
+                            newSV = Math.Max(newSV, lastSetpoint - 0.3);
+                    }
+
                     ch1SV = newSV;
+                    lastSetpoint = newSV;
 
                     // 데이터 기록
                     _dataRampTarget.Add(rampedTarget);
@@ -605,9 +633,9 @@ namespace VacX_OutSense.Forms
 
                     if (stepCount % logInterval == 0)
                     {
-                        AppendLog($"[{timeMin:F1}분] 승온 | 램프목표:{rampedTarget:F1}°C " +
-                            $"샘플:{monitorTemp:F1}°C CH1_SV:{ch1SV:F1}°C CH1_PV:{ch1PV:F1}°C " +
-                            $"P:{error * Kp:F2} I:{integralTerm:F2} D:{dTerm:F2}");
+                        AppendLog($"[{timeMin:F1}분] 승온 | 램프:{rampedTarget:F1}°C " +
+                            $"샘플:{monitorTemp:F1}°C SV:{ch1SV:F1}°C PV:{ch1PV:F1}°C " +
+                            $"Lag:{observedThermalLag:F1} Kp:{effKp:F2} I:{integralTerm:F1}");
                     }
                 }
                 else

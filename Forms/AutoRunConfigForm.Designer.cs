@@ -154,7 +154,7 @@
             tabControl1.Location = new Point(0, 38);
             tabControl1.Name = "tabControl1";
             tabControl1.SelectedIndex = 0;
-            tabControl1.Size = new Size(444, 458);
+            tabControl1.Size = new Size(444, 512);
             tabControl1.TabIndex = 0;
             // 
             // tabPressure
@@ -297,45 +297,66 @@
             // chkBakeoutMonitorCh1~5
             //
             chkBakeoutMonitorCh1 = new CheckBox();
-            chkBakeoutMonitorCh1.Text = "CH1";
+            chkBakeoutMonitorCh1.Text = "M-1";
             chkBakeoutMonitorCh1.Location = new Point(150, 81);
             chkBakeoutMonitorCh1.Size = new Size(52, 20);
             chkBakeoutMonitorCh1.TabIndex = 25;
             chkBakeoutMonitorCh1.Visible = false;
 
             chkBakeoutMonitorCh2 = new CheckBox();
-            chkBakeoutMonitorCh2.Text = "CH2";
+            chkBakeoutMonitorCh2.Text = "M-2";
             chkBakeoutMonitorCh2.Location = new Point(204, 81);
             chkBakeoutMonitorCh2.Size = new Size(52, 20);
             chkBakeoutMonitorCh2.TabIndex = 26;
             chkBakeoutMonitorCh2.Visible = false;
 
             chkBakeoutMonitorCh3 = new CheckBox();
-            chkBakeoutMonitorCh3.Text = "CH3";
+            chkBakeoutMonitorCh3.Text = "M-3";
             chkBakeoutMonitorCh3.Location = new Point(258, 81);
             chkBakeoutMonitorCh3.Size = new Size(52, 20);
             chkBakeoutMonitorCh3.TabIndex = 27;
             chkBakeoutMonitorCh3.Visible = false;
 
             chkBakeoutMonitorCh4 = new CheckBox();
-            chkBakeoutMonitorCh4.Text = "CH4";
+            chkBakeoutMonitorCh4.Text = "M-4";
             chkBakeoutMonitorCh4.Location = new Point(312, 81);
             chkBakeoutMonitorCh4.Size = new Size(52, 20);
             chkBakeoutMonitorCh4.TabIndex = 28;
             chkBakeoutMonitorCh4.Visible = false;
 
             chkBakeoutMonitorCh5 = new CheckBox();
-            chkBakeoutMonitorCh5.Text = "CH5";
-            chkBakeoutMonitorCh5.Location = new Point(366, 81);
+            chkBakeoutMonitorCh5.Text = "E-1";
+            chkBakeoutMonitorCh5.Location = new Point(150, 101);
             chkBakeoutMonitorCh5.Size = new Size(52, 20);
             chkBakeoutMonitorCh5.TabIndex = 29;
             chkBakeoutMonitorCh5.Visible = false;
+
+            chkBakeoutMonitorCh6 = new CheckBox();
+            chkBakeoutMonitorCh6.Text = "E-2";
+            chkBakeoutMonitorCh6.Location = new Point(204, 101);
+            chkBakeoutMonitorCh6.Size = new Size(52, 20);
+            chkBakeoutMonitorCh6.TabIndex = 40;
+            chkBakeoutMonitorCh6.Visible = false;
+
+            chkBakeoutMonitorCh7 = new CheckBox();
+            chkBakeoutMonitorCh7.Text = "E-3";
+            chkBakeoutMonitorCh7.Location = new Point(258, 101);
+            chkBakeoutMonitorCh7.Size = new Size(52, 20);
+            chkBakeoutMonitorCh7.TabIndex = 41;
+            chkBakeoutMonitorCh7.Visible = false;
+
+            chkBakeoutMonitorCh8 = new CheckBox();
+            chkBakeoutMonitorCh8.Text = "E-4";
+            chkBakeoutMonitorCh8.Location = new Point(312, 101);
+            chkBakeoutMonitorCh8.Size = new Size(52, 20);
+            chkBakeoutMonitorCh8.TabIndex = 42;
+            chkBakeoutMonitorCh8.Visible = false;
             //
             // lblBakeoutHeaterMax
             //
             lblBakeoutHeaterMax = new Label();
             lblBakeoutHeaterMax.AutoSize = true;
-            lblBakeoutHeaterMax.Location = new Point(20, 113);
+            lblBakeoutHeaterMax.Location = new Point(20, 133);
             lblBakeoutHeaterMax.Name = "lblBakeoutHeaterMax";
             lblBakeoutHeaterMax.Size = new Size(155, 15);
             lblBakeoutHeaterMax.TabIndex = 30;
@@ -345,7 +366,7 @@
             // txtBakeoutHeaterMax
             //
             txtBakeoutHeaterMax = new TextBox();
-            txtBakeoutHeaterMax.Location = new Point(230, 110);
+            txtBakeoutHeaterMax.Location = new Point(230, 130);
             txtBakeoutHeaterMax.Name = "txtBakeoutHeaterMax";
             txtBakeoutHeaterMax.Size = new Size(120, 23);
             txtBakeoutHeaterMax.TabIndex = 31;
@@ -355,7 +376,7 @@
             //
             lblBakeoutMaxDeltaT = new Label();
             lblBakeoutMaxDeltaT.AutoSize = true;
-            lblBakeoutMaxDeltaT.Location = new Point(20, 143);
+            lblBakeoutMaxDeltaT.Location = new Point(20, 163);
             lblBakeoutMaxDeltaT.Name = "lblBakeoutMaxDeltaT";
             lblBakeoutMaxDeltaT.Size = new Size(200, 15);
             lblBakeoutMaxDeltaT.TabIndex = 32;
@@ -365,7 +386,7 @@
             // txtBakeoutMaxDeltaT
             //
             txtBakeoutMaxDeltaT = new TextBox();
-            txtBakeoutMaxDeltaT.Location = new Point(230, 140);
+            txtBakeoutMaxDeltaT.Location = new Point(230, 160);
             txtBakeoutMaxDeltaT.Name = "txtBakeoutMaxDeltaT";
             txtBakeoutMaxDeltaT.Size = new Size(120, 23);
             txtBakeoutMaxDeltaT.TabIndex = 33;
@@ -375,7 +396,7 @@
             //
             lblBakeoutTolerance = new Label();
             lblBakeoutTolerance.AutoSize = true;
-            lblBakeoutTolerance.Location = new Point(20, 173);
+            lblBakeoutTolerance.Location = new Point(20, 193);
             lblBakeoutTolerance.Name = "lblBakeoutTolerance";
             lblBakeoutTolerance.Size = new Size(200, 15);
             lblBakeoutTolerance.TabIndex = 50;
@@ -384,7 +405,7 @@
             // txtBakeoutTolerance
             //
             txtBakeoutTolerance = new TextBox();
-            txtBakeoutTolerance.Location = new Point(230, 170);
+            txtBakeoutTolerance.Location = new Point(230, 190);
             txtBakeoutTolerance.Name = "txtBakeoutTolerance";
             txtBakeoutTolerance.Size = new Size(120, 23);
             txtBakeoutTolerance.TabIndex = 51;
@@ -393,7 +414,7 @@
             //
             lblBakeoutStabilization = new Label();
             lblBakeoutStabilization.AutoSize = true;
-            lblBakeoutStabilization.Location = new Point(20, 203);
+            lblBakeoutStabilization.Location = new Point(20, 223);
             lblBakeoutStabilization.Name = "lblBakeoutStabilization";
             lblBakeoutStabilization.Size = new Size(200, 15);
             lblBakeoutStabilization.TabIndex = 52;
@@ -403,7 +424,7 @@
             // txtBakeoutStabilization
             //
             txtBakeoutStabilization = new TextBox();
-            txtBakeoutStabilization.Location = new Point(230, 200);
+            txtBakeoutStabilization.Location = new Point(230, 220);
             txtBakeoutStabilization.Name = "txtBakeoutStabilization";
             txtBakeoutStabilization.Size = new Size(120, 23);
             txtBakeoutStabilization.TabIndex = 53;
@@ -413,7 +434,7 @@
             //
             lblBakeoutRiseTimeout = new Label();
             lblBakeoutRiseTimeout.AutoSize = true;
-            lblBakeoutRiseTimeout.Location = new Point(20, 233);
+            lblBakeoutRiseTimeout.Location = new Point(20, 253);
             lblBakeoutRiseTimeout.Name = "lblBakeoutRiseTimeout";
             lblBakeoutRiseTimeout.Size = new Size(200, 15);
             lblBakeoutRiseTimeout.TabIndex = 34;
@@ -423,7 +444,7 @@
             // txtBakeoutRiseTimeout
             //
             txtBakeoutRiseTimeout = new TextBox();
-            txtBakeoutRiseTimeout.Location = new Point(230, 230);
+            txtBakeoutRiseTimeout.Location = new Point(230, 250);
             txtBakeoutRiseTimeout.Name = "txtBakeoutRiseTimeout";
             txtBakeoutRiseTimeout.Size = new Size(120, 23);
             txtBakeoutRiseTimeout.TabIndex = 35;
@@ -433,7 +454,7 @@
             //
             lblBakeoutDecelZone = new Label();
             lblBakeoutDecelZone.AutoSize = true;
-            lblBakeoutDecelZone.Location = new Point(20, 233);
+            lblBakeoutDecelZone.Location = new Point(20, 253);
             lblBakeoutDecelZone.Name = "lblBakeoutDecelZone";
             lblBakeoutDecelZone.Size = new Size(200, 15);
             lblBakeoutDecelZone.TabIndex = 36;
@@ -443,7 +464,7 @@
             // txtBakeoutDecelZone
             //
             txtBakeoutDecelZone = new TextBox();
-            txtBakeoutDecelZone.Location = new Point(230, 230);
+            txtBakeoutDecelZone.Location = new Point(230, 250);
             txtBakeoutDecelZone.Name = "txtBakeoutDecelZone";
             txtBakeoutDecelZone.Size = new Size(120, 23);
             txtBakeoutDecelZone.TabIndex = 37;
@@ -453,7 +474,7 @@
             //
             lblBakeoutFeedbackInterval = new Label();
             lblBakeoutFeedbackInterval.AutoSize = true;
-            lblBakeoutFeedbackInterval.Location = new Point(20, 263);
+            lblBakeoutFeedbackInterval.Location = new Point(20, 283);
             lblBakeoutFeedbackInterval.Name = "lblBakeoutFeedbackInterval";
             lblBakeoutFeedbackInterval.Size = new Size(200, 15);
             lblBakeoutFeedbackInterval.TabIndex = 38;
@@ -463,7 +484,7 @@
             // txtBakeoutFeedbackInterval
             //
             txtBakeoutFeedbackInterval = new TextBox();
-            txtBakeoutFeedbackInterval.Location = new Point(230, 260);
+            txtBakeoutFeedbackInterval.Location = new Point(230, 280);
             txtBakeoutFeedbackInterval.Name = "txtBakeoutFeedbackInterval";
             txtBakeoutFeedbackInterval.Size = new Size(120, 23);
             txtBakeoutFeedbackInterval.TabIndex = 39;
@@ -488,6 +509,9 @@
             tabTemperature.Controls.Add(chkBakeoutMonitorCh3);
             tabTemperature.Controls.Add(chkBakeoutMonitorCh4);
             tabTemperature.Controls.Add(chkBakeoutMonitorCh5);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh6);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh7);
+            tabTemperature.Controls.Add(chkBakeoutMonitorCh8);
             tabTemperature.Controls.Add(lblBakeoutHeaterMax);
             tabTemperature.Controls.Add(txtBakeoutHeaterMax);
             tabTemperature.Controls.Add(lblBakeoutMaxDeltaT);
@@ -1132,7 +1156,7 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             CancelButton = btnCancel;
-            ClientSize = new Size(444, 546);
+            ClientSize = new Size(444, 600);
             Controls.Add(lblExperimentType);
             Controls.Add(cmbExperimentType);
             Controls.Add(tabControl1);
@@ -1190,6 +1214,9 @@
         private System.Windows.Forms.CheckBox chkBakeoutMonitorCh3;
         private System.Windows.Forms.CheckBox chkBakeoutMonitorCh4;
         private System.Windows.Forms.CheckBox chkBakeoutMonitorCh5;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh6;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh7;
+        private System.Windows.Forms.CheckBox chkBakeoutMonitorCh8;
         private System.Windows.Forms.Label lblBakeoutHeaterMax;
         private System.Windows.Forms.TextBox txtBakeoutHeaterMax;
         private System.Windows.Forms.Label lblBakeoutMaxDeltaT;

@@ -89,12 +89,12 @@ namespace VacX_OutSense.Models
 
     public class TemperatureControllerUIData
     {
-        // 5채널 지원 (메인 2 + 확장 3)
-        public ChannelUIData[] Channels { get; set; } = new ChannelUIData[5];
+        // 8채널 지원 (메인 4 + 확장 4)
+        public ChannelUIData[] Channels { get; set; } = new ChannelUIData[8];
 
         public TemperatureControllerUIData()
         {
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 8; i++)
             {
                 Channels[i] = new ChannelUIData();
             }
@@ -145,7 +145,7 @@ namespace VacX_OutSense.Models
         public bool BathCirculatorStopEnabled { get; set; }
 
         // 온도컨트롤러 버튼 (5채널: 메인 2 + 확장 3)
-        public bool[] TempControllerStartEnabled { get; set; } = new bool[5];
-        public bool[] TempControllerStopEnabled { get; set; } = new bool[5];
+        public bool[] TempControllerStartEnabled { get; set; } = new bool[8];
+        public bool[] TempControllerStopEnabled { get; set; } = new bool[8];
     }
 }

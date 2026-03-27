@@ -15,6 +15,10 @@ namespace VacX_OutSense.Forms
         private ToolTip _toolTip;
         private Label _lblHighVacuumTimeoutHours;
         private Label _lblShutdownTimeoutHours;
+        private NumericUpDown nudVentTempWaitTimeout;
+        private NumericUpDown nudAtmPressureWaitTimeout;
+        private NumericUpDown nudCoolingWaitTimeout;
+        private NumericUpDown nudTurboPumpDecelTimeout;
 
         private static string FormatSecondsToHM(int seconds)
         {
@@ -43,6 +47,9 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh3.CheckedChanged += (s, e) => UpdateChannelInterlock();
             chkBakeoutMonitorCh4.CheckedChanged += (s, e) => UpdateChannelInterlock();
             chkBakeoutMonitorCh5.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh6.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh7.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh8.CheckedChanged += (s, e) => UpdateChannelInterlock();
         }
 
         private void UpdateChannelInterlock()
@@ -53,7 +60,10 @@ namespace VacX_OutSense.Forms
                 chkBakeoutMonitorCh2.Checked = false; chkBakeoutMonitorCh2.Enabled = false;
                 chkBakeoutMonitorCh3.Checked = false; chkBakeoutMonitorCh3.Enabled = false;
                 chkBakeoutMonitorCh4.Checked = false; chkBakeoutMonitorCh4.Enabled = false;
-                chkBakeoutMonitorCh5.Checked = false; chkBakeoutMonitorCh5.Enabled = false;
+                chkBakeoutMonitorCh5.Checked = false; chkBakeoutMonitorCh5.Enabled = false; chkBakeoutMonitorCh5.Visible = false;
+                chkBakeoutMonitorCh6.Checked = false; chkBakeoutMonitorCh6.Enabled = false; chkBakeoutMonitorCh6.Visible = false;
+                chkBakeoutMonitorCh7.Checked = false; chkBakeoutMonitorCh7.Enabled = false; chkBakeoutMonitorCh7.Visible = false;
+                chkBakeoutMonitorCh8.Checked = false; chkBakeoutMonitorCh8.Enabled = false; chkBakeoutMonitorCh8.Visible = false;
                 lblBakeoutMonitorChannel.Text = "모니터 채널 (TM4 PID):";
             }
             else
@@ -62,7 +72,10 @@ namespace VacX_OutSense.Forms
                 chkBakeoutMonitorCh2.Enabled = true;
                 chkBakeoutMonitorCh3.Enabled = true;
                 chkBakeoutMonitorCh4.Enabled = true;
-                chkBakeoutMonitorCh5.Enabled = true;
+                chkBakeoutMonitorCh5.Enabled = true; chkBakeoutMonitorCh5.Visible = true;
+                chkBakeoutMonitorCh6.Enabled = true; chkBakeoutMonitorCh6.Visible = true;
+                chkBakeoutMonitorCh7.Enabled = true; chkBakeoutMonitorCh7.Visible = true;
+                chkBakeoutMonitorCh8.Enabled = true; chkBakeoutMonitorCh8.Visible = true;
                 lblBakeoutMonitorChannel.Text = "모니터 채널 (MAX):";
             }
         }
@@ -122,6 +135,9 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh3.Checked = _config.BakeoutMonitorCh3;
             chkBakeoutMonitorCh4.Checked = _config.BakeoutMonitorCh4;
             chkBakeoutMonitorCh5.Checked = _config.BakeoutMonitorCh5;
+            chkBakeoutMonitorCh6.Checked = _config.BakeoutMonitorCh6;
+            chkBakeoutMonitorCh7.Checked = _config.BakeoutMonitorCh7;
+            chkBakeoutMonitorCh8.Checked = _config.BakeoutMonitorCh8;
             txtBakeoutHeaterMax.Text = _config.BakeoutHeaterMaxTemperature.ToString("F1");
             txtBakeoutMaxDeltaT.Text = _config.BakeoutMaxDeltaT.ToString("F0");
             txtBakeoutTolerance.Text = _config.BakeoutTolerance.ToString("F1");
@@ -165,6 +181,10 @@ namespace VacX_OutSense.Forms
                 _config.HighVacuumTimeout = (int)nudHighVacuumTimeout.Value;
                 _config.HeaterStartTimeout = (int)nudHeaterStartTimeout.Value;
                 _config.ShutdownTimeout = (int)nudShutdownTimeout.Value;
+                if (nudVentTempWaitTimeout != null) _config.VentingTempWaitTimeout = (int)nudVentTempWaitTimeout.Value;
+                if (nudAtmPressureWaitTimeout != null) _config.AtmPressureWaitTimeout = (int)nudAtmPressureWaitTimeout.Value;
+                if (nudCoolingWaitTimeout != null) _config.CoolingWaitTimeout = (int)nudCoolingWaitTimeout.Value;
+                if (nudTurboPumpDecelTimeout != null) _config.TurboPumpDecelerationTimeout = (int)nudTurboPumpDecelTimeout.Value;
 
                 // 기타 설정
                 _config.RunMode = (AutoRunMode)cmbRunMode.SelectedIndex;
@@ -187,6 +207,9 @@ namespace VacX_OutSense.Forms
                 _config.BakeoutMonitorCh3 = chkBakeoutMonitorCh3.Checked;
                 _config.BakeoutMonitorCh4 = chkBakeoutMonitorCh4.Checked;
                 _config.BakeoutMonitorCh5 = chkBakeoutMonitorCh5.Checked;
+                _config.BakeoutMonitorCh6 = chkBakeoutMonitorCh6.Checked;
+                _config.BakeoutMonitorCh7 = chkBakeoutMonitorCh7.Checked;
+                _config.BakeoutMonitorCh8 = chkBakeoutMonitorCh8.Checked;
                 var selected = _config.GetBakeoutMonitorChannels();
                 _config.BakeoutMonitorChannel = selected.Count > 0 ? selected[0] : 2;
                 _config.BakeoutHeaterMaxTemperature = double.Parse(txtBakeoutHeaterMax.Text);
@@ -229,6 +252,9 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh3.Visible = isBakeout;
             chkBakeoutMonitorCh4.Visible = isBakeout;
             chkBakeoutMonitorCh5.Visible = isBakeout;
+            chkBakeoutMonitorCh6.Visible = isBakeout;
+            chkBakeoutMonitorCh7.Visible = isBakeout;
+            chkBakeoutMonitorCh8.Visible = isBakeout;
             lblBakeoutHeaterMax.Visible = isBakeout;
             txtBakeoutHeaterMax.Visible = isBakeout;
             lblBakeoutMaxDeltaT.Visible = isBakeout;
@@ -262,11 +288,11 @@ namespace VacX_OutSense.Forms
             // 온도 탭: 베이크아웃 모드에서 항목이 4개(+허용오차)로 늘어나므로
             // TemperatureStabilityTolerance 이하 컨트롤을 아래로 이동
             int yTolerance = isBakeout ? 165 : 131;
-            int yShutdownHeader = isBakeout ? 295 : 175;
-            int yCooling = isBakeout ? 320 : 200;
-            int yVentTemp = isBakeout ? 357 : 237;
-            int yVentPressure = isBakeout ? 394 : 274;
-            int yNote = isBakeout ? 430 : 317;
+            int yShutdownHeader = isBakeout ? 315 : 175;
+            int yCooling = isBakeout ? 340 : 200;
+            int yVentTemp = isBakeout ? 377 : 237;
+            int yVentPressure = isBakeout ? 414 : 274;
+            int yNote = isBakeout ? 450 : 317;
 
             txtTemperatureStabilityTolerance.Location = new Point(230, yTolerance);
             lblTemperatureStabilityTolerance.Location = new Point(20, yTolerance + 3);
@@ -441,7 +467,8 @@ namespace VacX_OutSense.Forms
             _toolTip.SetToolTip(nudHeaterStartTimeout, "히터 시작 명령 후 동작 확인 제한 시간");
             _toolTip.SetToolTip(nudShutdownTimeout,
                 "종료 시퀀스 전체 제한 시간.\n" +
-                "냉각 대기 포함이므로 충분히 설정하세요.");
+                "냉각 대기 포함이므로 충분히 설정하세요.\n" +
+                "아래 세부 타임아웃의 합보다 크게 설정하세요.");
 
             // ── 기타 탭 ──
             _toolTip.SetToolTip(cmbRunMode,
@@ -483,6 +510,59 @@ namespace VacX_OutSense.Forms
                 Name = "lblTimeoutGuide"
             };
             tabTimeout.Controls.Add(lblTimeoutGuide);
+
+            // ── 종료 시퀀스 세부 타임아웃 ──
+            int ySD = 380;
+            var lblSDHeader = new Label
+            {
+                Text = "── 종료 시퀀스 세부 타임아웃",
+                Font = new Font(Font.FontFamily, 9f, FontStyle.Bold),
+                Location = new Point(20, ySD), AutoSize = true
+            };
+            tabTimeout.Controls.Add(lblSDHeader);
+            ySD += 25;
+
+            tabTimeout.Controls.Add(new Label { Text = "벤팅 온도 대기 (초):", Location = new Point(20, ySD + 2), AutoSize = true });
+            nudVentTempWaitTimeout = new NumericUpDown { Location = new Point(260, ySD), Size = new Size(80, 23), Minimum = 60, Maximum = 86400, Increment = 600, Value = _config.VentingTempWaitTimeout };
+            tabTimeout.Controls.Add(nudVentTempWaitTimeout);
+            var lblVTH = new Label { Location = new Point(345, ySD + 2), Size = new Size(80, 20), ForeColor = Color.DimGray, Font = new Font(Font.FontFamily, 8f) };
+            lblVTH.Text = FormatSecondsToHM((int)nudVentTempWaitTimeout.Value);
+            nudVentTempWaitTimeout.ValueChanged += (s2, e2) => lblVTH.Text = FormatSecondsToHM((int)nudVentTempWaitTimeout.Value);
+            tabTimeout.Controls.Add(lblVTH);
+            ySD += 35;
+
+            tabTimeout.Controls.Add(new Label { Text = "터보 감속 대기 (초):", Location = new Point(20, ySD + 2), AutoSize = true });
+            nudTurboPumpDecelTimeout = new NumericUpDown { Location = new Point(260, ySD), Size = new Size(80, 23), Minimum = 60, Maximum = 3600, Increment = 60, Value = _config.TurboPumpDecelerationTimeout };
+            tabTimeout.Controls.Add(nudTurboPumpDecelTimeout);
+            ySD += 35;
+
+            tabTimeout.Controls.Add(new Label { Text = "ATM 압력 대기 (초):", Location = new Point(20, ySD + 2), AutoSize = true });
+            nudAtmPressureWaitTimeout = new NumericUpDown { Location = new Point(260, ySD), Size = new Size(80, 23), Minimum = 60, Maximum = 3600, Increment = 60, Value = _config.AtmPressureWaitTimeout };
+            tabTimeout.Controls.Add(nudAtmPressureWaitTimeout);
+            ySD += 35;
+
+            tabTimeout.Controls.Add(new Label { Text = "쿨링 대기 (초):", Location = new Point(20, ySD + 2), AutoSize = true });
+            nudCoolingWaitTimeout = new NumericUpDown { Location = new Point(260, ySD), Size = new Size(80, 23), Minimum = 60, Maximum = 86400, Increment = 600, Value = _config.CoolingWaitTimeout };
+            tabTimeout.Controls.Add(nudCoolingWaitTimeout);
+            var lblCWH = new Label { Location = new Point(345, ySD + 2), Size = new Size(80, 20), ForeColor = Color.DimGray, Font = new Font(Font.FontFamily, 8f) };
+            lblCWH.Text = FormatSecondsToHM((int)nudCoolingWaitTimeout.Value);
+            nudCoolingWaitTimeout.ValueChanged += (s2, e2) => lblCWH.Text = FormatSecondsToHM((int)nudCoolingWaitTimeout.Value);
+            tabTimeout.Controls.Add(lblCWH);
+
+            // 세부 타임아웃 툴팁
+            _toolTip.SetToolTip(nudVentTempWaitTimeout,
+                "히터 OFF 후 벤팅 시작 온도(125°C)까지 대기하는 최대 시간.\n" +
+                "이 동안 펌프는 계속 가동되어 진공을 유지합니다.\n" +
+                "타임아웃 시 현재 온도로 벤트를 진행합니다.");
+            _toolTip.SetToolTip(nudTurboPumpDecelTimeout,
+                "터보펌프 정지 명령 후 완전히 멈출 때까지 대기하는 최대 시간.");
+            _toolTip.SetToolTip(nudAtmPressureWaitTimeout,
+                "벤트 밸브를 연 후 대기압(ATM)에 도달할 때까지 대기하는 최대 시간.\n" +
+                "타임아웃 시 배기 밸브를 강제로 엽니다.");
+            _toolTip.SetToolTip(nudCoolingWaitTimeout,
+                "벤트/배기 밸브를 연 후 쿨링 목표 온도까지 대기하는 최대 시간.\n" +
+                "대기 순환으로 챔버를 냉각합니다.\n" +
+                "타임아웃 시 밸브를 닫고 종료합니다.");
 
             // 고진공/종료 타임아웃 시간 변환 표시
             _lblHighVacuumTimeoutHours = new Label

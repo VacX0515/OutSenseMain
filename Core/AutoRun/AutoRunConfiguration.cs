@@ -133,6 +133,26 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         public double VentTargetPressure_kPa { get; set; } = 90.0;
 
+        /// <summary>
+        /// 벤팅 온도 대기 타임아웃 (초) — 벤팅 시작 온도까지 대기하는 최대 시간
+        /// </summary>
+        public int VentingTempWaitTimeout { get; set; } = 5400; // 90분
+
+        /// <summary>
+        /// ATM 압력 대기 타임아웃 (초) — 벤트 후 대기압 도달까지 대기하는 최대 시간
+        /// </summary>
+        public int AtmPressureWaitTimeout { get; set; } = 600; // 10분
+
+        /// <summary>
+        /// 쿨링 대기 타임아웃 (초) — 쿨링 목표 온도까지 대기하는 최대 시간
+        /// </summary>
+        public int CoolingWaitTimeout { get; set; } = 5400; // 90분
+
+        /// <summary>
+        /// 터보펌프 감속 대기 타임아웃 (초)
+        /// </summary>
+        public int TurboPumpDecelerationTimeout { get; set; } = 600; // 10분
+
         #endregion
 
         #region 기타 설정
@@ -248,6 +268,9 @@ namespace VacX_OutSense.Core.AutoRun
         public bool BakeoutMonitorCh3 { get; set; } = false;
         public bool BakeoutMonitorCh4 { get; set; } = false;
         public bool BakeoutMonitorCh5 { get; set; } = false;
+        public bool BakeoutMonitorCh6 { get; set; } = false;
+        public bool BakeoutMonitorCh7 { get; set; } = false;
+        public bool BakeoutMonitorCh8 { get; set; } = false;
 
         /// <summary>
         /// [Bakeout] 프로파일 이름
@@ -270,6 +293,9 @@ namespace VacX_OutSense.Core.AutoRun
             if (BakeoutMonitorCh3) channels.Add(3);
             if (BakeoutMonitorCh4) channels.Add(4);
             if (BakeoutMonitorCh5) channels.Add(5);
+            if (BakeoutMonitorCh6) channels.Add(6);
+            if (BakeoutMonitorCh7) channels.Add(7);
+            if (BakeoutMonitorCh8) channels.Add(8);
 
             if (channels.Count == 0)
                 channels.Add(BakeoutMonitorChannel);
@@ -417,6 +443,10 @@ namespace VacX_OutSense.Core.AutoRun
             CoolingTargetTemperature = defaultConfig.CoolingTargetTemperature;
             VentingStartTemperature = defaultConfig.VentingStartTemperature;
             VentTargetPressure_kPa = defaultConfig.VentTargetPressure_kPa;
+            VentingTempWaitTimeout = defaultConfig.VentingTempWaitTimeout;
+            AtmPressureWaitTimeout = defaultConfig.AtmPressureWaitTimeout;
+            CoolingWaitTimeout = defaultConfig.CoolingWaitTimeout;
+            TurboPumpDecelerationTimeout = defaultConfig.TurboPumpDecelerationTimeout;
 
             // 기타 설정
             RunMode = defaultConfig.RunMode;
@@ -444,6 +474,9 @@ namespace VacX_OutSense.Core.AutoRun
             BakeoutMonitorCh3 = defaultConfig.BakeoutMonitorCh3;
             BakeoutMonitorCh4 = defaultConfig.BakeoutMonitorCh4;
             BakeoutMonitorCh5 = defaultConfig.BakeoutMonitorCh5;
+            BakeoutMonitorCh6 = defaultConfig.BakeoutMonitorCh6;
+            BakeoutMonitorCh7 = defaultConfig.BakeoutMonitorCh7;
+            BakeoutMonitorCh8 = defaultConfig.BakeoutMonitorCh8;
             BakeoutProfileName = defaultConfig.BakeoutProfileName;
         }
 

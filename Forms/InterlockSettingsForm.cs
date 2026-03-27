@@ -16,6 +16,9 @@ namespace VacX_OutSense.Forms
         private CheckBox chkEV_TurboBlock;
         private CheckBox chkGV_TurboBlock;
         private CheckBox chkGV_RequireAtm;
+        private CheckBox chkVVEV_HighTemp;
+        private NumericUpDown numVVEV_MaxTemp;
+        private CheckBox chkVVEV_HeaterRunning;
 
         // 드라이펌프
         private CheckBox chkDP_RequireGV;
@@ -53,7 +56,7 @@ namespace VacX_OutSense.Forms
         private void InitializeUI()
         {
             Text = "인터락 설정";
-            Size = new Size(460, 620);
+            Size = new Size(460, 670);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -76,6 +79,14 @@ namespace VacX_OutSense.Forms
             chkEV_TurboBlock = AddCheckBox(panel, "배기밸브: 터보펌프 작동 시 차단", ref y);
             chkGV_TurboBlock = AddCheckBox(panel, "게이트밸브: 터보펌프 작동 시 닫기 차단", ref y);
             chkGV_RequireAtm = AddCheckBox(panel, "게이트밸브: ATM 압력 ≥ 80 kPa 시만 열기 허용", ref y);
+            chkVVEV_HighTemp = AddCheckBox(panel, "벤트/배기밸브: 고온 시 열기 차단", ref y);
+            // 차단 온도 설정
+            var lblMaxTemp = new Label { Text = "   차단 온도(°C):", Location = new Point(30, y + 2), Size = new Size(100, 20) };
+            numVVEV_MaxTemp = new NumericUpDown { Location = new Point(135, y), Size = new Size(65, 23), Minimum = 50, Maximum = 500, Value = 125, DecimalPlaces = 0 };
+            panel.Controls.Add(lblMaxTemp);
+            panel.Controls.Add(numVVEV_MaxTemp);
+            y += 28;
+            chkVVEV_HeaterRunning = AddCheckBox(panel, "벤트/배기밸브: 히터 작동 중 열기 차단", ref y);
             y += 8;
 
             // ── 드라이펌프 ──
@@ -186,6 +197,9 @@ namespace VacX_OutSense.Forms
             chkEV_TurboBlock.Checked = _config.ExhaustValve_BlockIfTurboRunning;
             chkGV_TurboBlock.Checked = _config.GateValveClose_BlockIfTurboRunning;
             chkGV_RequireAtm.Checked = _config.GateValveOpen_RequireAtmPressure;
+            chkVVEV_HighTemp.Checked = _config.VentExhaust_BlockIfHighTemperature;
+            numVVEV_MaxTemp.Value = (decimal)_config.VentExhaust_MaxTemperature;
+            chkVVEV_HeaterRunning.Checked = _config.VentExhaust_BlockIfHeaterRunning;
 
             chkDP_RequireGV.Checked = _config.DryPump_RequireGateValveOpen;
             chkDP_RequireVVEVClosed.Checked = _config.DryPump_RequireVentExhaustClosed;
@@ -213,6 +227,9 @@ namespace VacX_OutSense.Forms
             _config.ExhaustValve_BlockIfTurboRunning = chkEV_TurboBlock.Checked;
             _config.GateValveClose_BlockIfTurboRunning = chkGV_TurboBlock.Checked;
             _config.GateValveOpen_RequireAtmPressure = chkGV_RequireAtm.Checked;
+            _config.VentExhaust_BlockIfHighTemperature = chkVVEV_HighTemp.Checked;
+            _config.VentExhaust_MaxTemperature = (double)numVVEV_MaxTemp.Value;
+            _config.VentExhaust_BlockIfHeaterRunning = chkVVEV_HeaterRunning.Checked;
 
             _config.DryPump_RequireGateValveOpen = chkDP_RequireGV.Checked;
             _config.DryPump_RequireVentExhaustClosed = chkDP_RequireVVEVClosed.Checked;

@@ -102,6 +102,19 @@ namespace VacX_OutSense.Core.Devices.TempController
         private readonly int _expansionNumChannels = 0;
         private readonly int _totalChannels;
 
+        /// <summary>
+        /// 채널 번호(1~8)를 모듈 주소와 로컬 채널(1~4)로 변환
+        /// </summary>
+        private (int slaveAddress, int localChannel) ResolveChannel(int channelNumber)
+        {
+            if (_hasExpansion && channelNumber > _numChannels)
+            {
+                // 확장 모듈 채널
+                return (_expansionSlaveAddress, channelNumber - _numChannels);
+            }
+            return (_mainModuleAddress, channelNumber);
+        }
+
         private TemperatureControllerStatus _status = new TemperatureControllerStatus();
         private DateTime _lastStatusUpdateTime = DateTime.MinValue;
 
@@ -195,7 +208,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <param name="deviceAddress">메인 모듈 슬레이브 주소</param>
         /// <param name="numChannels">메인 모듈 채널 수</param>
         /// <param name="expansionSlaveAddress">확장 모듈 슬레이브 주소</param>
-        /// <param name="expansionChannels">확장 모듈 채널 수 (1-3)</param>
+        /// <param name="expansionChannels">확장 모듈 채널 수 (1-4)</param>
         public TempController(ICommunicationManager communicationManager, int deviceAddress, int numChannels,
             int expansionSlaveAddress, int expansionChannels)
             : base(communicationManager)
@@ -205,7 +218,7 @@ namespace VacX_OutSense.Core.Devices.TempController
             _numChannels = numChannels;
             _hasExpansion = true;
             _expansionSlaveAddress = expansionSlaveAddress;
-            _expansionNumChannels = Math.Min(expansionChannels, 3);
+            _expansionNumChannels = Math.Min(expansionChannels, 4);
             _totalChannels = _numChannels + _expansionNumChannels;
             DeviceId = $"TM4-{deviceAddress:D2}+EXP";
 
@@ -421,15 +434,15 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// </summary>
         private bool UpdateChannelStatus(int channelNumber)
         {
-            if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            if (channelNumber < 1 || channelNumber > _totalChannels)
+                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_totalChannels} 사이여야 합니다.");
 
-            // ★ 메인 모듈 주소 강제 설정
+            lock (_commandLock)
+            {
             int savedAddress = _deviceAddress;
 
             try
             {
-                // ★ 항상 메인 모듈 주소로 설정
                 _deviceAddress = _mainModuleAddress;
 
                 ushort baseAddress = (ushort)(REG_CH1_PV + (channelNumber - 1) * 6);
@@ -465,9 +478,9 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
             finally
             {
-                // ★ 메인 모듈 주소로 복원
                 _deviceAddress = savedAddress;
             }
+            } // lock
         }
 
         /// <summary>
@@ -478,41 +491,35 @@ namespace VacX_OutSense.Core.Devices.TempController
             if (expansionChannelNumber < 1 || expansionChannelNumber > _expansionNumChannels)
                 return false;
 
-            try
+            lock (_commandLock)
             {
-                // ★ 확장 모듈 주소로 변경
-                _deviceAddress = _expansionSlaveAddress;
-                Thread.Sleep(10);
-
-                // 확장 모듈 레지스터 읽기
-                ushort baseAddress = (ushort)(REG_CH1_PV + (expansionChannelNumber - 1) * 6);
-                ushort[] registers = ReadInputRegisters(baseAddress, 6);
-
-                if (registers != null && registers.Length >= 6)
+                try
                 {
-                    // 스냅샷 인덱스: 확장 CH1 → index 2 (전체 CH3)
-                    int index = _numChannels + (expansionChannelNumber - 1);
-                    ProcessChannelRegisters(index, registers);
+                    _deviceAddress = _expansionSlaveAddress;
+                    Thread.Sleep(10);
 
-                    // 확장 모듈은 입력 전용
-                    _status.ChannelStatus[index].IsRunning = false;
-                    _status.ChannelStatus[index].IsAutoTuning = false;
-                    _status.ChannelStatus[index].IsExpansionChannel = true;
+                    ushort baseAddress = (ushort)(REG_CH1_PV + (expansionChannelNumber - 1) * 6);
+                    ushort[] registers = ReadInputRegisters(baseAddress, 6);
 
-                    return true;
+                    if (registers != null && registers.Length >= 6)
+                    {
+                        int index = _numChannels + (expansionChannelNumber - 1);
+                        ProcessChannelRegisters(index, registers);
+                        _status.ChannelStatus[index].IsExpansionChannel = true;
+                        return true;
+                    }
+
+                    return false;
                 }
-
-                return false;
-            }
-            catch (Exception ex)
-            {
-                OnErrorOccurred($"확장 채널 {expansionChannelNumber} 상태 업데이트 오류: {ex.Message}");
-                return false;
-            }
-            finally
-            {
-                // ★ 항상 메인 모듈 주소로 복원
-                _deviceAddress = _mainModuleAddress;
+                catch (Exception ex)
+                {
+                    OnErrorOccurred($"확장 채널 {expansionChannelNumber} 상태 업데이트 오류: {ex.Message}");
+                    return false;
+                }
+                finally
+                {
+                    _deviceAddress = _mainModuleAddress;
+                }
             }
         }
 
@@ -564,7 +571,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// <returns>명령 성공 여부</returns>
         public bool SetTemperature(int channelNumber, short setValue)
         {
-            if (channelNumber < 1 || channelNumber > _numChannels)
+            if (channelNumber < 1 || channelNumber > _totalChannels)
             {
                 throw new ArgumentOutOfRangeException(nameof(channelNumber),
                     $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
@@ -592,25 +599,16 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             EnsureConnected();
 
-            // ★ 메인 모듈 주소 백업 및 강제 설정
+            lock (_commandLock)
+            {
             int savedAddress = _deviceAddress;
+            var (slaveAddr, localCh) = ResolveChannel(channelNumber);
 
             try
             {
-                // ★ 항상 메인 모듈 주소로 설정
-                _deviceAddress = _mainModuleAddress;
+                _deviceAddress = slaveAddr;
+                ushort registerAddress = (ushort)((localCh - 1) * 0x03E8);
 
-                // 채널별 레지스터 주소 계산
-                ushort registerAddress;
-
-                if (channelNumber == 1)
-                    registerAddress = REG_HOLD_CH1_SV;
-                else if (channelNumber == 2)
-                    registerAddress = REG_HOLD_CH2_SV;
-                else
-                    registerAddress = (ushort)((channelNumber - 1) * 0x03E8);
-
-                // 설정 값 쓰기
                 bool result = WriteSingleRegister(registerAddress, (ushort)setValue);
 
                 if (result)
@@ -637,9 +635,9 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
             finally
             {
-                // ★ 메인 모듈 주소로 복원
                 _deviceAddress = savedAddress;
             }
+            } // lock
         }
 
         /// <summary>
@@ -649,7 +647,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// </summary>
         public bool SetTemperaturePriority(int channelNumber, short setValue)
         {
-            if (channelNumber < 1 || channelNumber > _numChannels)
+            if (channelNumber < 1 || channelNumber > _totalChannels)
                 return false;
 
             if (setValue > _maxTemp || setValue < 0)
@@ -661,17 +659,12 @@ namespace VacX_OutSense.Core.Devices.TempController
 
             try
             {
-                // 채널별 레지스터 주소 계산
-                ushort registerAddress;
-                if (channelNumber == 1)
-                    registerAddress = REG_HOLD_CH1_SV;
-                else if (channelNumber == 2)
-                    registerAddress = REG_HOLD_CH2_SV;
-                else
-                    registerAddress = (ushort)((channelNumber - 1) * 0x03E8);
+                // 채널별 레지스터 주소 및 슬레이브 주소 계산
+                var (targetAddr, localCh) = ResolveChannel(channelNumber);
+                ushort registerAddress = (ushort)((localCh - 1) * 0x03E8);
 
                 // Modbus Write Single Register 프레임 직접 구성
-                byte slaveAddr = (byte)_mainModuleAddress;
+                byte slaveAddr = (byte)targetAddr;
                 byte[] request = new byte[8];
                 request[0] = slaveAddr;
                 request[1] = FUNC_WRITE_SINGLE_REG;
@@ -833,29 +826,20 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         public bool Start(int channelNumber)
         {
-            if (channelNumber > _numChannels)
-                throw new InvalidOperationException($"채널 {channelNumber}은 확장 모듈 채널로 입력 전용입니다.");
-
-            if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            if (channelNumber < 1 || channelNumber > _totalChannels)
+                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_totalChannels} 사이여야 합니다.");
 
             EnsureConnected();
 
-            // ★ 메인 모듈 주소 백업 및 강제 설정
+            lock (_commandLock)
+            {
             int savedAddress = _deviceAddress;
+            var (slaveAddr, localCh) = ResolveChannel(channelNumber);
 
             try
             {
-                // ★ 항상 메인 모듈 주소로 설정
-                _deviceAddress = _mainModuleAddress;
-
-                ushort coilAddress;
-                if (channelNumber == 1)
-                    coilAddress = COIL_CH1_RUN_STOP;
-                else if (channelNumber == 2)
-                    coilAddress = COIL_CH2_RUN_STOP;
-                else
-                    coilAddress = (ushort)((channelNumber - 1) * 2);
+                _deviceAddress = slaveAddr;
+                ushort coilAddress = (ushort)((localCh - 1) * 2);
 
                 bool result = WriteSingleCoil(coilAddress, false);
 
@@ -876,36 +860,27 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
             finally
             {
-                // ★ 주소 복원
                 _deviceAddress = savedAddress;
             }
+            } // lock
         }
 
         public bool Stop(int channelNumber)
         {
-            if (channelNumber > _numChannels)
-                throw new InvalidOperationException($"채널 {channelNumber}은 확장 모듈 채널로 입력 전용입니다.");
-
-            if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            if (channelNumber < 1 || channelNumber > _totalChannels)
+                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_totalChannels} 사이여야 합니다.");
 
             EnsureConnected();
 
-            // ★ 메인 모듈 주소 백업 및 강제 설정
+            lock (_commandLock)
+            {
             int savedAddress = _deviceAddress;
+            var (slaveAddr, localCh) = ResolveChannel(channelNumber);
 
             try
             {
-                // ★ 항상 메인 모듈 주소로 설정
-                _deviceAddress = _mainModuleAddress;
-
-                ushort coilAddress;
-                if (channelNumber == 1)
-                    coilAddress = COIL_CH1_RUN_STOP;
-                else if (channelNumber == 2)
-                    coilAddress = COIL_CH2_RUN_STOP;
-                else
-                    coilAddress = (ushort)((channelNumber - 1) * 2);
+                _deviceAddress = slaveAddr;
+                ushort coilAddress = (ushort)((localCh - 1) * 2);
 
                 bool result = WriteSingleCoil(coilAddress, true);
 
@@ -926,36 +901,25 @@ namespace VacX_OutSense.Core.Devices.TempController
             }
             finally
             {
-                // ★ 주소 복원
                 _deviceAddress = savedAddress;
             }
+            } // lock
         }
 
         public bool StartAutoTuning(int channelNumber)
         {
-            if (channelNumber > _numChannels)
-                throw new InvalidOperationException($"채널 {channelNumber}은 확장 모듈 채널로 입력 전용입니다.");
-
-            if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            if (channelNumber < 1 || channelNumber > _totalChannels)
+                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_totalChannels} 사이여야 합니다.");
 
             EnsureConnected();
 
-            // ★ 메인 모듈 주소 백업 및 강제 설정
             int savedAddress = _deviceAddress;
+            var (slaveAddr, localCh) = ResolveChannel(channelNumber);
 
             try
             {
-                // ★ 항상 메인 모듈 주소로 설정
-                _deviceAddress = _mainModuleAddress;
-
-                ushort coilAddress;
-                if (channelNumber == 1)
-                    coilAddress = COIL_CH1_AUTO_TUNING;
-                else if (channelNumber == 2)
-                    coilAddress = COIL_CH2_AUTO_TUNING;
-                else
-                    coilAddress = (ushort)((channelNumber - 1) * 2 + 1);
+                _deviceAddress = slaveAddr;
+                ushort coilAddress = (ushort)((localCh - 1) * 2 + 1);
 
                 bool result = WriteSingleCoil(coilAddress, true);
 
@@ -983,29 +947,20 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         public bool StopAutoTuning(int channelNumber)
         {
-            if (channelNumber > _numChannels)
-                throw new InvalidOperationException($"채널 {channelNumber}은 확장 모듈 채널로 입력 전용입니다.");
-
-            if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            if (channelNumber < 1 || channelNumber > _totalChannels)
+                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_totalChannels} 사이여야 합니다.");
 
             EnsureConnected();
 
             // ★ 메인 모듈 주소 백업 및 강제 설정
             int savedAddress = _deviceAddress;
 
+            var (slaveAddr2, localCh2) = ResolveChannel(channelNumber);
+
             try
             {
-                // ★ 항상 메인 모듈 주소로 설정
-                _deviceAddress = _mainModuleAddress;
-
-                ushort coilAddress;
-                if (channelNumber == 1)
-                    coilAddress = COIL_CH1_AUTO_TUNING;
-                else if (channelNumber == 2)
-                    coilAddress = COIL_CH2_AUTO_TUNING;
-                else
-                    coilAddress = (ushort)((channelNumber - 1) * 2 + 1);
+                _deviceAddress = slaveAddr2;
+                ushort coilAddress = (ushort)((localCh2 - 1) * 2 + 1);
 
                 bool result = WriteSingleCoil(coilAddress, false);
 
@@ -1033,11 +988,8 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         public bool SetPIDParameters(int channelNumber, float heatingP, int heatingI, int heatingD)
         {
-            if (channelNumber > _numChannels)
-                throw new InvalidOperationException($"채널 {channelNumber}은 확장 모듈 채널로 입력 전용입니다.");
-
-            if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            if (channelNumber < 1 || channelNumber > _totalChannels)
+                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_totalChannels} 사이여야 합니다.");
 
             EnsureConnected();
 
@@ -1081,11 +1033,8 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         public bool SetRampConfiguration(int channelNumber, ushort rampUpRate, ushort rampDownRate, RampTimeUnit timeUnit)
         {
-            if (channelNumber > _numChannels)
-                throw new InvalidOperationException($"채널 {channelNumber}은 확장 모듈 채널로 입력 전용입니다.");
-
-            if (channelNumber < 1 || channelNumber > _numChannels)
-                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_numChannels} 사이여야 합니다.");
+            if (channelNumber < 1 || channelNumber > _totalChannels)
+                throw new ArgumentOutOfRangeException(nameof(channelNumber), $"채널 번호는 1에서 {_totalChannels} 사이여야 합니다.");
 
             if (rampUpRate > 9999 || rampDownRate > 9999)
                 throw new ArgumentOutOfRangeException("램프 변화율은 0-9999 사이여야 합니다.");
@@ -1143,7 +1092,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// </summary>
         public bool GetRampConfiguration(int channelNumber)
         {
-            if (channelNumber < 1 || channelNumber > _numChannels)
+            if (channelNumber < 1 || channelNumber > _totalChannels)
                 return false;
 
             EnsureConnected();
