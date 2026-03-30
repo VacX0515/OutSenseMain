@@ -292,8 +292,9 @@ namespace VacX_OutSense.Core.Safety
                 }
 
                 // 4. 히터 과온도 → 히터 자동 정지
+                //    모드별 상한 분리: Bakeout은 BakeoutHeaterMaxTemperature, Outgassing은 목표온도+50
                 double ch1Temp = GetCh1Temperature();
-                double heaterMaxTemp = _mainForm._autoRunConfig?.BakeoutHeaterMaxTemperature ?? 300;
+                double heaterMaxTemp = _mainForm._autoRunConfig?.GetEffectiveHeaterMaxTemperature() ?? 300;
                 if (ch1Temp > heaterMaxTemp + 20 && ch1Temp > 50) // 상한+20°C 초과 시
                 {
                     TriggerWatchdog(WatchdogAction.StopHeater,

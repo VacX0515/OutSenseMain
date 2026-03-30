@@ -12,14 +12,14 @@ namespace VacX_OutSense.Core.Devices.TempController
     /// </summary>
     public class TempCalibrationConfig
     {
-        public ChannelCalibration[] Channels { get; set; } = new ChannelCalibration[8];
+        public ChannelCalibration[] Channels { get; set; } = new ChannelCalibration[12];
 
         /// <summary>이온게이지 캘리브레이션</summary>
         public GaugeCalibration IonGauge { get; set; } = new GaugeCalibration();
 
         public TempCalibrationConfig()
         {
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < Channels.Length; i++)
                 Channels[i] = new ChannelCalibration();
         }
 
@@ -90,14 +90,33 @@ namespace VacX_OutSense.Core.Devices.TempController
                     return new TempCalibrationConfig();
 
                 var serializer = new XmlSerializer(typeof(TempCalibrationConfig));
+                TempCalibrationConfig config;
                 using (var reader = new StreamReader(filePath))
                 {
-                    return (TempCalibrationConfig)serializer.Deserialize(reader);
+                    config = (TempCalibrationConfig)serializer.Deserialize(reader);
                 }
+
+                // 기존 XML(8채널 등)에서 로드 시 채널 배열 자동 확장
+                config.EnsureChannelCount(12);
+                return config;
             }
             catch
             {
                 return new TempCalibrationConfig();
+            }
+        }
+
+        /// <summary>채널 배열이 최소 count 이상이 되도록 확장</summary>
+        public void EnsureChannelCount(int count)
+        {
+            if (Channels == null || Channels.Length < count)
+            {
+                var expanded = new ChannelCalibration[count];
+                if (Channels != null)
+                    Array.Copy(Channels, expanded, Channels.Length);
+                for (int i = (Channels?.Length ?? 0); i < count; i++)
+                    expanded[i] = new ChannelCalibration();
+                Channels = expanded;
             }
         }
 

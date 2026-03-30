@@ -735,7 +735,7 @@ namespace VacX_OutSense.Utils
                     var status = _mainForm._tempController.Status;
 
                     // 전체 채널 처리 (최대 8채널)
-                    int totalChannels = Math.Min(8, status.ChannelStatus.Length);
+                    int totalChannels = status.ChannelStatus.Length;
 
                     for (int i = 0; i < totalChannels; i++)
                     {
@@ -855,7 +855,7 @@ namespace VacX_OutSense.Utils
                 if (_mainForm._tempController?.Status != null)
                 {
                     var status = _mainForm._tempController.Status;
-                    int totalChannels = Math.Min(8, status.ChannelStatus.Length);
+                    int totalChannels = status.ChannelStatus.Length;
 
                     for (int i = 0; i < totalChannels; i++)
                     {

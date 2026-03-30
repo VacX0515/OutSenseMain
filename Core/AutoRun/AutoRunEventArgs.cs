@@ -264,9 +264,9 @@ namespace VacX_OutSense.Core.AutoRun
         public double HeaterCh2SetTemperature { get; set; }
 
         /// <summary>
-        /// 전체 채널 온도 (8채널)
+        /// 전체 채널 온도 (12채널: 메인4 + 확장4×2)
         /// </summary>
-        public double[] ChannelTemperatures { get; set; } = new double[8];
+        public double[] ChannelTemperatures { get; set; } = new double[12];
 
         #endregion
 

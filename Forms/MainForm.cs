@@ -86,6 +86,8 @@ namespace VacX_OutSense
         private GroupBox _groupBoxPressChart;
         private ChartDataBuffer[] _tempChartBuffers;
         private ChartDataBuffer _pressureChartBuffer;
+        // 확장모듈2 (CH9~12) 동적 PV 텍스트박스
+        private TextBox[] _expansionPVLabels;
         #endregion
 
         #region 베이크 아웃 관련 필드
@@ -636,7 +638,7 @@ namespace VacX_OutSense
                     _tempController = new TempController(
                         _commManagers[PortAutoDetectionService.DEVICE_TEMP_CONTROLLER],
                         deviceAddress: 1, numChannels: 4,
-                        expansionSlaveAddress: 2, expansionChannels: 4);
+                        new[] { (2, 4), (3, 4) }); // 확장모듈 2개: 슬레이브2(4ch) + 슬레이브3(4ch)
                 }
 
                 _atmSwitch = new ATMswitch();
@@ -1254,8 +1256,9 @@ namespace VacX_OutSense
             ScottPlot.Fonts.Default = "Malgun Gothic";
 
             // 데이터 버퍼 초기화
-            _tempChartBuffers = new ChartDataBuffer[8];
-            for (int i = 0; i < 8; i++)
+            int totalTempChannels = _tempController?.TotalChannelCount ?? 12;
+            _tempChartBuffers = new ChartDataBuffer[totalTempChannels];
+            for (int i = 0; i < totalTempChannels; i++)
                 _tempChartBuffers[i] = new ChartDataBuffer(3600);
             _pressureChartBuffer = new ChartDataBuffer(3600);
 
@@ -2920,16 +2923,26 @@ namespace VacX_OutSense
                     case 6: if (txtCh6PresentValue != null) txtCh6PresentValue.Text = $"{presentValue}℃"; break;
                     case 7: if (txtCh7PresentValue != null) txtCh7PresentValue.Text = $"{presentValue}℃"; break;
                     case 8: if (txtCh8PresentValue != null) txtCh8PresentValue.Text = $"{presentValue}℃"; break;
+                    default:
+                        // CH9~12: 동적 생성된 텍스트박스
+                        if (_expansionPVLabels != null && channel - 9 >= 0 && channel - 9 < _expansionPVLabels.Length)
+                            _expansionPVLabels[channel - 9].Text = $"{presentValue}℃";
+                        break;
                 }
 
                 // 상세 정보는 선택된 채널만 업데이트
-                int selectedCh = (cmbTempChannel?.SelectedIndex ?? 0) + 1;
-                if (channel == selectedCh)
+                int selectedCh = (cmbTempChannel?.SelectedIndex ?? -1) + 1;
+                if (selectedCh > 0 && channel == selectedCh)
                 {
                     if (txtCh1SetValue != null) txtCh1SetValue.Text = $"{setValue}℃";
                     if (txtCh1Status != null) txtCh1Status.Text = status;
                     if (txtCh1HeatingMV != null) txtCh1HeatingMV.Text = heatingMV;
                     if (txtCh1IsAutotune != null) txtCh1IsAutotune.Text = isAutoTuning ? "On" : "Off";
+
+                    // Start/Stop 버튼 외관도 실시간 반영
+                    bool running = (status == "Run");
+                    btnCh1Start.Text = running ? "Stop" : "Start";
+                    btnCh1Start.BackColor = running ? Color.FromArgb(255, 200, 200) : SystemColors.Control;
                 }
             }
             catch { }
@@ -2941,6 +2954,17 @@ namespace VacX_OutSense
         public void SetupToggleButtons()
         {
             btnCh1Stop.Visible = false;
+
+            // ── 확장모듈2 (E2-CH1~4 = CH9~12) UI 동적 생성 ──
+            CreateExpansion2UI();
+
+            // Ch1(Heater) 강조: 굵은 폰트 + 배경색
+            if (txtCh1PresentValue != null)
+            {
+                txtCh1PresentValue.Font = new Font(txtCh1PresentValue.Font.FontFamily, 9F, FontStyle.Bold);
+                txtCh1PresentValue.BackColor = Color.FromArgb(255, 240, 240);
+                txtCh1PresentValue.BorderStyle = BorderStyle.Fixed3D;
+            }
 
             // 온도 컨트롤러 채널 선택 초기화
             if (cmbTempChannel != null)
@@ -3669,6 +3693,51 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             finally { btnCh1AutoTuning.Enabled = true; }
         }
 
+        /// <summary>확장모듈2 (E2-CH1~4 = CH9~12) UI를 panel5에 동적 추가</summary>
+        private void CreateExpansion2UI()
+        {
+            try
+            {
+                if (panel5 == null) return;
+
+                string[] e2Names = { "Ch9", "Ch10", "Ch11", "Ch12" };
+                _expansionPVLabels = new TextBox[4];
+
+                int headerY = 116;
+                int pvY = 136;
+                int[] xPositions = { 3, 113, 223, 333 };
+
+                for (int i = 0; i < 4; i++)
+                {
+                    // 헤더 레이블
+                    var header = new Label
+                    {
+                        BackColor = SystemColors.Info,
+                        BorderStyle = BorderStyle.FixedSingle,
+                        Location = new System.Drawing.Point(xPositions[i], headerY),
+                        Size = new System.Drawing.Size(110, 20),
+                        Text = e2Names[i],
+                        TextAlign = ContentAlignment.MiddleCenter,
+                        Font = panel5.Font
+                    };
+                    panel5.Controls.Add(header);
+
+                    // PV 텍스트박스
+                    _expansionPVLabels[i] = new TextBox
+                    {
+                        Location = new System.Drawing.Point(xPositions[i], pvY),
+                        Size = new System.Drawing.Size(110, 23),
+                        ReadOnly = true,
+                        TextAlign = HorizontalAlignment.Center,
+                        Name = $"txtCh{9 + i}PresentValue",
+                        Font = panel5.Font
+                    };
+                    panel5.Controls.Add(_expansionPVLabels[i]);
+                }
+            }
+            catch { }
+        }
+
         private int _lastSelectedChannel = -1;
 
         private void cmbTempChannel_SelectedIndexChanged(object sender, EventArgs e)
@@ -3677,9 +3746,8 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
                 return;
 
             int selectedIdx = cmbTempChannel?.SelectedIndex ?? -1;
-            if (selectedIdx < 0 || selectedIdx == _lastSelectedChannel)
+            if (selectedIdx < 0)
                 return;
-            _lastSelectedChannel = selectedIdx;
 
             int ch = selectedIdx + 1;
             int chIdx = ch - 1;
@@ -4239,50 +4307,21 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
         private void UpdateCh1TimerControls()
         {
             bool timerEnabled = chkCh1TimerEnabled?.Checked ?? false;
-            bool autoStartEnabled = _ch1AutoStartEnabled;
-            bool anyProcessActive = _ch1TimerActive || _ch1WaitingForTargetTemp || _ch1WaitingForVacuum;
-            bool rampRunning = simpleRampControl1?.IsRunning ?? false;
-            bool isLocked = anyProcessActive || rampRunning;
+            bool isLocked = _ch1TimerActive;
 
-            // 타이머 설정
+            // 타이머 설정 컨트롤 활성/비활성
             numCh1Hours.Enabled = timerEnabled && !isLocked;
             numCh1Minutes.Enabled = timerEnabled && !isLocked;
             numCh1Seconds.Enabled = timerEnabled && !isLocked;
             numVentTargetTemp.Enabled = timerEnabled && !isLocked;
-
-            // 자동 시작 설정
-            if (chkCh1AutoStartEnabled != null)
-                chkCh1AutoStartEnabled.Enabled = timerEnabled && !isLocked;
-            if (scientificPressureInput1 != null)
-                scientificPressureInput1.Enabled = timerEnabled && autoStartEnabled && !isLocked;
-            if (numCh1ReachCount != null)
-                numCh1ReachCount.Enabled = timerEnabled && autoStartEnabled && !isLocked;
-
-            if (btnBakeoutSettings != null)
-                btnBakeoutSettings.Enabled = !isLocked;
-
+            numCh1Tolerance.Enabled = timerEnabled && !isLocked;
             chkCh1TimerEnabled.Enabled = !isLocked;
 
-            // 자동 시작 버튼 상태 업데이트
-            if (btnCh1AutoStart != null)
-            {
-                if (isLocked)
-                {
-                    btnCh1AutoStart.Text = "⏹ 취소";
-                    btnCh1AutoStart.BackColor = Color.LightCoral;
-                    btnCh1AutoStart.ForeColor = Color.White;
-                    btnCh1AutoStart.Enabled = true;
-                }
-                else
-                {
-                    btnCh1AutoStart.Text = "자동 시작 대기";
-                    btnCh1AutoStart.BackColor = SystemColors.Control;
-                    btnCh1AutoStart.ForeColor = SystemColors.ControlText;
-                    btnCh1AutoStart.Enabled = timerEnabled && autoStartEnabled;
-                }
-            }
+            // 종료 동작 라디오 버튼
+            if (rdoFullShutdown != null) rdoFullShutdown.Enabled = timerEnabled && !isLocked;
+            if (rdoHeaterOnly != null) rdoHeaterOnly.Enabled = timerEnabled && !isLocked;
 
-            if (!timerEnabled && anyProcessActive)
+            if (!timerEnabled && _ch1TimerActive)
                 StopCh1Timer();
         }
 
@@ -4774,6 +4813,21 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
 
         private async void StopCh1WithTimer()
         {
+            // "히터만 정지" 체크 시 → 히터만 끄고 나머지 유지
+            if (rdoHeaterOnly?.Checked == true)
+            {
+                LogInfo("═══ CH1 타이머 만료 — 히터만 정지 (펌프/밸브 유지) ═══");
+                StopCh1Timer();
+                try
+                {
+                    if (_tempController?.IsConnected == true)
+                        await Task.Run(() => _tempController.Stop(1));
+                    LogInfo("CH1 히터 정지 완료");
+                }
+                catch (Exception ex) { LogError($"히터 정지 오류: {ex.Message}"); }
+                return;
+            }
+
             LogInfo("═══ CH1 타이머 만료 - 종료 시퀀스 시작 ═══");
 
             // 타이머 플래그 먼저 정리

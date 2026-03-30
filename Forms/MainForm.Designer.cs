@@ -57,20 +57,15 @@ namespace VacX_OutSense
             label2 = new Label();
             label3 = new Label();
             grpCh1Timer = new GroupBox();
-            label43 = new Label();
-            numCh1Tolerance = new NumericUpDown();
-            label44 = new Label();
-            btnHoldSettings = new Button();
-            btnBakeoutSettings = new Button();
-            numCh1ReachCount = new NumericUpDown();
-            lblCh1ReachCount = new Label();
-            scientificPressureInput1 = new ScientificPressureInput();
-            btnCh1AutoStart = new Button();
-            lblCh1TargetPressure = new Label();
-            chkCh1AutoStartEnabled = new CheckBox();
             lblVentTempUnit = new Label();
             numVentTargetTemp = new NumericUpDown();
             lblVentTargetTemp = new Label();
+            label43 = new Label();
+            numCh1Tolerance = new NumericUpDown();
+            label44 = new Label();
+            rdoHeaterOnly = new RadioButton();
+            rdoFullShutdown = new RadioButton();
+            lblEndAction = new Label();
             lblCh1TimeRemainingValue = new Label();
             lblCh1TimeRemaining = new Label();
             chkCh1TimerEnabled = new CheckBox();
@@ -89,14 +84,14 @@ namespace VacX_OutSense
             txtCh6PresentValue = new TextBox();
             txtCh7PresentValue = new TextBox();
             txtCh8PresentValue = new TextBox();
-            lblCh6Header = new Label();
-            lblCh7Header = new Label();
-            lblCh8Header = new Label();
             label41 = new Label();
             label40 = new Label();
             label29 = new Label();
             label30 = new Label();
             label42 = new Label();
+            lblCh6Header = new Label();
+            lblCh7Header = new Label();
+            lblCh8Header = new Label();
             lblTempControlHeader = new Label();
             cmbTempChannel = new ComboBox();
             btnCh1Start = new Button();
@@ -203,6 +198,14 @@ namespace VacX_OutSense
             tabPage2 = new TabPage();
             txtLog = new RichTextBox();
             tabPageAutoRun = new TabPage();
+            btnHoldSettings = new Button();
+            btnBakeoutSettings = new Button();
+            numCh1ReachCount = new NumericUpDown();
+            lblCh1ReachCount = new Label();
+            scientificPressureInput1 = new ScientificPressureInput();
+            btnCh1AutoStart = new Button();
+            lblCh1TargetPressure = new Label();
+            chkCh1AutoStartEnabled = new CheckBox();
             lblLastOutput = new Label();
             lblSeconds = new Label();
             numUpdateInterval = new NumericUpDown();
@@ -243,9 +246,8 @@ namespace VacX_OutSense
             grpPressureValve.SuspendLayout();
             tableLayoutPanel5.SuspendLayout();
             grpCh1Timer.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numCh1Tolerance).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numCh1ReachCount).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numVentTargetTemp).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numCh1Tolerance).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Seconds).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Minutes).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Hours).BeginInit();
@@ -261,6 +263,7 @@ namespace VacX_OutSense
             tableLayoutPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numDryPumpSpeed).BeginInit();
             tabPage2.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numCh1ReachCount).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numUpdateInterval).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numKd).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numKi).BeginInit();
@@ -285,7 +288,7 @@ namespace VacX_OutSense
             tableLayoutPanelMain.RowCount = 2;
             tableLayoutPanelMain.RowStyles.Add(new RowStyle(SizeType.Absolute, 49F));
             tableLayoutPanelMain.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            tableLayoutPanelMain.Size = new Size(1171, 801);
+            tableLayoutPanelMain.Size = new Size(1171, 879);
             tableLayoutPanelMain.TabIndex = 0;
             // 
             // tableLayoutPanel3
@@ -404,7 +407,7 @@ namespace VacX_OutSense
             tabControlMain.Location = new Point(3, 52);
             tabControlMain.Name = "tabControlMain";
             tabControlMain.SelectedIndex = 0;
-            tabControlMain.Size = new Size(1165, 746);
+            tabControlMain.Size = new Size(1165, 824);
             tabControlMain.TabIndex = 1;
             tabControlMain.SelectedIndexChanged += tabControlMain_SelectedIndexChanged;
             // 
@@ -414,7 +417,7 @@ namespace VacX_OutSense
             tabPage1.Location = new Point(4, 24);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3);
-            tabPage1.Size = new Size(1157, 718);
+            tabPage1.Size = new Size(1157, 796);
             tabPage1.TabIndex = 2;
             tabPage1.Text = "Main";
             tabPage1.UseVisualStyleBackColor = true;
@@ -429,7 +432,7 @@ namespace VacX_OutSense
             tableLayoutPanel2.Name = "tableLayoutPanel2";
             tableLayoutPanel2.RowCount = 1;
             tableLayoutPanel2.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            tableLayoutPanel2.Size = new Size(1151, 712);
+            tableLayoutPanel2.Size = new Size(1151, 790);
             tableLayoutPanel2.TabIndex = 0;
             // 
             // panel1
@@ -444,7 +447,7 @@ namespace VacX_OutSense
             panel1.Dock = DockStyle.Fill;
             panel1.Location = new Point(3, 3);
             panel1.Name = "panel1";
-            panel1.Size = new Size(1145, 706);
+            panel1.Size = new Size(1145, 784);
             panel1.TabIndex = 1;
             // 
             // grpPressureValve
@@ -632,20 +635,15 @@ namespace VacX_OutSense
             // 
             // grpCh1Timer
             // 
-            grpCh1Timer.Controls.Add(label43);
-            grpCh1Timer.Controls.Add(numCh1Tolerance);
-            grpCh1Timer.Controls.Add(label44);
-            grpCh1Timer.Controls.Add(btnHoldSettings);
-            grpCh1Timer.Controls.Add(btnBakeoutSettings);
-            grpCh1Timer.Controls.Add(numCh1ReachCount);
-            grpCh1Timer.Controls.Add(lblCh1ReachCount);
-            grpCh1Timer.Controls.Add(scientificPressureInput1);
-            grpCh1Timer.Controls.Add(btnCh1AutoStart);
-            grpCh1Timer.Controls.Add(lblCh1TargetPressure);
-            grpCh1Timer.Controls.Add(chkCh1AutoStartEnabled);
             grpCh1Timer.Controls.Add(lblVentTempUnit);
             grpCh1Timer.Controls.Add(numVentTargetTemp);
             grpCh1Timer.Controls.Add(lblVentTargetTemp);
+            grpCh1Timer.Controls.Add(label43);
+            grpCh1Timer.Controls.Add(numCh1Tolerance);
+            grpCh1Timer.Controls.Add(label44);
+            grpCh1Timer.Controls.Add(rdoHeaterOnly);
+            grpCh1Timer.Controls.Add(rdoFullShutdown);
+            grpCh1Timer.Controls.Add(lblEndAction);
             grpCh1Timer.Controls.Add(lblCh1TimeRemainingValue);
             grpCh1Timer.Controls.Add(lblCh1TimeRemaining);
             grpCh1Timer.Controls.Add(chkCh1TimerEnabled);
@@ -658,125 +656,15 @@ namespace VacX_OutSense
             grpCh1Timer.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
             grpCh1Timer.Location = new Point(550, 128);
             grpCh1Timer.Name = "grpCh1Timer";
-            grpCh1Timer.Size = new Size(465, 140);
+            grpCh1Timer.Size = new Size(465, 145);
             grpCh1Timer.TabIndex = 50;
             grpCh1Timer.TabStop = false;
-            grpCh1Timer.Text = "CH1 자동 시작/정지 타이머";
-            // 
-            // label43
-            // 
-            label43.AutoSize = true;
-            label43.Location = new Point(341, 47);
-            label43.Name = "label43";
-            label43.Size = new Size(20, 15);
-            label43.TabIndex = 23;
-            label43.Text = "°C";
-            // 
-            // numCh1Tolerance
-            // 
-            numCh1Tolerance.DecimalPlaces = 1;
-            numCh1Tolerance.Location = new Point(265, 45);
-            numCh1Tolerance.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
-            numCh1Tolerance.Name = "numCh1Tolerance";
-            numCh1Tolerance.Size = new Size(70, 23);
-            numCh1Tolerance.TabIndex = 22;
-            numCh1Tolerance.TextAlign = HorizontalAlignment.Center;
-            numCh1Tolerance.ValueChanged += numCh1Tolerance_ValueChanged;
-            // 
-            // label44
-            // 
-            label44.AutoSize = true;
-            label44.Location = new Point(265, 19);
-            label44.Name = "label44";
-            label44.Size = new Size(87, 15);
-            label44.TabIndex = 21;
-            label44.Text = "허용 오차 온도";
-            // 
-            // btnHoldSettings
-            // 
-            btnHoldSettings.Location = new Point(357, 76);
-            btnHoldSettings.Name = "btnHoldSettings";
-            btnHoldSettings.Size = new Size(102, 28);
-            btnHoldSettings.TabIndex = 20;
-            btnHoldSettings.Text = "온도 유지 설정";
-            btnHoldSettings.UseVisualStyleBackColor = true;
-            btnHoldSettings.Click += btnHoldSettings_Click;
-            // 
-            // btnBakeoutSettings
-            // 
-            btnBakeoutSettings.Location = new Point(210, 75);
-            btnBakeoutSettings.Name = "btnBakeoutSettings";
-            btnBakeoutSettings.Size = new Size(141, 28);
-            btnBakeoutSettings.TabIndex = 19;
-            btnBakeoutSettings.Text = "Bakeout 램프업 설정";
-            btnBakeoutSettings.UseVisualStyleBackColor = true;
-            btnBakeoutSettings.Click += btnBakeoutSettings_Click;
-            // 
-            // numCh1ReachCount
-            // 
-            numCh1ReachCount.Location = new Point(80, 109);
-            numCh1ReachCount.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
-            numCh1ReachCount.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
-            numCh1ReachCount.Name = "numCh1ReachCount";
-            numCh1ReachCount.Size = new Size(45, 23);
-            numCh1ReachCount.TabIndex = 18;
-            numCh1ReachCount.TextAlign = HorizontalAlignment.Center;
-            numCh1ReachCount.Value = new decimal(new int[] { 3, 0, 0, 0 });
-            numCh1ReachCount.ValueChanged += numCh1ReachCount_ValueChanged;
-            // 
-            // lblCh1ReachCount
-            // 
-            lblCh1ReachCount.AutoSize = true;
-            lblCh1ReachCount.Location = new Point(15, 112);
-            lblCh1ReachCount.Name = "lblCh1ReachCount";
-            lblCh1ReachCount.Size = new Size(62, 15);
-            lblCh1ReachCount.TabIndex = 17;
-            lblCh1ReachCount.Text = "확인 횟수:";
-            // 
-            // scientificPressureInput1
-            // 
-            scientificPressureInput1.Font = new Font("바탕", 9F, FontStyle.Bold, GraphicsUnit.Point, 129);
-            scientificPressureInput1.Location = new Point(238, 109);
-            scientificPressureInput1.MinimumSize = new Size(150, 25);
-            scientificPressureInput1.Name = "scientificPressureInput1";
-            scientificPressureInput1.Size = new Size(185, 25);
-            scientificPressureInput1.TabIndex = 3;
-            scientificPressureInput1.ValueChanged += scientificPressureInput1_ValueChanged;
-            // 
-            // btnCh1AutoStart
-            // 
-            btnCh1AutoStart.Location = new Point(89, 75);
-            btnCh1AutoStart.Name = "btnCh1AutoStart";
-            btnCh1AutoStart.Size = new Size(120, 28);
-            btnCh1AutoStart.TabIndex = 15;
-            btnCh1AutoStart.Text = "자동 시작 대기";
-            btnCh1AutoStart.UseVisualStyleBackColor = true;
-            btnCh1AutoStart.Click += btnCh1AutoStart_Click;
-            // 
-            // lblCh1TargetPressure
-            // 
-            lblCh1TargetPressure.AutoSize = true;
-            lblCh1TargetPressure.Location = new Point(141, 112);
-            lblCh1TargetPressure.Name = "lblCh1TargetPressure";
-            lblCh1TargetPressure.Size = new Size(94, 15);
-            lblCh1TargetPressure.TabIndex = 13;
-            lblCh1TargetPressure.Text = "목표 압력(Torr):";
-            // 
-            // chkCh1AutoStartEnabled
-            // 
-            chkCh1AutoStartEnabled.AutoSize = true;
-            chkCh1AutoStartEnabled.Location = new Point(15, 80);
-            chkCh1AutoStartEnabled.Name = "chkCh1AutoStartEnabled";
-            chkCh1AutoStartEnabled.Size = new Size(78, 19);
-            chkCh1AutoStartEnabled.TabIndex = 12;
-            chkCh1AutoStartEnabled.Text = "자동 시작";
-            chkCh1AutoStartEnabled.UseVisualStyleBackColor = true;
-            chkCh1AutoStartEnabled.CheckedChanged += chkCh1AutoStartEnabled_CheckedChanged;
+            grpCh1Timer.Text = "CH1 타이머";
             // 
             // lblVentTempUnit
             // 
             lblVentTempUnit.AutoSize = true;
-            lblVentTempUnit.Location = new Point(445, 47);
+            lblVentTempUnit.Location = new Point(391, 105);
             lblVentTempUnit.Name = "lblVentTempUnit";
             lblVentTempUnit.Size = new Size(20, 15);
             lblVentTempUnit.TabIndex = 11;
@@ -785,7 +673,7 @@ namespace VacX_OutSense
             // numVentTargetTemp
             // 
             numVentTargetTemp.DecimalPlaces = 1;
-            numVentTargetTemp.Location = new Point(369, 45);
+            numVentTargetTemp.Location = new Point(315, 103);
             numVentTargetTemp.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
             numVentTargetTemp.Name = "numVentTargetTemp";
             numVentTargetTemp.Size = new Size(70, 23);
@@ -796,11 +684,71 @@ namespace VacX_OutSense
             // lblVentTargetTemp
             // 
             lblVentTargetTemp.AutoSize = true;
-            lblVentTargetTemp.Location = new Point(369, 19);
+            lblVentTargetTemp.Location = new Point(220, 105);
             lblVentTargetTemp.Name = "lblVentTargetTemp";
             lblVentTargetTemp.Size = new Size(90, 15);
             lblVentTargetTemp.TabIndex = 9;
             lblVentTargetTemp.Text = "벤트 타겟 온도:";
+            // 
+            // label43
+            // 
+            label43.AutoSize = true;
+            label43.Location = new Point(175, 105);
+            label43.Name = "label43";
+            label43.Size = new Size(20, 15);
+            label43.TabIndex = 23;
+            label43.Text = "°C";
+            // 
+            // numCh1Tolerance
+            // 
+            numCh1Tolerance.DecimalPlaces = 1;
+            numCh1Tolerance.Location = new Point(110, 103);
+            numCh1Tolerance.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
+            numCh1Tolerance.Name = "numCh1Tolerance";
+            numCh1Tolerance.Size = new Size(60, 23);
+            numCh1Tolerance.TabIndex = 22;
+            numCh1Tolerance.TextAlign = HorizontalAlignment.Center;
+            numCh1Tolerance.ValueChanged += numCh1Tolerance_ValueChanged;
+            // 
+            // label44
+            // 
+            label44.AutoSize = true;
+            label44.Location = new Point(15, 105);
+            label44.Name = "label44";
+            label44.Size = new Size(87, 15);
+            label44.TabIndex = 21;
+            label44.Text = "허용 오차 온도";
+            // 
+            // rdoHeaterOnly
+            // 
+            rdoHeaterOnly.AutoSize = true;
+            rdoHeaterOnly.Location = new Point(175, 75);
+            rdoHeaterOnly.Name = "rdoHeaterOnly";
+            rdoHeaterOnly.Size = new Size(89, 19);
+            rdoHeaterOnly.TabIndex = 24;
+            rdoHeaterOnly.Text = "히터만 정지";
+            rdoHeaterOnly.UseVisualStyleBackColor = true;
+            // 
+            // rdoFullShutdown
+            // 
+            rdoFullShutdown.AutoSize = true;
+            rdoFullShutdown.Checked = true;
+            rdoFullShutdown.Location = new Point(85, 75);
+            rdoFullShutdown.Name = "rdoFullShutdown";
+            rdoFullShutdown.Size = new Size(77, 19);
+            rdoFullShutdown.TabIndex = 25;
+            rdoFullShutdown.TabStop = true;
+            rdoFullShutdown.Text = "전체 종료";
+            rdoFullShutdown.UseVisualStyleBackColor = true;
+            // 
+            // lblEndAction
+            // 
+            lblEndAction.AutoSize = true;
+            lblEndAction.Location = new Point(15, 77);
+            lblEndAction.Name = "lblEndAction";
+            lblEndAction.Size = new Size(62, 15);
+            lblEndAction.TabIndex = 26;
+            lblEndAction.Text = "종료 동작:";
             // 
             // lblCh1TimeRemainingValue
             // 
@@ -922,67 +870,25 @@ namespace VacX_OutSense
             panel5.Controls.Add(txtCh1IsAutotune);
             panel5.Controls.Add(btnCh1Stop);
             panel5.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
-            panel5.Location = new Point(550, 278);
+            panel5.Location = new Point(550, 280);
             panel5.Name = "panel5";
-            panel5.Size = new Size(464, 260);
+            panel5.Size = new Size(464, 266);
             panel5.TabIndex = 15;
             panel5.TabStop = false;
             panel5.Text = "온도 컨트롤러";
             // 
             // txtCh5PresentValue
             // 
-            txtCh5PresentValue.Location = new Point(3, 82);
+            txtCh5PresentValue.Location = new Point(3, 87);
             txtCh5PresentValue.Name = "txtCh5PresentValue";
             txtCh5PresentValue.ReadOnly = true;
             txtCh5PresentValue.Size = new Size(110, 23);
-            //
-            // txtCh6PresentValue (E-2)
-            //
-            //
-            txtCh6PresentValue.Location = new Point(113, 82);
-            txtCh6PresentValue.Name = "txtCh6PresentValue";
-            txtCh6PresentValue.ReadOnly = true;
-            txtCh6PresentValue.Size = new Size(110, 23);
-            txtCh6PresentValue.TextAlign = HorizontalAlignment.Center;
-            //
-            txtCh7PresentValue.Location = new Point(226, 82);
-            txtCh7PresentValue.Name = "txtCh7PresentValue";
-            txtCh7PresentValue.ReadOnly = true;
-            txtCh7PresentValue.Size = new Size(110, 23);
-            txtCh7PresentValue.TextAlign = HorizontalAlignment.Center;
-            //
-            txtCh8PresentValue.Location = new Point(340, 82);
-            txtCh8PresentValue.Name = "txtCh8PresentValue";
-            txtCh8PresentValue.ReadOnly = true;
-            txtCh8PresentValue.Size = new Size(110, 23);
-            txtCh8PresentValue.TextAlign = HorizontalAlignment.Center;
-            //
-            lblCh6Header.BackColor = SystemColors.Info;
-            lblCh6Header.BorderStyle = BorderStyle.FixedSingle;
-            lblCh6Header.Location = new Point(113, 62);
-            lblCh6Header.Size = new Size(110, 20);
-            lblCh6Header.Text = "E-2";
-            lblCh6Header.TextAlign = ContentAlignment.MiddleCenter;
-            //
-            lblCh7Header.BackColor = SystemColors.Info;
-            lblCh7Header.BorderStyle = BorderStyle.FixedSingle;
-            lblCh7Header.Location = new Point(226, 62);
-            lblCh7Header.Size = new Size(110, 20);
-            lblCh7Header.Text = "E-3";
-            lblCh7Header.TextAlign = ContentAlignment.MiddleCenter;
-            //
-            lblCh8Header.BackColor = SystemColors.Info;
-            lblCh8Header.BorderStyle = BorderStyle.FixedSingle;
-            lblCh8Header.Location = new Point(340, 62);
-            lblCh8Header.Size = new Size(110, 20);
-            lblCh8Header.Text = "E-4";
-            lblCh8Header.TextAlign = ContentAlignment.MiddleCenter;
             txtCh5PresentValue.TabIndex = 46;
             txtCh5PresentValue.TextAlign = HorizontalAlignment.Center;
             // 
             // txtCh4PresentValue
             // 
-            txtCh4PresentValue.Location = new Point(340, 38);
+            txtCh4PresentValue.Location = new Point(333, 38);
             txtCh4PresentValue.Name = "txtCh4PresentValue";
             txtCh4PresentValue.ReadOnly = true;
             txtCh4PresentValue.Size = new Size(110, 23);
@@ -991,7 +897,7 @@ namespace VacX_OutSense
             // 
             // txtCh3PresentValue
             // 
-            txtCh3PresentValue.Location = new Point(226, 38);
+            txtCh3PresentValue.Location = new Point(223, 38);
             txtCh3PresentValue.Name = "txtCh3PresentValue";
             txtCh3PresentValue.ReadOnly = true;
             txtCh3PresentValue.Size = new Size(110, 23);
@@ -1016,15 +922,43 @@ namespace VacX_OutSense
             txtCh1PresentValue.TabIndex = 32;
             txtCh1PresentValue.TextAlign = HorizontalAlignment.Center;
             // 
+            // txtCh6PresentValue
+            // 
+            txtCh6PresentValue.Location = new Point(113, 87);
+            txtCh6PresentValue.Name = "txtCh6PresentValue";
+            txtCh6PresentValue.ReadOnly = true;
+            txtCh6PresentValue.Size = new Size(110, 23);
+            txtCh6PresentValue.TabIndex = 47;
+            txtCh6PresentValue.TextAlign = HorizontalAlignment.Center;
+            // 
+            // txtCh7PresentValue
+            // 
+            txtCh7PresentValue.Location = new Point(223, 87);
+            txtCh7PresentValue.Name = "txtCh7PresentValue";
+            txtCh7PresentValue.ReadOnly = true;
+            txtCh7PresentValue.Size = new Size(110, 23);
+            txtCh7PresentValue.TabIndex = 48;
+            txtCh7PresentValue.TextAlign = HorizontalAlignment.Center;
+            // 
+            // txtCh8PresentValue
+            // 
+            txtCh8PresentValue.Location = new Point(333, 87);
+            txtCh8PresentValue.Name = "txtCh8PresentValue";
+            txtCh8PresentValue.ReadOnly = true;
+            txtCh8PresentValue.Size = new Size(110, 23);
+            txtCh8PresentValue.TabIndex = 49;
+            txtCh8PresentValue.TextAlign = HorizontalAlignment.Center;
+            // 
             // label41
             // 
-            label41.BackColor = SystemColors.Info;
+            label41.BackColor = Color.FromArgb(255, 220, 220);
             label41.BorderStyle = BorderStyle.FixedSingle;
+            label41.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
             label41.Location = new Point(3, 18);
             label41.Name = "label41";
             label41.Size = new Size(110, 20);
             label41.TabIndex = 27;
-            label41.Text = "M-1";
+            label41.Text = "Ch1(Heater)";
             label41.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // label40
@@ -1035,47 +969,80 @@ namespace VacX_OutSense
             label40.Name = "label40";
             label40.Size = new Size(110, 20);
             label40.TabIndex = 30;
-            label40.Text = "M-2";
+            label40.Text = "Ch2";
             label40.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // label29
             // 
             label29.BackColor = SystemColors.Info;
             label29.BorderStyle = BorderStyle.FixedSingle;
-            label29.Location = new Point(226, 18);
+            label29.Location = new Point(223, 18);
             label29.Name = "label29";
             label29.Size = new Size(110, 20);
             label29.TabIndex = 41;
-            label29.Text = "M-3";
+            label29.Text = "Ch3";
             label29.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // label30
             // 
             label30.BackColor = SystemColors.Info;
             label30.BorderStyle = BorderStyle.FixedSingle;
-            label30.Location = new Point(340, 18);
+            label30.Location = new Point(333, 18);
             label30.Name = "label30";
             label30.Size = new Size(110, 20);
             label30.TabIndex = 42;
-            label30.Text = "M-4";
+            label30.Text = "Ch4";
             label30.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // label42
             // 
             label42.BackColor = SystemColors.Info;
             label42.BorderStyle = BorderStyle.FixedSingle;
-            label42.Location = new Point(3, 62);
+            label42.Location = new Point(3, 67);
             label42.Name = "label42";
             label42.Size = new Size(110, 20);
             label42.TabIndex = 43;
-            label42.Text = "E-1";
+            label42.Text = "Ch5";
             label42.TextAlign = ContentAlignment.MiddleCenter;
+            // 
+            // lblCh6Header
+            // 
+            lblCh6Header.BackColor = SystemColors.Info;
+            lblCh6Header.BorderStyle = BorderStyle.FixedSingle;
+            lblCh6Header.Location = new Point(113, 67);
+            lblCh6Header.Name = "lblCh6Header";
+            lblCh6Header.Size = new Size(110, 20);
+            lblCh6Header.TabIndex = 50;
+            lblCh6Header.Text = "Ch6";
+            lblCh6Header.TextAlign = ContentAlignment.MiddleCenter;
+            // 
+            // lblCh7Header
+            // 
+            lblCh7Header.BackColor = SystemColors.Info;
+            lblCh7Header.BorderStyle = BorderStyle.FixedSingle;
+            lblCh7Header.Location = new Point(223, 67);
+            lblCh7Header.Name = "lblCh7Header";
+            lblCh7Header.Size = new Size(110, 20);
+            lblCh7Header.TabIndex = 51;
+            lblCh7Header.Text = "Ch7";
+            lblCh7Header.TextAlign = ContentAlignment.MiddleCenter;
+            // 
+            // lblCh8Header
+            // 
+            lblCh8Header.BackColor = SystemColors.Info;
+            lblCh8Header.BorderStyle = BorderStyle.FixedSingle;
+            lblCh8Header.Location = new Point(333, 67);
+            lblCh8Header.Name = "lblCh8Header";
+            lblCh8Header.Size = new Size(110, 20);
+            lblCh8Header.TabIndex = 52;
+            lblCh8Header.Text = "Ch8";
+            lblCh8Header.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // lblTempControlHeader
             // 
             lblTempControlHeader.BackColor = SystemColors.Info;
             lblTempControlHeader.BorderStyle = BorderStyle.FixedSingle;
-            lblTempControlHeader.Location = new Point(3, 109);
+            lblTempControlHeader.Location = new Point(3, 165);
             lblTempControlHeader.Name = "lblTempControlHeader";
             lblTempControlHeader.Padding = new Padding(5, 0, 0, 0);
             lblTempControlHeader.Size = new Size(455, 20);
@@ -1086,8 +1053,8 @@ namespace VacX_OutSense
             // cmbTempChannel
             // 
             cmbTempChannel.DropDownStyle = ComboBoxStyle.DropDownList;
-            cmbTempChannel.Items.AddRange(new object[] { "M-CH1", "M-CH2", "M-CH3", "M-CH4", "E-CH1", "E-CH2", "E-CH3", "E-CH4" });
-            cmbTempChannel.Location = new Point(5, 133);
+            cmbTempChannel.Items.AddRange(new object[] { "Ch1", "Ch2", "Ch3", "Ch4", "Ch5", "Ch6", "Ch7", "Ch8", "Ch9", "Ch10", "Ch11", "Ch12" });
+            cmbTempChannel.Location = new Point(5, 189);
             cmbTempChannel.Name = "cmbTempChannel";
             cmbTempChannel.Size = new Size(75, 23);
             cmbTempChannel.TabIndex = 51;
@@ -1095,7 +1062,7 @@ namespace VacX_OutSense
             // 
             // btnCh1Start
             // 
-            btnCh1Start.Location = new Point(85, 132);
+            btnCh1Start.Location = new Point(85, 188);
             btnCh1Start.Name = "btnCh1Start";
             btnCh1Start.Size = new Size(65, 25);
             btnCh1Start.TabIndex = 0;
@@ -1105,7 +1072,7 @@ namespace VacX_OutSense
             // 
             // btnCh1AutoTuning
             // 
-            btnCh1AutoTuning.Location = new Point(165, 132);
+            btnCh1AutoTuning.Location = new Point(165, 188);
             btnCh1AutoTuning.Name = "btnCh1AutoTuning";
             btnCh1AutoTuning.Size = new Size(80, 25);
             btnCh1AutoTuning.TabIndex = 36;
@@ -1115,7 +1082,7 @@ namespace VacX_OutSense
             // 
             // button2
             // 
-            button2.Location = new Point(250, 132);
+            button2.Location = new Point(250, 188);
             button2.Name = "button2";
             button2.Size = new Size(75, 25);
             button2.TabIndex = 37;
@@ -1125,7 +1092,7 @@ namespace VacX_OutSense
             // 
             // btnRampSetting
             // 
-            btnRampSetting.Location = new Point(330, 132);
+            btnRampSetting.Location = new Point(330, 188);
             btnRampSetting.Name = "btnRampSetting";
             btnRampSetting.Size = new Size(65, 25);
             btnRampSetting.TabIndex = 52;
@@ -1137,7 +1104,7 @@ namespace VacX_OutSense
             // 
             label37.BackColor = SystemColors.Info;
             label37.BorderStyle = BorderStyle.FixedSingle;
-            label37.Location = new Point(3, 161);
+            label37.Location = new Point(3, 217);
             label37.Name = "label37";
             label37.Size = new Size(110, 20);
             label37.TabIndex = 14;
@@ -1148,7 +1115,7 @@ namespace VacX_OutSense
             // 
             label33.BackColor = SystemColors.Info;
             label33.BorderStyle = BorderStyle.FixedSingle;
-            label33.Location = new Point(115, 161);
+            label33.Location = new Point(115, 217);
             label33.Name = "label33";
             label33.Size = new Size(110, 20);
             label33.TabIndex = 20;
@@ -1159,7 +1126,7 @@ namespace VacX_OutSense
             // 
             label35.BackColor = SystemColors.Info;
             label35.BorderStyle = BorderStyle.FixedSingle;
-            label35.Location = new Point(227, 161);
+            label35.Location = new Point(227, 217);
             label35.Name = "label35";
             label35.Size = new Size(110, 20);
             label35.TabIndex = 15;
@@ -1170,7 +1137,7 @@ namespace VacX_OutSense
             // 
             label38.BackColor = SystemColors.Info;
             label38.BorderStyle = BorderStyle.FixedSingle;
-            label38.Location = new Point(339, 161);
+            label38.Location = new Point(339, 217);
             label38.Name = "label38";
             label38.Size = new Size(119, 20);
             label38.TabIndex = 29;
@@ -1179,7 +1146,7 @@ namespace VacX_OutSense
             // 
             // txtCh1Status
             // 
-            txtCh1Status.Location = new Point(3, 181);
+            txtCh1Status.Location = new Point(3, 237);
             txtCh1Status.Name = "txtCh1Status";
             txtCh1Status.ReadOnly = true;
             txtCh1Status.Size = new Size(110, 23);
@@ -1188,7 +1155,7 @@ namespace VacX_OutSense
             // 
             // txtCh1SetValue
             // 
-            txtCh1SetValue.Location = new Point(115, 181);
+            txtCh1SetValue.Location = new Point(115, 237);
             txtCh1SetValue.Name = "txtCh1SetValue";
             txtCh1SetValue.ReadOnly = true;
             txtCh1SetValue.Size = new Size(110, 23);
@@ -1197,7 +1164,7 @@ namespace VacX_OutSense
             // 
             // txtCh1HeatingMV
             // 
-            txtCh1HeatingMV.Location = new Point(227, 181);
+            txtCh1HeatingMV.Location = new Point(227, 237);
             txtCh1HeatingMV.Name = "txtCh1HeatingMV";
             txtCh1HeatingMV.ReadOnly = true;
             txtCh1HeatingMV.Size = new Size(110, 23);
@@ -1206,7 +1173,7 @@ namespace VacX_OutSense
             // 
             // txtCh1IsAutotune
             // 
-            txtCh1IsAutotune.Location = new Point(339, 181);
+            txtCh1IsAutotune.Location = new Point(339, 237);
             txtCh1IsAutotune.Name = "txtCh1IsAutotune";
             txtCh1IsAutotune.ReadOnly = true;
             txtCh1IsAutotune.Size = new Size(119, 23);
@@ -1250,7 +1217,7 @@ namespace VacX_OutSense
             grpChillerPID.Controls.Add(numChillerManualTemp);
             grpChillerPID.Controls.Add(btnBathCirculatorSetTemp);
             grpChillerPID.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
-            grpChillerPID.Location = new Point(3, 532);
+            grpChillerPID.Location = new Point(3, 565);
             grpChillerPID.Name = "grpChillerPID";
             grpChillerPID.Size = new Size(537, 179);
             grpChillerPID.TabIndex = 53;
@@ -1429,7 +1396,7 @@ namespace VacX_OutSense
             // 
             cmbPIDChannel.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbPIDChannel.FormattingEnabled = true;
-            cmbPIDChannel.Items.AddRange(new object[] { "M-CH1", "M-CH2", "M-CH3", "M-CH4", "E-CH1", "E-CH2", "E-CH3", "E-CH4" });
+            cmbPIDChannel.Items.AddRange(new object[] { "Ch1", "Ch2", "Ch3", "Ch4", "Ch5", "Ch6", "Ch7", "Ch8", "Ch9", "Ch10", "Ch11", "Ch12" });
             cmbPIDChannel.Location = new Point(253, 27);
             cmbPIDChannel.Name = "cmbPIDChannel";
             cmbPIDChannel.Size = new Size(120, 23);
@@ -1509,9 +1476,9 @@ namespace VacX_OutSense
             panel3.Controls.Add(numTurboPumpStandbySpeed);
             panel3.Controls.Add(btnTurboPumpStandbySet);
             panel3.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
-            panel3.Location = new Point(3, 330);
+            panel3.Location = new Point(3, 339);
             panel3.Name = "panel3";
-            panel3.Size = new Size(537, 192);
+            panel3.Size = new Size(537, 220);
             panel3.TabIndex = 13;
             panel3.TabStop = false;
             panel3.Text = "터보 펌프";
@@ -1560,7 +1527,7 @@ namespace VacX_OutSense
             tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 25F));
             tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
             tableLayoutPanel6.RowStyles.Add(new RowStyle(SizeType.Absolute, 25F));
-            tableLayoutPanel6.Size = new Size(527, 120);
+            tableLayoutPanel6.Size = new Size(527, 130);
             tableLayoutPanel6.TabIndex = 11;
             // 
             // txtTurboPumpReady
@@ -1578,7 +1545,7 @@ namespace VacX_OutSense
             progressBarTurboPumpSpeed.Dock = DockStyle.Fill;
             progressBarTurboPumpSpeed.Location = new Point(264, 98);
             progressBarTurboPumpSpeed.Name = "progressBarTurboPumpSpeed";
-            progressBarTurboPumpSpeed.Size = new Size(81, 19);
+            progressBarTurboPumpSpeed.Size = new Size(81, 29);
             progressBarTurboPumpSpeed.TabIndex = 40;
             // 
             // txtTurboPumpNormal
@@ -1773,7 +1740,7 @@ namespace VacX_OutSense
             lblTurboPumpWarning.Dock = DockStyle.Fill;
             lblTurboPumpWarning.Location = new Point(177, 95);
             lblTurboPumpWarning.Name = "lblTurboPumpWarning";
-            lblTurboPumpWarning.Size = new Size(81, 25);
+            lblTurboPumpWarning.Size = new Size(81, 35);
             lblTurboPumpWarning.TabIndex = 12;
             lblTurboPumpWarning.Text = "-";
             // 
@@ -1874,7 +1841,7 @@ namespace VacX_OutSense
             // 
             lblTurboPumpSpeedHeader.BackColor = SystemColors.Info;
             lblTurboPumpSpeedHeader.BorderStyle = BorderStyle.FixedSingle;
-            lblTurboPumpSpeedHeader.Location = new Point(3, 143);
+            lblTurboPumpSpeedHeader.Location = new Point(3, 152);
             lblTurboPumpSpeedHeader.Name = "lblTurboPumpSpeedHeader";
             lblTurboPumpSpeedHeader.Padding = new Padding(5, 0, 0, 0);
             lblTurboPumpSpeedHeader.Size = new Size(527, 20);
@@ -1884,7 +1851,7 @@ namespace VacX_OutSense
             // 
             // lblTurboPumpSpeedSet
             // 
-            lblTurboPumpSpeedSet.Location = new Point(8, 166);
+            lblTurboPumpSpeedSet.Location = new Point(8, 175);
             lblTurboPumpSpeedSet.Name = "lblTurboPumpSpeedSet";
             lblTurboPumpSpeedSet.Size = new Size(65, 23);
             lblTurboPumpSpeedSet.TabIndex = 13;
@@ -1894,7 +1861,7 @@ namespace VacX_OutSense
             // numTurboPumpSpeed
             // 
             numTurboPumpSpeed.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            numTurboPumpSpeed.Location = new Point(73, 166);
+            numTurboPumpSpeed.Location = new Point(73, 175);
             numTurboPumpSpeed.Maximum = new decimal(new int[] { 630, 0, 0, 0 });
             numTurboPumpSpeed.Minimum = new decimal(new int[] { 60, 0, 0, 0 });
             numTurboPumpSpeed.Name = "numTurboPumpSpeed";
@@ -1905,7 +1872,7 @@ namespace VacX_OutSense
             // 
             // btnTurboPumpSpeedSet
             // 
-            btnTurboPumpSpeedSet.Location = new Point(148, 165);
+            btnTurboPumpSpeedSet.Location = new Point(148, 174);
             btnTurboPumpSpeedSet.Name = "btnTurboPumpSpeedSet";
             btnTurboPumpSpeedSet.Size = new Size(55, 25);
             btnTurboPumpSpeedSet.TabIndex = 15;
@@ -1914,7 +1881,7 @@ namespace VacX_OutSense
             // 
             // btnTurboPumpSpeedPerm
             // 
-            btnTurboPumpSpeedPerm.Location = new Point(208, 165);
+            btnTurboPumpSpeedPerm.Location = new Point(208, 174);
             btnTurboPumpSpeedPerm.Name = "btnTurboPumpSpeedPerm";
             btnTurboPumpSpeedPerm.Size = new Size(70, 25);
             btnTurboPumpSpeedPerm.TabIndex = 16;
@@ -1923,7 +1890,7 @@ namespace VacX_OutSense
             // 
             // lblTurboPumpStandby
             // 
-            lblTurboPumpStandby.Location = new Point(288, 166);
+            lblTurboPumpStandby.Location = new Point(288, 175);
             lblTurboPumpStandby.Name = "lblTurboPumpStandby";
             lblTurboPumpStandby.Size = new Size(65, 23);
             lblTurboPumpStandby.TabIndex = 17;
@@ -1933,7 +1900,7 @@ namespace VacX_OutSense
             // numTurboPumpStandbySpeed
             // 
             numTurboPumpStandbySpeed.Increment = new decimal(new int[] { 10, 0, 0, 0 });
-            numTurboPumpStandbySpeed.Location = new Point(353, 167);
+            numTurboPumpStandbySpeed.Location = new Point(353, 175);
             numTurboPumpStandbySpeed.Maximum = new decimal(new int[] { 630, 0, 0, 0 });
             numTurboPumpStandbySpeed.Name = "numTurboPumpStandbySpeed";
             numTurboPumpStandbySpeed.Size = new Size(70, 23);
@@ -1943,7 +1910,7 @@ namespace VacX_OutSense
             // 
             // btnTurboPumpStandbySet
             // 
-            btnTurboPumpStandbySet.Location = new Point(428, 166);
+            btnTurboPumpStandbySet.Location = new Point(428, 174);
             btnTurboPumpStandbySet.Name = "btnTurboPumpStandbySet";
             btnTurboPumpStandbySet.Size = new Size(55, 25);
             btnTurboPumpStandbySet.TabIndex = 19;
@@ -1961,7 +1928,7 @@ namespace VacX_OutSense
             panel2.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
             panel2.Location = new Point(3, 128);
             panel2.Name = "panel2";
-            panel2.Size = new Size(537, 196);
+            panel2.Size = new Size(537, 205);
             panel2.TabIndex = 12;
             panel2.TabStop = false;
             panel2.Text = "드라이 펌프";
@@ -2277,7 +2244,7 @@ namespace VacX_OutSense
             tabPage2.Location = new Point(4, 24);
             tabPage2.Name = "tabPage2";
             tabPage2.Padding = new Padding(3);
-            tabPage2.Size = new Size(1157, 718);
+            tabPage2.Size = new Size(1157, 796);
             tabPage2.TabIndex = 3;
             tabPage2.Text = "Log";
             tabPage2.UseVisualStyleBackColor = true;
@@ -2287,7 +2254,7 @@ namespace VacX_OutSense
             txtLog.Dock = DockStyle.Fill;
             txtLog.Location = new Point(3, 3);
             txtLog.Name = "txtLog";
-            txtLog.Size = new Size(1151, 712);
+            txtLog.Size = new Size(1151, 790);
             txtLog.TabIndex = 0;
             txtLog.Text = "";
             // 
@@ -2296,10 +2263,67 @@ namespace VacX_OutSense
             tabPageAutoRun.Location = new Point(4, 24);
             tabPageAutoRun.Name = "tabPageAutoRun";
             tabPageAutoRun.Padding = new Padding(3);
-            tabPageAutoRun.Size = new Size(1157, 718);
+            tabPageAutoRun.Size = new Size(1157, 796);
             tabPageAutoRun.TabIndex = 4;
             tabPageAutoRun.Text = "AutoRun";
             tabPageAutoRun.UseVisualStyleBackColor = true;
+            // 
+            // btnHoldSettings
+            // 
+            btnHoldSettings.Location = new Point(0, 0);
+            btnHoldSettings.Name = "btnHoldSettings";
+            btnHoldSettings.Size = new Size(75, 23);
+            btnHoldSettings.TabIndex = 0;
+            // 
+            // btnBakeoutSettings
+            // 
+            btnBakeoutSettings.Location = new Point(0, 0);
+            btnBakeoutSettings.Name = "btnBakeoutSettings";
+            btnBakeoutSettings.Size = new Size(75, 23);
+            btnBakeoutSettings.TabIndex = 0;
+            // 
+            // numCh1ReachCount
+            // 
+            numCh1ReachCount.Location = new Point(0, 0);
+            numCh1ReachCount.Name = "numCh1ReachCount";
+            numCh1ReachCount.Size = new Size(120, 23);
+            numCh1ReachCount.TabIndex = 0;
+            // 
+            // lblCh1ReachCount
+            // 
+            lblCh1ReachCount.Location = new Point(0, 0);
+            lblCh1ReachCount.Name = "lblCh1ReachCount";
+            lblCh1ReachCount.Size = new Size(100, 23);
+            lblCh1ReachCount.TabIndex = 0;
+            // 
+            // scientificPressureInput1
+            // 
+            scientificPressureInput1.Location = new Point(0, 0);
+            scientificPressureInput1.MinimumSize = new Size(150, 25);
+            scientificPressureInput1.Name = "scientificPressureInput1";
+            scientificPressureInput1.Size = new Size(185, 25);
+            scientificPressureInput1.TabIndex = 0;
+            // 
+            // btnCh1AutoStart
+            // 
+            btnCh1AutoStart.Location = new Point(0, 0);
+            btnCh1AutoStart.Name = "btnCh1AutoStart";
+            btnCh1AutoStart.Size = new Size(75, 23);
+            btnCh1AutoStart.TabIndex = 0;
+            // 
+            // lblCh1TargetPressure
+            // 
+            lblCh1TargetPressure.Location = new Point(0, 0);
+            lblCh1TargetPressure.Name = "lblCh1TargetPressure";
+            lblCh1TargetPressure.Size = new Size(100, 23);
+            lblCh1TargetPressure.TabIndex = 0;
+            // 
+            // chkCh1AutoStartEnabled
+            // 
+            chkCh1AutoStartEnabled.Location = new Point(0, 0);
+            chkCh1AutoStartEnabled.Name = "chkCh1AutoStartEnabled";
+            chkCh1AutoStartEnabled.Size = new Size(104, 24);
+            chkCh1AutoStartEnabled.TabIndex = 0;
             // 
             // lblLastOutput
             // 
@@ -2507,7 +2531,7 @@ namespace VacX_OutSense
             // 
             statusStrip.ImageScalingSize = new Size(24, 24);
             statusStrip.Items.AddRange(new ToolStripItem[] { toolStripStatusConnection, toolStripStatusVersion });
-            statusStrip.Location = new Point(0, 825);
+            statusStrip.Location = new Point(0, 903);
             statusStrip.Name = "statusStrip";
             statusStrip.Size = new Size(1171, 22);
             statusStrip.TabIndex = 2;
@@ -2559,7 +2583,7 @@ namespace VacX_OutSense
             // 
             // MainForm
             // 
-            ClientSize = new Size(1171, 847);
+            ClientSize = new Size(1171, 925);
             Controls.Add(tableLayoutPanelMain);
             Controls.Add(menuStrip);
             Controls.Add(statusStrip);
@@ -2580,9 +2604,8 @@ namespace VacX_OutSense
             tableLayoutPanel5.ResumeLayout(false);
             grpCh1Timer.ResumeLayout(false);
             grpCh1Timer.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numCh1Tolerance).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numCh1ReachCount).EndInit();
             ((System.ComponentModel.ISupportInitialize)numVentTargetTemp).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numCh1Tolerance).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Seconds).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Minutes).EndInit();
             ((System.ComponentModel.ISupportInitialize)numCh1Hours).EndInit();
@@ -2602,6 +2625,7 @@ namespace VacX_OutSense
             tableLayoutPanel1.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)numDryPumpSpeed).EndInit();
             tabPage2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)numCh1ReachCount).EndInit();
             ((System.ComponentModel.ISupportInitialize)numUpdateInterval).EndInit();
             ((System.ComponentModel.ISupportInitialize)numKd).EndInit();
             ((System.ComponentModel.ISupportInitialize)numKi).EndInit();
@@ -2676,6 +2700,9 @@ namespace VacX_OutSense
         private Label lblPIDChannel;
         private CheckBox chkChillerPIDEnabled;
         private GroupBox grpCh1Timer;
+        private Label lblEndAction;
+        private RadioButton rdoFullShutdown;
+        private RadioButton rdoHeaterOnly;
         private Label lblVentTempUnit;
         private NumericUpDown numVentTargetTemp;
         private Label lblVentTargetTemp;

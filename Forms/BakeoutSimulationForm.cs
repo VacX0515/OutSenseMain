@@ -39,6 +39,7 @@ namespace VacX_OutSense.Forms
         private NumericUpDown numHeaterInsulation;
 
         // 시뮬레이션 제어
+        private ComboBox cmbControlMode;
         private NumericUpDown numSimSpeed;
         private Button btnStart;
         private Button btnStop;
@@ -134,6 +135,18 @@ namespace VacX_OutSense.Forms
 
             y += 10;
             AddSectionLabel(panelLeft, "■ 시뮬레이션", ref y);
+
+            panelLeft.Controls.Add(new Label { Text = "제어 모드:", Location = new Point(10, y + 3), AutoSize = true, ForeColor = Color.LightGray });
+            cmbControlMode = new ComboBox
+            {
+                Location = new Point(100, y), Size = new Size(150, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Color.FromArgb(45, 45, 45), ForeColor = Color.White
+            };
+            cmbControlMode.Items.AddRange(new object[] { "기존 PI", "Adaptive (자기학습)" });
+            cmbControlMode.SelectedIndex = 1;
+            panelLeft.Controls.Add(cmbControlMode);
+            y += 30;
 
             numSimSpeed = AddNumericRow(panelLeft, "가속 배율:", 10000, 1, 100000, 1000, 0, ref y);
 
@@ -438,6 +451,7 @@ namespace VacX_OutSense.Forms
             double heatLossPct = (double)numHeatLoss.Value;    // %/100°C
             double heaterInsulationPct = (double)numHeaterInsulation.Value; // %
             int simSpeed = (int)numSimSpeed.Value;
+            bool useAdaptive = cmbControlMode.SelectedIndex == 1;
 
             double rampRatePerSec = rampRate / 3600.0;
             double effectiveMax = heaterMax;
@@ -498,7 +512,15 @@ namespace VacX_OutSense.Forms
             }
             AppendLog("");
 
-            // ── 승온 + 유지 루프 ──
+            if (useAdaptive)
+            {
+                await RunAdaptiveSimAsync(ct, targetTemp, rampRate, holdMinutes, heaterMax,
+                    tolerance, initialTemp, heaterTau, sampleTau, heatLossPct,
+                    heaterInsulationPct, simSpeed, ambientTemp, alphaH, alphaS, lossFactor);
+                return;
+            }
+
+            // ── 기존 PI: 승온 + 유지 루프 ──
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
@@ -918,5 +940,231 @@ namespace VacX_OutSense.Forms
             _cts?.Cancel();
             base.OnFormClosing(e);
         }
+
+        #region Adaptive 시뮬레이션
+
+        private async Task RunAdaptiveSimAsync(CancellationToken ct,
+            double targetTemp, double rampRate, double holdMinutes, double heaterMax,
+            double tolerance, double initialTemp, double heaterTau, double sampleTau,
+            double heatLossPct, double heaterInsulationPct, int simSpeed,
+            double ambientTemp, double alphaH, double alphaS, double lossFactor)
+        {
+            const double dt = 1.0; // 1초 주기 (Adaptive는 1초)
+
+            double ch1SV = initialTemp;
+            double ch1PV = initialTemp;
+            double monitorTemp = initialTemp;
+
+            // Adaptive 상태
+            double offset = Math.Max(3.0, 0.05 * (targetTemp - initialTemp));
+            double probeStep = offset;
+            int probeEsc = 0;
+            double equilibriumOffset = 0;
+            double holdCorrection = 0;
+            string phase = "Probe";
+            bool temperatureReached = false;
+            double holdStartSec = 0;
+
+            // 변화율 버퍼
+            var rateBuf = new Queue<(double time, double temp)>();
+            double smoothRate = 0;
+
+            double simTimeSec = 0;
+            int logInterval = Math.Max(1, 60); // 1분마다
+            int stepCount = 0;
+            double probeCheckSec = 0;
+
+            AppendLog($"=== Adaptive 시뮬레이션 시작 ===");
+            AppendLog($"목표: {targetTemp}°C, 승온: {rampRate}°C/h, 히터 상한: {heaterMax}°C");
+
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                double timeMin = simTimeSec / 60.0;
+
+                // === 열 모델 시뮬레이션 ===
+                double ch1Response = 1.0 - Math.Exp(-dt / heaterTau);
+                ch1PV += ch1Response * (ch1SV - ch1PV);
+                ch1PV -= lossFactor * (ch1PV - ambientTemp) * (1 - heaterInsulationPct / 100.0) * dt;
+
+                double sampleResponse = 1.0 - Math.Exp(-dt / sampleTau);
+                monitorTemp += sampleResponse * (ch1PV - monitorTemp) * dt;
+                monitorTemp -= lossFactor * (monitorTemp - ambientTemp) * dt;
+
+                // 변화율 추정
+                rateBuf.Enqueue((simTimeSec, monitorTemp));
+                while (rateBuf.Count > 1 && rateBuf.Last().time - rateBuf.First().time > 30)
+                    rateBuf.Dequeue();
+                double rate = CalcSimRate(rateBuf);
+
+                // === 상태별 제어 ===
+                if (phase == "Probe")
+                {
+                    ch1SV = Math.Min(monitorTemp + offset, heaterMax);
+
+                    if (simTimeSec - probeCheckSec >= 20)
+                    {
+                        probeCheckSec = simTimeSec;
+                        if (Math.Abs(rate) < 0.015)
+                        {
+                            probeEsc++;
+                            offset += probeStep;
+                            offset = Math.Min(offset, heaterMax - monitorTemp - 3);
+                            AppendLog($"[{timeMin:F1}분] Probe #{probeEsc}: offset→{offset:F1}°C");
+                            if (probeEsc > 10) { phase = "Ramp"; AppendLog($"→ Ramp (강제)"); }
+                        }
+                        else
+                        {
+                            // 응답 감지 → Ramp 전이
+                            if (Math.Abs(rate) > 0.005)
+                            {
+                                double ratio = offset / rate;
+                                offset = (rampRate / 60.0) * ratio;
+                                offset = Math.Max(0.5, Math.Min(offset, heaterMax - monitorTemp - 3));
+                            }
+                            phase = "Ramp";
+                            AppendLog($"[{timeMin:F1}분] → Ramp: offset={offset:F1}°C (rate={rate:F3}°C/min)");
+                        }
+                    }
+                }
+                else if (phase == "Ramp")
+                {
+                    double rateTarget = rampRate / 60.0;
+                    double rampedTarget = Math.Min(initialTemp + rateTarget * timeMin, targetTemp);
+
+                    double convBand = Math.Max(1.5, (targetTemp - initialTemp) * 0.05);
+                    if (monitorTemp >= targetTemp - convBand)
+                    {
+                        phase = "Converge";
+                        equilibriumOffset = offset * 0.3;
+                        AppendLog($"[{timeMin:F1}분] → Converge: T_s={monitorTemp:F1}°C");
+                    }
+                    else
+                    {
+                        double rateError = rateTarget - rate;
+                        double gain = 0.15 / Math.Max(1.0, offset * 0.5);
+                        offset += gain * rateError;
+                        offset = Math.Max(0.2, Math.Min(offset, heaterMax - monitorTemp - 3));
+
+                        double trackErr = rampedTarget - monitorTemp;
+                        double corr = Math.Max(-2.0, Math.Min(trackErr * 0.1, 3.0));
+                        ch1SV = Math.Min(monitorTemp + offset + corr, heaterMax);
+                    }
+                }
+                else if (phase == "Converge")
+                {
+                    double remaining = targetTemp - monitorTemp;
+                    double convBand = Math.Max(1.5, (targetTemp - initialTemp) * 0.05);
+                    double frac = Math.Max(0, Math.Min(1, remaining / convBand));
+                    double rateTarget = (rampRate / 60.0) * frac;
+
+                    double rateError = rateTarget - rate;
+                    double gain = 0.1 / Math.Max(1.0, offset * 0.5);
+                    offset += gain * rateError;
+                    offset = Math.Max(0.2, Math.Min(offset, heaterMax - monitorTemp - 3));
+
+                    double pull = remaining * 0.15;
+                    ch1SV = Math.Min(monitorTemp + offset + pull, heaterMax);
+
+                    if (frac < 0.2)
+                        equilibriumOffset = 0.95 * equilibriumOffset + 0.05 * (ch1PV - targetTemp);
+
+                    if (Math.Abs(remaining) < 0.5 && Math.Abs(rate) < 0.03 && simTimeSec > 60)
+                    {
+                        equilibriumOffset = ch1PV - targetTemp;
+                        phase = "Hold";
+                        holdStartSec = simTimeSec;
+                        temperatureReached = true;
+                        holdCorrection = 0;
+                        AppendLog($"[{timeMin:F1}분] → Hold: eq_offset={equilibriumOffset:F1}°C");
+                    }
+                }
+                else if (phase == "Hold")
+                {
+                    ch1SV = Math.Min(targetTemp + equilibriumOffset + holdCorrection, heaterMax);
+
+                    double holdElapsed = simTimeSec - holdStartSec;
+                    if (holdElapsed > holdMinutes * 60)
+                    {
+                        AppendLog($"[{timeMin:F1}분] ★ 유지 완료!");
+                        break;
+                    }
+
+                    // 60초마다 보정
+                    if ((int)holdElapsed % 60 == 0 && holdElapsed > 5)
+                    {
+                        double err = targetTemp - monitorTemp;
+                        if (Math.Abs(err) > 0.3)
+                        {
+                            double adj = Math.Max(-1.0, Math.Min(err * 0.3, 1.0));
+                            holdCorrection += adj;
+                            equilibriumOffset += holdCorrection * 0.1;
+                            holdCorrection *= 0.9;
+                        }
+                    }
+                }
+
+                // 오버슈트 추적
+                if (monitorTemp > targetTemp + 0.1 && monitorTemp - targetTemp > _maxOvershoot)
+                    _maxOvershoot = monitorTemp - targetTemp;
+
+                // 데이터 기록
+                _dataTime.Add(timeMin);
+                _dataCh1SV.Add(ch1SV);
+                _dataCh1PV.Add(ch1PV);
+                _dataMonitor.Add(monitorTemp);
+                _dataRampTarget.Add(phase == "Ramp" ?
+                    Math.Min(initialTemp + (rampRate / 60.0) * timeMin, targetTemp) : targetTemp);
+                _dataP.Add(offset);
+                _dataI.Add(equilibriumOffset);
+                _dataD.Add(rate);
+                _dataError.Add(targetTemp - monitorTemp);
+
+                // 로그
+                if (stepCount % logInterval == 0)
+                {
+                    AppendLog($"[{timeMin:F1}분] {phase} | 샘플:{monitorTemp:F1}°C SV:{ch1SV:F1}°C PV:{ch1PV:F1}°C offset:{offset:F1} rate:{rate:F3}°C/min");
+                }
+
+                // UI 갱신
+                if (stepCount % 10 == 0)
+                {
+                    UpdateUI(phase, timeMin, monitorTemp, ch1SV, ch1PV);
+                    UpdateCharts();
+                    await Task.Delay(Math.Max(1, 1000 / simSpeed), ct);
+                }
+
+                simTimeSec += dt;
+                stepCount++;
+
+                if (simTimeSec > 86400) { AppendLog("24시간 초과 — 종료"); break; }
+            }
+
+            UpdateCharts();
+            AppendLog($"=== 시뮬레이션 완료 ===");
+            AppendLog($"오버슈트: {_maxOvershoot:F2}°C");
+            AppendLog($"평형 오프셋: {equilibriumOffset:F1}°C");
+        }
+
+        private double CalcSimRate(Queue<(double time, double temp)> buf)
+        {
+            if (buf.Count < 5) return 0;
+            var data = buf.ToArray();
+            double t0 = data[0].time; int n = data.Length;
+            double sT = 0, sV = 0, sTT = 0, sTV = 0;
+            for (int i = 0; i < n; i++)
+            {
+                double t = data[i].time - t0;
+                sT += t; sV += data[i].temp; sTT += t * t; sTV += t * data[i].temp;
+            }
+            double d = n * sTT - sT * sT;
+            return Math.Abs(d) < 1e-10 ? 0 : (n * sTV - sT * sV) / d * 60.0;
+        }
+
+        private double _targetTemp_sim; // for overshoot tracking
+
+        #endregion
     }
 }
+

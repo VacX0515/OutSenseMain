@@ -184,7 +184,7 @@ namespace VacX_OutSense.Utils
         }
 
         /// <summary>
-        /// 온도 데이터 업데이트 (8채널 지원)
+        /// 온도 데이터 업데이트 (12채널 지원)
         /// </summary>
         private void UpdateTemperatureData(UIDataSnapshot snapshot)
         {
@@ -199,8 +199,8 @@ namespace VacX_OutSense.Utils
                 snapshot.BathCirculator.HasWarning
             );
 
-            // 온도 컨트롤러 (8채널: 메인 2 + 확장 3)
-            for (int i = 0; i < 8; i++)
+            // 온도 컨트롤러 (12채널: 메인 4 + 확장 4×2)
+            for (int i = 0; i < snapshot.TempController.Channels.Length; i++)
             {
                 if (i < snapshot.TempController.Channels.Length)
                 {

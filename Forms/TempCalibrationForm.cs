@@ -11,12 +11,16 @@ namespace VacX_OutSense.Forms
         private TempCalibrationConfig _config;
         public TempCalibrationConfig Configuration => _config;
 
-        private static readonly string[] ChannelNames = { "M-CH1", "M-CH2", "M-CH3", "M-CH4", "E-CH1", "E-CH2", "E-CH3", "E-CH4" };
+        private static readonly string[] ChannelNames = {
+            "M-CH1", "M-CH2", "M-CH3", "M-CH4",
+            "E1-CH1", "E1-CH2", "E1-CH3", "E1-CH4",
+            "E2-CH1", "E2-CH2", "E2-CH3", "E2-CH4"
+        };
 
-        private CheckBox[] chkEnabled = new CheckBox[8];
-        private NumericUpDown[] numOffset = new NumericUpDown[8];
-        private NumericUpDown[] numGain = new NumericUpDown[8];
-        private TextBox[] txtNote = new TextBox[8];
+        private CheckBox[] chkEnabled = new CheckBox[12];
+        private NumericUpDown[] numOffset = new NumericUpDown[12];
+        private NumericUpDown[] numGain = new NumericUpDown[12];
+        private TextBox[] txtNote = new TextBox[12];
 
         // 이온게이지
         private CheckBox chkIGEnabled;
@@ -35,7 +39,7 @@ namespace VacX_OutSense.Forms
         private void InitializeUI()
         {
             Text = "센서 / 게이지 교정";
-            Size = new Size(560, 620);
+            Size = new Size(560, 740);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -62,7 +66,7 @@ namespace VacX_OutSense.Forms
             AddHeaderLabel("메모", 370, y, 160);
 
             y = 55;
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < ChannelNames.Length; i++)
             {
                 int rowY = y + i * 28;
 
@@ -119,7 +123,7 @@ namespace VacX_OutSense.Forms
             }
 
             // ── 이온게이지 섹션 ──
-            int igY = y + 8 * 28 + 15;
+            int igY = y + ChannelNames.Length * 28 + 15;
 
             // 구분선
             Controls.Add(new Label
@@ -270,7 +274,10 @@ namespace VacX_OutSense.Forms
 
         private void LoadFromConfig()
         {
-            for (int i = 0; i < 8; i++)
+            // 채널 배열이 부족하면 확장
+            _config.EnsureChannelCount(ChannelNames.Length);
+
+            for (int i = 0; i < ChannelNames.Length; i++)
             {
                 var cal = _config.Channels[i];
                 chkEnabled[i].Checked = cal.Enabled;
@@ -279,7 +286,7 @@ namespace VacX_OutSense.Forms
                 txtNote[i].Text = cal.Note ?? "";
             }
 
-            var ig = _config.IonGauge;
+            var ig = _config.IonGauge ?? new Core.Devices.TempController.GaugeCalibration();
             cmbIGModel.SelectedIndex = (int)ig.Model;
             chkIGEnabled.Checked = ig.Enabled;
             numIGGain.Value = ClampDecimal(ig.Gain, numIGGain);
@@ -289,7 +296,9 @@ namespace VacX_OutSense.Forms
 
         private void SaveToConfig()
         {
-            for (int i = 0; i < 8; i++)
+            _config.EnsureChannelCount(ChannelNames.Length);
+
+            for (int i = 0; i < ChannelNames.Length; i++)
             {
                 _config.Channels[i].Enabled = chkEnabled[i].Checked;
                 _config.Channels[i].Offset = (double)numOffset[i].Value;

@@ -1620,8 +1620,8 @@ namespace VacX_OutSense.Core.AutoRun
             }
             LogInfo($"승온 타임아웃: {riseTimeoutMinutes}분 (온도 차이: {tempGap:F1}°C, 초기: {initialMonitorTemp:F1}°C{(_config.BakeoutRiseTimeoutMinutes > 0 ? ", 수동설정" : ", 자동계산")})");
 
-            // ★ [Fix#1] 하드웨어 온도 상한 확인 — 모든 모드에서 목표 온도 vs 하드웨어 상한 검증
-            double effectiveMaxTemp = _config.BakeoutHeaterMaxTemperature;
+            // ★ [Fix#1] 하드웨어 온도 상한 확인 — 모드별 상한 분리
+            double effectiveMaxTemp = _config.GetEffectiveHeaterMaxTemperature();
             if (_mainForm._tempController?.IsConnected == true)
             {
                 var ch1StatusForMax = _mainForm._tempController.Status.ChannelStatus[0];
@@ -1729,7 +1729,7 @@ namespace VacX_OutSense.Core.AutoRun
 
                 // ★ 실시간 조정 반영: 매 사이클 config에서 갱신
                 targetTemperature = IsBakeoutMode ? _config.BakeoutTargetTemperature : _config.HeaterCh1SetTemperature;
-                effectiveMaxTemp = _config.BakeoutHeaterMaxTemperature;
+                effectiveMaxTemp = _config.GetEffectiveHeaterMaxTemperature();
                 maxIntegral = effectiveMaxTemp - targetTemperature;
                 if (maxIntegral < 0) maxIntegral = 0;
                 reachTolerance = _config.BakeoutTolerance > 0 ? _config.BakeoutTolerance : 1.0;
@@ -3100,7 +3100,7 @@ namespace VacX_OutSense.Core.AutoRun
                     var status = _mainForm._tempController.Status;
 
                     // 전체 채널 온도 읽기
-                    for (int i = 0; i < Math.Min(8, status.ChannelStatus.Length); i++)
+                    for (int i = 0; i < Math.Min(measurements.ChannelTemperatures.Length, status.ChannelStatus.Length); i++)
                     {
                         var ch = status.ChannelStatus[i];
                         measurements.ChannelTemperatures[i] = ch.Dot == 1

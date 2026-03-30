@@ -50,6 +50,10 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh6.CheckedChanged += (s, e) => UpdateChannelInterlock();
             chkBakeoutMonitorCh7.CheckedChanged += (s, e) => UpdateChannelInterlock();
             chkBakeoutMonitorCh8.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh9.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh10.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh11.CheckedChanged += (s, e) => UpdateChannelInterlock();
+            chkBakeoutMonitorCh12.CheckedChanged += (s, e) => UpdateChannelInterlock();
         }
 
         private void UpdateChannelInterlock()
@@ -64,6 +68,10 @@ namespace VacX_OutSense.Forms
                 chkBakeoutMonitorCh6.Checked = false; chkBakeoutMonitorCh6.Enabled = false; chkBakeoutMonitorCh6.Visible = false;
                 chkBakeoutMonitorCh7.Checked = false; chkBakeoutMonitorCh7.Enabled = false; chkBakeoutMonitorCh7.Visible = false;
                 chkBakeoutMonitorCh8.Checked = false; chkBakeoutMonitorCh8.Enabled = false; chkBakeoutMonitorCh8.Visible = false;
+                chkBakeoutMonitorCh9.Checked = false; chkBakeoutMonitorCh9.Enabled = false; chkBakeoutMonitorCh9.Visible = false;
+                chkBakeoutMonitorCh10.Checked = false; chkBakeoutMonitorCh10.Enabled = false; chkBakeoutMonitorCh10.Visible = false;
+                chkBakeoutMonitorCh11.Checked = false; chkBakeoutMonitorCh11.Enabled = false; chkBakeoutMonitorCh11.Visible = false;
+                chkBakeoutMonitorCh12.Checked = false; chkBakeoutMonitorCh12.Enabled = false; chkBakeoutMonitorCh12.Visible = false;
                 lblBakeoutMonitorChannel.Text = "모니터 채널 (TM4 PID):";
             }
             else
@@ -76,6 +84,10 @@ namespace VacX_OutSense.Forms
                 chkBakeoutMonitorCh6.Enabled = true; chkBakeoutMonitorCh6.Visible = true;
                 chkBakeoutMonitorCh7.Enabled = true; chkBakeoutMonitorCh7.Visible = true;
                 chkBakeoutMonitorCh8.Enabled = true; chkBakeoutMonitorCh8.Visible = true;
+                chkBakeoutMonitorCh9.Enabled = true; chkBakeoutMonitorCh9.Visible = true;
+                chkBakeoutMonitorCh10.Enabled = true; chkBakeoutMonitorCh10.Visible = true;
+                chkBakeoutMonitorCh11.Enabled = true; chkBakeoutMonitorCh11.Visible = true;
+                chkBakeoutMonitorCh12.Enabled = true; chkBakeoutMonitorCh12.Visible = true;
                 lblBakeoutMonitorChannel.Text = "모니터 채널 (MAX):";
             }
         }
@@ -138,6 +150,10 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh6.Checked = _config.BakeoutMonitorCh6;
             chkBakeoutMonitorCh7.Checked = _config.BakeoutMonitorCh7;
             chkBakeoutMonitorCh8.Checked = _config.BakeoutMonitorCh8;
+            chkBakeoutMonitorCh9.Checked = _config.BakeoutMonitorCh9;
+            chkBakeoutMonitorCh10.Checked = _config.BakeoutMonitorCh10;
+            chkBakeoutMonitorCh11.Checked = _config.BakeoutMonitorCh11;
+            chkBakeoutMonitorCh12.Checked = _config.BakeoutMonitorCh12;
             txtBakeoutHeaterMax.Text = _config.BakeoutHeaterMaxTemperature.ToString("F1");
             txtBakeoutMaxDeltaT.Text = _config.BakeoutMaxDeltaT.ToString("F0");
             txtBakeoutTolerance.Text = _config.BakeoutTolerance.ToString("F1");
@@ -210,6 +226,10 @@ namespace VacX_OutSense.Forms
                 _config.BakeoutMonitorCh6 = chkBakeoutMonitorCh6.Checked;
                 _config.BakeoutMonitorCh7 = chkBakeoutMonitorCh7.Checked;
                 _config.BakeoutMonitorCh8 = chkBakeoutMonitorCh8.Checked;
+                _config.BakeoutMonitorCh9 = chkBakeoutMonitorCh9.Checked;
+                _config.BakeoutMonitorCh10 = chkBakeoutMonitorCh10.Checked;
+                _config.BakeoutMonitorCh11 = chkBakeoutMonitorCh11.Checked;
+                _config.BakeoutMonitorCh12 = chkBakeoutMonitorCh12.Checked;
                 var selected = _config.GetBakeoutMonitorChannels();
                 _config.BakeoutMonitorChannel = selected.Count > 0 ? selected[0] : 2;
                 _config.BakeoutHeaterMaxTemperature = double.Parse(txtBakeoutHeaterMax.Text);
@@ -255,6 +275,10 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh6.Visible = isBakeout;
             chkBakeoutMonitorCh7.Visible = isBakeout;
             chkBakeoutMonitorCh8.Visible = isBakeout;
+            chkBakeoutMonitorCh9.Visible = isBakeout;
+            chkBakeoutMonitorCh10.Visible = isBakeout;
+            chkBakeoutMonitorCh11.Visible = isBakeout;
+            chkBakeoutMonitorCh12.Visible = isBakeout;
             lblBakeoutHeaterMax.Visible = isBakeout;
             txtBakeoutHeaterMax.Visible = isBakeout;
             lblBakeoutMaxDeltaT.Visible = isBakeout;

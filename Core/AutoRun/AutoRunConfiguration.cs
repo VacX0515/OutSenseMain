@@ -271,6 +271,10 @@ namespace VacX_OutSense.Core.AutoRun
         public bool BakeoutMonitorCh6 { get; set; } = false;
         public bool BakeoutMonitorCh7 { get; set; } = false;
         public bool BakeoutMonitorCh8 { get; set; } = false;
+        public bool BakeoutMonitorCh9 { get; set; } = false;
+        public bool BakeoutMonitorCh10 { get; set; } = false;
+        public bool BakeoutMonitorCh11 { get; set; } = false;
+        public bool BakeoutMonitorCh12 { get; set; } = false;
 
         /// <summary>
         /// [Bakeout] 프로파일 이름
@@ -296,11 +300,30 @@ namespace VacX_OutSense.Core.AutoRun
             if (BakeoutMonitorCh6) channels.Add(6);
             if (BakeoutMonitorCh7) channels.Add(7);
             if (BakeoutMonitorCh8) channels.Add(8);
+            if (BakeoutMonitorCh9) channels.Add(9);
+            if (BakeoutMonitorCh10) channels.Add(10);
+            if (BakeoutMonitorCh11) channels.Add(11);
+            if (BakeoutMonitorCh12) channels.Add(12);
 
             if (channels.Count == 0)
                 channels.Add(BakeoutMonitorChannel);
 
             return channels;
+        }
+
+        /// <summary>
+        /// 현재 실험 모드에 맞는 히터 상한 온도 반환
+        /// - Bakeout: BakeoutHeaterMaxTemperature (PI 피드백 상한)
+        /// - Outgassing: HeaterCh1SetTemperature + 여유분 (TM4 자체 PID가 제어하므로 목표온도 기준)
+        /// </summary>
+        public double GetEffectiveHeaterMaxTemperature()
+        {
+            if (ExperimentType == ExperimentType.Bakeout)
+                return BakeoutHeaterMaxTemperature;
+
+            // 아웃게싱: TM4 자체 PID 제어 → 목표온도 + 충분한 여유분
+            // (하드웨어 상한은 별도 검증하므로 여기서는 소프트웨어 제한만)
+            return Math.Max(HeaterCh1SetTemperature + 50, 300);
         }
 
         /// <summary>
@@ -477,6 +500,10 @@ namespace VacX_OutSense.Core.AutoRun
             BakeoutMonitorCh6 = defaultConfig.BakeoutMonitorCh6;
             BakeoutMonitorCh7 = defaultConfig.BakeoutMonitorCh7;
             BakeoutMonitorCh8 = defaultConfig.BakeoutMonitorCh8;
+            BakeoutMonitorCh9 = defaultConfig.BakeoutMonitorCh9;
+            BakeoutMonitorCh10 = defaultConfig.BakeoutMonitorCh10;
+            BakeoutMonitorCh11 = defaultConfig.BakeoutMonitorCh11;
+            BakeoutMonitorCh12 = defaultConfig.BakeoutMonitorCh12;
             BakeoutProfileName = defaultConfig.BakeoutProfileName;
         }
 

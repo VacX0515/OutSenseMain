@@ -32,7 +32,10 @@ namespace VacX_OutSense.Utils
         private double _updateInterval = 10.0;
         private int _targetChannelIndex = 1; // 기본: CH2 (인덱스 1)
 
-        private static readonly string[] ChannelNames = { "CH1", "CH2", "CH3", "CH4", "CH5" };
+        private static readonly string[] ChannelNames = {
+            "CH1", "CH2", "CH3", "CH4", "CH5", "CH6",
+            "CH7", "CH8", "CH9", "CH10", "CH11", "CH12"
+        };
 
         // 칠러 출력 온도 범위
         private const double CHILLER_MIN_TEMP = -10.0;
@@ -43,6 +46,9 @@ namespace VacX_OutSense.Utils
         private const int MAX_CONSECUTIVE_ERRORS = 5;
         private DateTime _lastSuccessTime = DateTime.MinValue;
         private bool _chillerAutoStarted = false;
+
+        // 적응 학습
+        private readonly ChillerPIDAdaptive _adaptive = new ChillerPIDAdaptive();
 
         // === 하위 호환 속성 (AutoRun 등 기존 코드에서 사용) ===
 
@@ -68,7 +74,7 @@ namespace VacX_OutSense.Utils
             get => _targetChannelIndex;
             set
             {
-                int clamped = Math.Max(0, Math.Min(4, value));
+                int clamped = Math.Max(0, Math.Min(11, value));
                 if (_targetChannelIndex != clamped)
                 {
                     _targetChannelIndex = clamped;
@@ -125,12 +131,27 @@ namespace VacX_OutSense.Utils
         }
 
         public PIDController PID => _pidController;
+        public ChillerPIDAdaptive Adaptive => _adaptive;
         public double LastOutput { get; private set; }
         /// <summary>마지막 측정 온도 (선택된 채널)</summary>
         public double LastChannelTemperature { get; private set; }
         /// <summary>하위 호환</summary>
         public double LastCh2Temperature => LastChannelTemperature;
         public double LastChillerSetpoint { get; private set; }
+
+        /// <summary>적응 학습 활성화 여부</summary>
+        public bool AdaptiveEnabled
+        {
+            get => _adaptive.Enabled;
+            set
+            {
+                _adaptive.Enabled = value;
+                if (value)
+                    _adaptive.ResetBaseline(_pidController.Kp, _pidController.Ki, _pidController.Kd);
+                SaveSettings();
+                LogInfo($"적응 학습 {(value ? "활성화" : "비활성화")}");
+            }
+        }
 
         #endregion
 
@@ -140,19 +161,26 @@ namespace VacX_OutSense.Utils
         {
             _mainForm = mainForm ?? throw new ArgumentNullException(nameof(mainForm));
 
-            // PID 기본 파라미터 (온도 제어에 적합한 보수적 값)
+            // PID 기본 파라미터 — 출력은 목표온도 기준 보정값 (±범위)
+            double correctionRange = 15.0; // 최대 ±15°C 보정
             _pidController = new PIDController(
-                kp: 2.0,
-                ki: 0.005,
-                kd: 1.0,
-                outputMin: CHILLER_MIN_TEMP,
-                outputMax: CHILLER_MAX_TEMP
+                kp: 0.8,
+                ki: 0.003,
+                kd: 0.5,
+                outputMin: -correctionRange,
+                outputMax: correctionRange
             );
-            _pidController.Deadband = 0.2;
+            _pidController.Deadband = 0.3;
 
             _controlTimer = new System.Timers.Timer(_updateInterval * 1000);
             _controlTimer.Elapsed += ControlTimer_Elapsed;
             _controlTimer.AutoReset = true;
+
+            // 적응 학습 이벤트
+            _adaptive.GainAdjusted += (s, e) =>
+            {
+                LogInfo($"적응 학습 — Kp:{e.Kp:F3} Ki:{e.Ki:F4} Kd:{e.Kd:F3} ({e.Reason})");
+            };
 
             // 저장된 설정 로드
             LoadSettings();
@@ -183,10 +211,11 @@ namespace VacX_OutSense.Utils
             EnsureChillerRunning();
 
             _pidController.Reset();
+            _adaptive.ResetBaseline(_pidController.Kp, _pidController.Ki, _pidController.Kd);
             _consecutiveErrors = 0;
             _controlTimer.Start();
 
-            LogInfo($"칠러 PID 시작 ({ChannelNames[_targetChannelIndex]} 목표: {_targetTemperature:F1}°C)");
+            LogInfo($"칠러 PID 시작 ({ChannelNames[_targetChannelIndex]} 목표: {_targetTemperature:F1}°C, 적응:{_adaptive.Enabled})");
         }
 
         private void Stop()
@@ -279,12 +308,13 @@ namespace VacX_OutSense.Utils
                 return;
             }
 
-            // PID 계산 — 출력이 곧 칠러 설정온도
-            double pidOutput = _pidController.Calculate(_targetTemperature, chTemp);
-            LastOutput = pidOutput;
+            // PID 계산 — 출력은 목표온도 기준 보정값
+            double pidCorrection = _pidController.Calculate(_targetTemperature, chTemp);
+            LastOutput = pidCorrection;
 
-            // 칠러 설정온도 = PID 출력 (직접 제어)
-            double chillerSetpoint = Math.Max(CHILLER_MIN_TEMP, Math.Min(CHILLER_MAX_TEMP, pidOutput));
+            // 칠러 설정온도 = 목표온도 + PID 보정값 (feedforward 방식)
+            double chillerSetpoint = _targetTemperature + pidCorrection;
+            chillerSetpoint = Math.Max(CHILLER_MIN_TEMP, Math.Min(CHILLER_MAX_TEMP, chillerSetpoint));
             LastChillerSetpoint = chillerSetpoint;
 
             // 칠러에 온도 설정
@@ -294,7 +324,7 @@ namespace VacX_OutSense.Utils
             {
                 _consecutiveErrors = 0;
                 _lastSuccessTime = DateTime.Now;
-                LogDebug($"PID — {chName}: {chTemp:F1}°C (목표: {_targetTemperature:F1}), 칠러→{chillerSetpoint:F1}°C");
+                LogDebug($"PID — {chName}: {chTemp:F1}°C (목표: {_targetTemperature:F1}), 보정:{pidCorrection:F1}, 칠러→{chillerSetpoint:F1}°C");
             }
             else
             {
@@ -302,7 +332,17 @@ namespace VacX_OutSense.Utils
                 LogWarning("칠러 온도 설정 실패");
             }
 
-            LogPIDData(chTemp, pidOutput, chillerSetpoint);
+            // 적응 학습 — 매 사이클 샘플 수집, 주기적으로 게인 조정
+            double error = _targetTemperature - chTemp;
+            var adjusted = _adaptive.Update(error, chTemp,
+                _pidController.Kp, _pidController.Ki, _pidController.Kd);
+            if (adjusted.HasValue)
+            {
+                _pidController.SetParameters(adjusted.Value.kp, adjusted.Value.ki, adjusted.Value.kd);
+                SaveSettings();
+            }
+
+            LogPIDData(chTemp, pidCorrection, chillerSetpoint);
         }
 
         #endregion
@@ -377,7 +417,8 @@ namespace VacX_OutSense.Utils
                     UpdateInterval = _updateInterval,
                     Kp = _pidController.Kp,
                     Ki = _pidController.Ki,
-                    Kd = _pidController.Kd
+                    Kd = _pidController.Kd,
+                    AdaptiveEnabled = _adaptive.Enabled
                 };
 
                 string dir = Path.GetDirectoryName(SettingsPath);
@@ -407,10 +448,11 @@ namespace VacX_OutSense.Utils
 
                 _suppressSave = true;
                 _targetTemperature = settings.TargetTemperature;
-                _targetChannelIndex = Math.Max(0, Math.Min(4, settings.TargetChannelIndex));
+                _targetChannelIndex = Math.Max(0, Math.Min(11, settings.TargetChannelIndex));
                 _updateInterval = Math.Max(1.0, settings.UpdateInterval);
                 _controlTimer.Interval = _updateInterval * 1000;
                 _pidController.SetParameters(settings.Kp, settings.Ki, settings.Kd);
+                _adaptive.Enabled = settings.AdaptiveEnabled;
                 _suppressSave = false;
 
                 LogInfo($"PID 설정 로드 — 채널:{ChannelNames[_targetChannelIndex]}, 목표:{_targetTemperature:F1}°C, Kp:{settings.Kp:F3}, Ki:{settings.Ki:F3}, Kd:{settings.Kd:F3}");
@@ -468,8 +510,9 @@ namespace VacX_OutSense.Utils
         /// <summary>타겟 채널 인덱스 (0=CH1, 1=CH2, ..., 4=CH5)</summary>
         public int TargetChannelIndex { get; set; } = 1;
         public double UpdateInterval { get; set; } = 10.0;
-        public double Kp { get; set; } = 2.0;
-        public double Ki { get; set; } = 0.005;
-        public double Kd { get; set; } = 1.0;
+        public double Kp { get; set; } = 0.8;
+        public double Ki { get; set; } = 0.003;
+        public double Kd { get; set; } = 0.5;
+        public bool AdaptiveEnabled { get; set; } = true;
     }
 }

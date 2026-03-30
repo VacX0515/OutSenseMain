@@ -98,21 +98,37 @@ namespace VacX_OutSense.Core.Devices.TempController
 
         // 확장 모듈 관련 필드
         private readonly bool _hasExpansion = false;
-        private readonly int _expansionSlaveAddress = 2;
-        private readonly int _expansionNumChannels = 0;
+        private readonly int _expansionSlaveAddress = 2;   // 하위호환
+        private readonly int _expansionNumChannels = 0;    // 하위호환
         private readonly int _totalChannels;
 
+        /// <summary>확장 모듈 정보</summary>
+        private struct ExpansionModule
+        {
+            public int SlaveAddress;
+            public int NumChannels;
+            public int GlobalStartIndex; // 전체 채널 배열에서의 시작 인덱스
+        }
+        private readonly List<ExpansionModule> _expansions = new List<ExpansionModule>();
+
         /// <summary>
-        /// 채널 번호(1~8)를 모듈 주소와 로컬 채널(1~4)로 변환
+        /// 채널 번호(1~N)를 모듈 주소와 로컬 채널(1~4)로 변환
         /// </summary>
         private (int slaveAddress, int localChannel) ResolveChannel(int channelNumber)
         {
-            if (_hasExpansion && channelNumber > _numChannels)
+            if (channelNumber <= _numChannels)
+                return (_mainModuleAddress, channelNumber);
+
+            // 확장 모듈에서 검색
+            foreach (var exp in _expansions)
             {
-                // 확장 모듈 채널
-                return (_expansionSlaveAddress, channelNumber - _numChannels);
+                int localCh = channelNumber - exp.GlobalStartIndex;
+                if (localCh >= 1 && localCh <= exp.NumChannels)
+                    return (exp.SlaveAddress, localCh);
             }
-            return (_mainModuleAddress, channelNumber);
+
+            // 폴백 (하위호환)
+            return (_expansionSlaveAddress, channelNumber - _numChannels);
         }
 
         private TemperatureControllerStatus _status = new TemperatureControllerStatus();
@@ -162,9 +178,13 @@ namespace VacX_OutSense.Core.Devices.TempController
         /// </summary>
         public bool HasExpansion => _hasExpansion;
 
-        public override string DeviceName => _hasExpansion ? "TM4 + TM4-N2SE" : "TM4 Temperature Controller";
+        public override string DeviceName => _hasExpansion
+            ? $"TM4 + TM4-N2SE×{_expansions.Count}"
+            : "TM4 Temperature Controller";
 
-        public override string Model => _hasExpansion ? "TM4 + N2SE" : "TM4 Series";
+        public override string Model => _hasExpansion
+            ? $"TM4 + N2SE×{_expansions.Count}"
+            : "TM4 Series";
 
         /// <summary>
         /// 최대 온도 제한값 (raw 레지스터 값)
@@ -202,25 +222,56 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// TempController 생성자 (확장 모듈 포함)
+        /// TempController 생성자 (확장 모듈 1개 — 하위호환)
+        /// </summary>
+        public TempController(ICommunicationManager communicationManager, int deviceAddress, int numChannels,
+            int expansionSlaveAddress, int expansionChannels)
+            : this(communicationManager, deviceAddress, numChannels,
+                  new[] { (expansionSlaveAddress, Math.Min(expansionChannels, 4)) })
+        {
+        }
+
+        /// <summary>
+        /// TempController 생성자 (다중 확장 모듈)
         /// </summary>
         /// <param name="communicationManager">통신 관리자</param>
         /// <param name="deviceAddress">메인 모듈 슬레이브 주소</param>
         /// <param name="numChannels">메인 모듈 채널 수</param>
-        /// <param name="expansionSlaveAddress">확장 모듈 슬레이브 주소</param>
-        /// <param name="expansionChannels">확장 모듈 채널 수 (1-4)</param>
+        /// <param name="expansionModules">확장 모듈 배열: (슬레이브주소, 채널수)</param>
         public TempController(ICommunicationManager communicationManager, int deviceAddress, int numChannels,
-            int expansionSlaveAddress, int expansionChannels)
+            (int slaveAddress, int channels)[] expansionModules)
             : base(communicationManager)
         {
             DeviceAddress = deviceAddress;
-            _mainModuleAddress = deviceAddress;  // ★ 메인 모듈 주소 저장
+            _mainModuleAddress = deviceAddress;
             _numChannels = numChannels;
-            _hasExpansion = true;
-            _expansionSlaveAddress = expansionSlaveAddress;
-            _expansionNumChannels = Math.Min(expansionChannels, 4);
-            _totalChannels = _numChannels + _expansionNumChannels;
-            DeviceId = $"TM4-{deviceAddress:D2}+EXP";
+
+            int totalExpChannels = 0;
+            if (expansionModules != null && expansionModules.Length > 0)
+            {
+                _hasExpansion = true;
+                int globalIdx = numChannels;
+                foreach (var (slaveAddr, chCount) in expansionModules)
+                {
+                    int ch = Math.Min(chCount, 4);
+                    _expansions.Add(new ExpansionModule
+                    {
+                        SlaveAddress = slaveAddr,
+                        NumChannels = ch,
+                        GlobalStartIndex = globalIdx
+                    });
+                    totalExpChannels += ch;
+                    globalIdx += ch;
+                }
+                // 하위호환 필드 (첫 번째 확장 모듈)
+                _expansionSlaveAddress = expansionModules[0].slaveAddress;
+                _expansionNumChannels = totalExpChannels;
+            }
+
+            _totalChannels = _numChannels + totalExpChannels;
+            DeviceId = _hasExpansion
+                ? $"TM4-{deviceAddress:D2}+EXP{_expansions.Count}"
+                : $"TM4-{deviceAddress:D2}";
 
             InitializeStatus();
         }
@@ -234,7 +285,7 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// TempController 생성자 (포트명, 확장 모듈 포함)
+        /// TempController 생성자 (포트명, 확장 모듈 1개 — 하위호환)
         /// </summary>
         public TempController(string portName, int deviceAddress, int numChannels,
             int expansionSlaveAddress, int expansionChannels)
@@ -399,12 +450,12 @@ namespace VacX_OutSense.Core.Devices.TempController
                     UpdateChannelStatus(ch);
                 }
 
-                // 확장 모듈 채널 업데이트
-                if (_hasExpansion)
+                // 확장 모듈 채널 업데이트 (다중 모듈 지원)
+                foreach (var exp in _expansions)
                 {
-                    for (int ch = 1; ch <= _expansionNumChannels; ch++)
+                    for (int ch = 1; ch <= exp.NumChannels; ch++)
                     {
-                        UpdateExpansionChannelStatus(ch);
+                        UpdateExpansionChannelStatus(exp.SlaveAddress, ch, exp.GlobalStartIndex);
                     }
                 }
 
@@ -484,26 +535,23 @@ namespace VacX_OutSense.Core.Devices.TempController
         }
 
         /// <summary>
-        /// 확장 모듈 채널 상태 업데이트
+        /// 확장 모듈 채널 상태 업데이트 (다중 모듈 지원)
         /// </summary>
-        private bool UpdateExpansionChannelStatus(int expansionChannelNumber)
+        private bool UpdateExpansionChannelStatus(int slaveAddress, int localChannelNumber, int globalStartIndex)
         {
-            if (expansionChannelNumber < 1 || expansionChannelNumber > _expansionNumChannels)
-                return false;
-
             lock (_commandLock)
             {
                 try
                 {
-                    _deviceAddress = _expansionSlaveAddress;
+                    _deviceAddress = slaveAddress;
                     Thread.Sleep(10);
 
-                    ushort baseAddress = (ushort)(REG_CH1_PV + (expansionChannelNumber - 1) * 6);
+                    ushort baseAddress = (ushort)(REG_CH1_PV + (localChannelNumber - 1) * 6);
                     ushort[] registers = ReadInputRegisters(baseAddress, 6);
 
                     if (registers != null && registers.Length >= 6)
                     {
-                        int index = _numChannels + (expansionChannelNumber - 1);
+                        int index = globalStartIndex + (localChannelNumber - 1);
                         ProcessChannelRegisters(index, registers);
                         _status.ChannelStatus[index].IsExpansionChannel = true;
                         return true;
@@ -513,7 +561,7 @@ namespace VacX_OutSense.Core.Devices.TempController
                 }
                 catch (Exception ex)
                 {
-                    OnErrorOccurred($"확장 채널 {expansionChannelNumber} 상태 업데이트 오류: {ex.Message}");
+                    OnErrorOccurred($"확장 채널 (슬레이브:{slaveAddress}, CH{localChannelNumber}) 상태 업데이트 오류: {ex.Message}");
                     return false;
                 }
                 finally
