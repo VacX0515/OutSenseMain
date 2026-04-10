@@ -118,9 +118,11 @@ namespace VacX_OutSense.Core.Control
             _outputMin = outputMin;
             _outputMax = outputMax;
 
-            // 적분항 제한을 출력 제한의 2배로 설정
-            _integralMin = outputMin * 2;
-            _integralMax = outputMax * 2;
+            // 적분항 제한: Ki * integral이 출력 범위를 커버할 수 있도록 설정
+            // Ki가 0이면 큰 기본값 사용 (나중에 Ki 설정 시 재계산 가능)
+            double kiSafe = _ki > 0 ? _ki : 0.001;
+            _integralMin = outputMin / kiSafe;
+            _integralMax = outputMax / kiSafe;
 
             _deadband = 0.1; // 기본 데드밴드 0.1도
 
@@ -151,17 +153,14 @@ namespace VacX_OutSense.Core.Control
             // 오차 계산
             double error = setpoint - processValue;
 
-            // 데드밴드 적용
-            if (Math.Abs(error) < _deadband)
-            {
-                error = 0;
-            }
+            // 적분항 계산 — 데드밴드 적용 전 실제 오차로 누적 (offset 제거용)
+            _integral += error * dt;
+
+            // 데드밴드 적용 (비례/미분항에만 — 적분은 위에서 실제 오차로 누적)
+            double pdError = Math.Abs(error) < _deadband ? 0 : error;
 
             // 비례항 계산
-            double proportional = _kp * error;
-
-            // 적분항 계산
-            _integral += error * dt;
+            double proportional = _kp * pdError;
 
             // 적분 와인드업 방지
             _integral = Math.Max(_integralMin, Math.Min(_integralMax, _integral));
@@ -171,7 +170,7 @@ namespace VacX_OutSense.Core.Control
             double derivative = 0;
             if (_lastUpdateTime != DateTime.MinValue)
             {
-                double errorRate = (error - _previousError) / dt;
+                double errorRate = (pdError - _previousError) / dt;
                 derivative = _kd * errorRate;
             }
 
@@ -182,7 +181,7 @@ namespace VacX_OutSense.Core.Control
             output = Math.Max(_outputMin, Math.Min(_outputMax, output));
 
             // 상태 업데이트
-            _previousError = error;
+            _previousError = pdError;
             _lastUpdateTime = currentTime;
 
             return output;
@@ -217,6 +216,14 @@ namespace VacX_OutSense.Core.Control
             _kp = Math.Max(0, kp);
             _ki = Math.Max(0, ki);
             _kd = Math.Max(0, kd);
+
+            // Ki 변경 시 적분 한계 재계산
+            double kiSafe = _ki > 0 ? _ki : 0.001;
+            _integralMin = _outputMin / kiSafe;
+            _integralMax = _outputMax / kiSafe;
+
+            // 현재 적분값이 새 한계를 벗어나면 클램프
+            _integral = Math.Max(_integralMin, Math.Min(_integralMax, _integral));
         }
 
         /// <summary>
