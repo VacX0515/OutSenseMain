@@ -1968,9 +1968,11 @@ namespace VacX_OutSense.Core.AutoRun
                         // 학습 중: CH1 SV = rampedTarget + 관측 열지연 (보수적, PI 적분 누적 없음)
                         double learningSV = rampedTarget + observedThermalLag + 3;
                         learningSV = Math.Min(learningSV, effectiveMaxTemp);
-                        // ΔT 제한 적용
-                        if (_config.BakeoutMaxDeltaT > 0)
-                            learningSV = Math.Min(learningSV, monitorTemp + _config.BakeoutMaxDeltaT);
+                        // ΔT 제한 적용 (자동: 열지연×2.5, 최소 15°C / 수동: 사용자 설정값)
+                        double learningMaxDeltaT = _config.BakeoutMaxDeltaT > 0
+                            ? _config.BakeoutMaxDeltaT
+                            : Math.Max(observedThermalLag * 2.5, 15.0);
+                        learningSV = Math.Min(learningSV, monitorTemp + learningMaxDeltaT);
                         // 현재 SV보다 낮게 설정하지 않음
                         learningSV = Math.Max(learningSV, lastCh1Setpoint);
 
@@ -2041,8 +2043,11 @@ namespace VacX_OutSense.Core.AutoRun
                     }
                     else
                     {
-                        // ★ 언더슛 방지: 음의 적분 속도를 완화 (3x → 1.5x)
-                        integralTerm += error * Ki_norm * 1.5;
+                        // ★ 음의 적분: 기본 1.5배, 목표 근접 시 가속 (오버슈트 빠른 회복)
+                        double negativeGain = Ki_norm * 1.5;
+                        if (proximity > 0.5)
+                            negativeGain *= (1 + proximity * 2);  // 최대 3배 가속
+                        integralTerm += error * negativeGain;
                     }
 
                     // ★ 축적 에너지 기반 적분 감쇠: 유의미한 초과 에너지(>2°C)가 있을 때만
@@ -2092,9 +2097,11 @@ namespace VacX_OutSense.Core.AutoRun
                     //   → 샘플이 램프 속도를 초과하지 않도록 CH1 SV를 제한
                     double svCeiling = rampedTarget + Math.Max(observedThermalLag, 5) * 1.5;
                     double upperLimit = Math.Min(effectiveMaxTemp, svCeiling);
-                    // ★ BakeoutMaxDeltaT 제한: CH1 SV - 샘플온도가 설정값을 초과하지 않도록
-                    if (_config.BakeoutMaxDeltaT > 0)
-                        upperLimit = Math.Min(upperLimit, monitorTemp + _config.BakeoutMaxDeltaT);
+                    // ★ ΔT 제한: CH1 SV - 샘플온도 제한 (자동: 열지연×2.5, 최소 15°C / 수동: 사용자 설정값)
+                    double effectiveMaxDeltaT = _config.BakeoutMaxDeltaT > 0
+                        ? _config.BakeoutMaxDeltaT
+                        : Math.Max(observedThermalLag * 2.5, 15.0);
+                    upperLimit = Math.Min(upperLimit, monitorTemp + effectiveMaxDeltaT);
                     // ★ SV 하한: 정상상태에서 CH1은 목표+열지연 이상이어야 함
                     //   승온 중 관측된 열지연을 기반으로 정상상태 SV를 추정
                     double estimatedSteadyStateSV = rampedTarget + observedThermalLag * 0.85;
@@ -2574,9 +2581,9 @@ namespace VacX_OutSense.Core.AutoRun
                     }
                 }
 
-                // ── 베이크아웃 홀드 중 PI 피드백: 단순 PI로 온도 유지 ──
-                //   홀드는 이미 평형 상태 → 감쇠/에너지보상 불필요
-                //   적분은 승온에서 찾은 정상상태 값을 유지하며 미세 조정만 수행
+                // ── 베이크아웃 홀드: 평형 SV 유지 + 편차 비례 보정 ──
+                //   사람이 제어하듯: 평형에서 CH1 SV를 유지하고, 샘플 편차만큼만 보정
+                //   매 사이클 SV를 재계산하지 않으므로 적분 변동에 의한 흔들림이 없음
                 if (usePIFeedback && _mainForm._tempController?.IsConnected == true)
                 {
                     double holdError = targetTemperature - monitorTempNow;
@@ -2586,40 +2593,31 @@ namespace VacX_OutSense.Core.AutoRun
                         ? (monitorTempNow - prevMonitorTemp) : 0;
                     smoothedRate = smoothedRate * 0.7 + holdRateOfChange * 0.3;
 
-                    // 적분: 대칭 속도로 미세 조정 (홀드에서는 공격적 감소 불필요)
-                    integralTerm += holdError * Ki_norm;
-                    integralTerm = Math.Max(0, Math.Min(integralTerm, maxIntegral));
-
-                    // D항: 양방향
-                    double holdDTerm = -Kd * smoothedRate;
-
-                    double holdCh1PV = measurements.HeaterCh1Temperature;
-
-                    double newCh1 = targetTemperature + holdError * Kp + integralTerm + holdDTerm;
+                    // ★ 평형 SV 유지 + 점진 보정: 이전 SV에서 오차에 비례한 미세 보정
+                    //   계수 0.15 = 3초 주기에서 ~1분에 걸쳐 1:1 보정 달성 (자연 수렴)
+                    //   오차 0이면 SV 변화 없음 (평형 유지)
+                    double svCorrection = holdError * 0.15;
+                    double newCh1 = lastCh1Setpoint + svCorrection;
 
                     // NaN 방어
                     if (double.IsNaN(newCh1) || double.IsInfinity(newCh1))
                     {
-                        LogWarning($"[경고] 홀드 PI 출력 NaN/Inf — 이전 SV {lastCh1Setpoint:F1}°C 유지");
+                        LogWarning($"[경고] 홀드 출력 NaN/Inf — 이전 SV {lastCh1Setpoint:F1}°C 유지");
                         newCh1 = lastCh1Setpoint;
                     }
 
                     // SV 제한
                     double holdUpperLimit = effectiveMaxTemp;
-                    if (_config.BakeoutMaxDeltaT > 0)
-                        holdUpperLimit = Math.Min(holdUpperLimit, monitorTempNow + _config.BakeoutMaxDeltaT);
+                    double holdMaxDeltaT = _config.BakeoutMaxDeltaT > 0
+                        ? _config.BakeoutMaxDeltaT
+                        : Math.Max(observedThermalLag * 2.5, 15.0);
+                    holdUpperLimit = Math.Min(holdUpperLimit, monitorTempNow + holdMaxDeltaT);
                     newCh1 = Math.Max(targetTemperature, Math.Min(newCh1, holdUpperLimit));
 
-                    // ★ SV 감소 속도 제한: 3단계 (홀드)
-                    if (newCh1 < lastCh1Setpoint)
-                    {
-                        if (monitorTempNow < targetTemperature)
-                            newCh1 = lastCh1Setpoint;
-                        else if (monitorTempNow <= targetTemperature + reachTolerance)
-                            newCh1 = Math.Max(newCh1, lastCh1Setpoint - 0.1);
-                        else
-                            newCh1 = Math.Max(newCh1, lastCh1Setpoint - 0.3);
-                    }
+                    // SV 변화 제한 (홀드 안정성 우선 — 최소한의 보정만)
+                    double maxSvChange = 0.2;
+                    newCh1 = Math.Max(lastCh1Setpoint - maxSvChange,
+                        Math.Min(newCh1, lastCh1Setpoint + maxSvChange));
 
                     // ★ [Fix#2] 유의미한 변경만 전송 + 반환값 검증
                     if (Math.Abs(newCh1 - lastCh1Setpoint) > 0.2)
@@ -2636,7 +2634,7 @@ namespace VacX_OutSense.Core.AutoRun
                         if (setOk)
                         {
                             setTempFailCount = 0;
-                            LogInfo($"홀드 피드백: CH1 {lastCh1Setpoint:F1} → {newCh1:F1}°C (샘플:{monitorTempNow:F1} 오차:{holdError:F1} I:{integralTerm:F1} D:{holdDTerm:F1})");
+                            LogInfo($"홀드 보정: CH1 {lastCh1Setpoint:F1} → {newCh1:F1}°C (샘플:{monitorTempNow:F1} 오차:{holdError:F1})");
                             lastCh1Setpoint = newCh1;
                         }
                         else
@@ -3598,7 +3596,7 @@ namespace VacX_OutSense.Core.AutoRun
                 lines.AppendLine($"│   목표 온도           : {c.BakeoutTargetTemperature:F1} °C");
                 lines.AppendLine($"│   승온 속도           : {c.BakeoutRampRate:F1} °C/h");
                 lines.AppendLine($"│   CH1 히터 상한       : {c.BakeoutHeaterMaxTemperature:F1} °C");
-                lines.AppendLine($"│   ΔT 제한            : {(c.BakeoutMaxDeltaT > 0 ? $"{c.BakeoutMaxDeltaT:F0} °C" : "없음")}");
+                lines.AppendLine($"│   ΔT 제한            : {(c.BakeoutMaxDeltaT > 0 ? $"{c.BakeoutMaxDeltaT:F0} °C (수동)" : "자동 (열지연×2.5, 최소 15°C)")}");
                 lines.AppendLine($"│   홀드 시간           : {c.BakeoutHoldTimeMinutes}분");
                 lines.AppendLine($"│   종료 동작           : {c.BakeoutEndAction}");
                 lines.AppendLine($"│   모니터 채널         : {c.GetBakeoutMonitorLabel()}");

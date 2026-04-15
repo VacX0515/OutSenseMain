@@ -940,7 +940,7 @@ namespace VacX_OutSense
                 string experimentName = $"{snapshot.ExperimentName}_resumed";
                 _experimentDataLogger?.Dispose();
                 _experimentDataLogger = new ExperimentDataLogger();
-                string filePath = _experimentDataLogger.Start(experimentName);
+                string filePath = _experimentDataLogger.Start(experimentName, _autoRunConfig);
                 if (filePath != null)
                     AddAutoRunLog("DATA", $"실험 데이터 저장: {filePath}");
 
@@ -1346,7 +1346,9 @@ namespace VacX_OutSense
             double newTol = (double)_numAdjTolerance.Value;
             int newStab = (int)_numAdjStabilization.Value;
 
-            if (newMax <= newTarget)
+            // PI 피드백 모드(모니터 채널 ≠ CH1)에서만 상한 검증 — CH1 직접 모니터링 시 목표=SV이므로 상한 불필요
+            bool usePIFeedback = _autoRunConfig.GetBakeoutMonitorChannels().Any(ch => ch != 1);
+            if (usePIFeedback && newMax <= newTarget)
             {
                 MessageBox.Show("CH1 상한은 목표 온도보다 높아야 합니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -1794,7 +1796,7 @@ namespace VacX_OutSense
                     $"승온 속도: {_autoRunConfig.BakeoutRampRate:F0}°C/h\n" +
                     $"모니터 채널: {_autoRunConfig.GetBakeoutMonitorLabel()} (MAX 기준)\n" +
                     $"CH1 안전 상한: {_autoRunConfig.BakeoutHeaterMaxTemperature}°C\n" +
-                    $"CH1-샘플 최대 온도차: {(_autoRunConfig.BakeoutMaxDeltaT > 0 ? $"{_autoRunConfig.BakeoutMaxDeltaT}°C" : "제한없음")}\n" +
+                    $"CH1-샘플 최대 온도차: {(_autoRunConfig.BakeoutMaxDeltaT > 0 ? $"{_autoRunConfig.BakeoutMaxDeltaT}°C (수동)" : "자동")}\n" +
                     $"유지 시간: {_autoRunConfig.BakeoutHoldTimeMinutes}분\n" +
                     $"종료 동작: {(_autoRunConfig.BakeoutEndAction == BakeoutEndAction.HeaterOff ? "히터 OFF (전체 셧다운)" : _autoRunConfig.BakeoutEndAction == BakeoutEndAction.MaintainTemperature ? "온도 유지" : "알림만")}";
             }
@@ -1814,7 +1816,7 @@ namespace VacX_OutSense
             // ── 4. 실험 데이터 로거 시작 ──
             _experimentDataLogger?.Dispose();
             _experimentDataLogger = new ExperimentDataLogger();
-            string filePath = _experimentDataLogger.Start(experimentName);
+            string filePath = _experimentDataLogger.Start(experimentName, _autoRunConfig);
             if (filePath != null)
                 AddAutoRunLog("DATA", $"실험 데이터 저장: {filePath}");
 
@@ -2330,7 +2332,7 @@ namespace VacX_OutSense
                             $"램프:{_autoRunConfig.BakeoutRampRate:F0}°C/h  " +
                             $"모니터:{_autoRunConfig.GetBakeoutMonitorLabel()}  " +
                             $"CH1상한:{_autoRunConfig.BakeoutHeaterMaxTemperature:F0}°C  " +
-                            $"ΔT:{(_autoRunConfig.BakeoutMaxDeltaT > 0 ? $"{_autoRunConfig.BakeoutMaxDeltaT:F0}°C" : "제한없음")}  " +
+                            $"ΔT:{(_autoRunConfig.BakeoutMaxDeltaT > 0 ? $"{_autoRunConfig.BakeoutMaxDeltaT:F0}°C" : "자동")}  " +
                             $"홀드:{_autoRunConfig.BakeoutHoldTimeMinutes}분  " +
                             $"종료:{(_autoRunConfig.BakeoutEndAction == BakeoutEndAction.HeaterOff ? "셧다운" : _autoRunConfig.BakeoutEndAction == BakeoutEndAction.MaintainTemperature ? "유지" : "알림")}";
                     }
@@ -2653,7 +2655,7 @@ namespace VacX_OutSense
                     if (snapshot.Connections.TempController && _tempController?.Status != null)
                     {
                         var tcData = new List<string>();
-                        for (int i = 0; i < Math.Min(8, snapshot.TempController.Channels.Length); i++)
+                        for (int i = 0; i < snapshot.TempController.Channels.Length; i++)
                         {
                             var ch = snapshot.TempController.Channels[i];
                             tcData.Add(ch?.PresentValue ?? "");
@@ -5189,7 +5191,9 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
                 { "Status", "CurrentTemp(°C)", "TargetTemp(°C)", "Mode", "Time", "HasError", "HasWarning" });
 
             var tcHeaders = new List<string>();
-            string[] chNames = { "M1", "M2", "M3", "M4", "E1", "E2", "E3", "E4" };
+            int totalCh = _tempController?.TotalChannelCount ?? 12;
+            string[] chNames = new string[totalCh];
+            for (int i = 0; i < totalCh; i++) chNames[i] = $"Ch{i + 1}";
             foreach (var n in chNames)
             {
                 tcHeaders.Add($"{n}_PV(°C)");

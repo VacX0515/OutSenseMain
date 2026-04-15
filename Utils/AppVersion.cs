@@ -5,8 +5,8 @@ namespace VacX_OutSense.Utils
     /// </summary>
     public static class AppVersion
     {
-        public const string Version = "2.1.0";
-        public const string BuildDate = "2026-03-06";
+        public const string Version = "2.7.0";
+        public const string BuildDate = "2026-04-15";
         public const string AppTitle = "VacX OutSense";
 
         public static string FullTitle => $"{AppTitle} v{Version}";
@@ -16,6 +16,14 @@ namespace VacX_OutSense.Utils
         /// </summary>
         public static readonly string[] PatchNotes = new[]
         {
+            "v2.7.0 (2026-04-15)",
+            "─────────────────────────────────",
+            "[개선] ΔT 제한 자동화: 관측 열지연 기반 자동 계산 (수동 설정도 가능)",
+            "[개선] 승온 오버슈트 감소: 목표 근접 시 음의 적분 감쇠 가속 (proximity 기반)",
+            "[개선] 홀드 제어 전면 개편: PI 재계산 → 평형 SV 유지 + 편차 비례 보정",
+            "[개선] 홀드 안정성 강화: SV 변화 ±0.2°C/사이클 제한, 적분 소멸 방지",
+            "[개선] 실험 데이터 로깅 기록 컬럼 선택 기능 추가",
+            "",
             "v2.1.0 (2026-03-06)",
             "─────────────────────────────────",
             "[신규] AutoRun 실시간 온도/압력 차트 추가 (ScottPlot)",

@@ -20,6 +20,11 @@ namespace VacX_OutSense.Forms
         private NumericUpDown nudCoolingWaitTimeout;
         private NumericUpDown nudTurboPumpDecelTimeout;
 
+        // 데이터 기록 컬럼 선택 체크박스
+        private CheckBox _chkLogPressure, _chkLogValves, _chkLogDryPump, _chkLogTurboPump, _chkLogChiller;
+        private CheckBox[] _chkLogTempCh = new CheckBox[12];
+        private CheckBox _chkLogAdditionalAI;
+
         private static string FormatSecondsToHM(int seconds)
         {
             int h = seconds / 3600;
@@ -33,6 +38,7 @@ namespace VacX_OutSense.Forms
         {
             _config = config ?? new AutoRunConfiguration();
             InitializeComponent();
+            SetupDataLogTab();
             SetupToolTips();
             SetupHelpLabels();
             SetupHelpButton();
@@ -90,6 +96,97 @@ namespace VacX_OutSense.Forms
                 chkBakeoutMonitorCh12.Enabled = true; chkBakeoutMonitorCh12.Visible = true;
                 lblBakeoutMonitorChannel.Text = "모니터 채널 (MAX):";
             }
+        }
+
+        private void SetupDataLogTab()
+        {
+            var tabData = new TabPage
+            {
+                Text = "데이터 기록",
+                UseVisualStyleBackColor = true,
+                AutoScroll = true
+            };
+            tabControl1.Controls.Add(tabData);
+
+            int y = 15;
+
+            var lblTitle = new Label
+            {
+                Text = "CSV 파일에 기록할 데이터 그룹을 선택하세요:",
+                Location = new Point(20, y),
+                Size = new Size(400, 20),
+                ForeColor = SystemColors.GrayText
+            };
+            tabData.Controls.Add(lblTitle);
+            y += 30;
+
+            // ── 장비 그룹 ──
+            var lblEquip = new Label
+            {
+                Text = "■ 장비 데이터",
+                Location = new Point(15, y),
+                AutoSize = true,
+                Font = new Font(Font, FontStyle.Bold)
+            };
+            tabData.Controls.Add(lblEquip);
+            y += 22;
+
+            _chkLogPressure = AddLogCheckBox(tabData, "압력 (ATM, Pirani, Ion)", ref y);
+            _chkLogValves = AddLogCheckBox(tabData, "밸브 상태 (GV, VV, EV, IG HV)", ref y);
+            _chkLogDryPump = AddLogCheckBox(tabData, "드라이펌프 (상태, 주파수, 전류, 온도)", ref y);
+            _chkLogTurboPump = AddLogCheckBox(tabData, "터보펌프 (상태, 속도, 전류, 온도)", ref y);
+            _chkLogChiller = AddLogCheckBox(tabData, "칠러 (상태, 현재온도, 목표온도)", ref y);
+            _chkLogAdditionalAI = AddLogCheckBox(tabData, "추가 AI (전압)", ref y);
+
+            y += 10;
+
+            // ── 온도 채널 ──
+            var lblTemp = new Label
+            {
+                Text = "■ 온도 채널 (PV, SV, MV, Status)",
+                Location = new Point(15, y),
+                AutoSize = true,
+                Font = new Font(Font, FontStyle.Bold)
+            };
+            tabData.Controls.Add(lblTemp);
+            y += 22;
+
+            // 전체 선택/해제
+            var btnAll = new Button { Text = "전체", Location = new Point(25, y), Size = new Size(55, 25) };
+            var btnNone = new Button { Text = "해제", Location = new Point(85, y), Size = new Size(55, 25) };
+            btnAll.Click += (s, e) => { foreach (var c in _chkLogTempCh) c.Checked = true; };
+            btnNone.Click += (s, e) => { foreach (var c in _chkLogTempCh) c.Checked = false; };
+            tabData.Controls.Add(btnAll);
+            tabData.Controls.Add(btnNone);
+            y += 32;
+
+            // CH1~CH12 (3열 × 4행)
+            for (int i = 0; i < 12; i++)
+            {
+                int col = i % 3;
+                int row = i / 3;
+                _chkLogTempCh[i] = new CheckBox
+                {
+                    Text = $"CH{i + 1}",
+                    Location = new Point(30 + col * 130, y + row * 24),
+                    Size = new Size(120, 20)
+                };
+                tabData.Controls.Add(_chkLogTempCh[i]);
+            }
+        }
+
+        private CheckBox AddLogCheckBox(TabPage tab, string text, ref int y)
+        {
+            var chk = new CheckBox
+            {
+                Text = text,
+                Location = new Point(30, y),
+                Size = new Size(380, 20),
+                Checked = true
+            };
+            tab.Controls.Add(chk);
+            y += 24;
+            return chk;
         }
 
         private void LoadConfiguration()
@@ -155,11 +252,37 @@ namespace VacX_OutSense.Forms
             chkBakeoutMonitorCh11.Checked = _config.BakeoutMonitorCh11;
             chkBakeoutMonitorCh12.Checked = _config.BakeoutMonitorCh12;
             txtBakeoutHeaterMax.Text = _config.BakeoutHeaterMaxTemperature.ToString("F1");
-            txtBakeoutMaxDeltaT.Text = _config.BakeoutMaxDeltaT.ToString("F0");
+            chkBakeoutMaxDeltaTAuto.Checked = _config.BakeoutMaxDeltaT == 0;
+            txtBakeoutMaxDeltaT.Text = _config.BakeoutMaxDeltaT > 0 ? _config.BakeoutMaxDeltaT.ToString("F0") : "50";
+            txtBakeoutMaxDeltaT.Enabled = !chkBakeoutMaxDeltaTAuto.Checked;
+            chkBakeoutMaxDeltaTAuto.CheckedChanged += (s, e) =>
+            {
+                txtBakeoutMaxDeltaT.Enabled = !chkBakeoutMaxDeltaTAuto.Checked;
+            };
             txtBakeoutTolerance.Text = _config.BakeoutTolerance.ToString("F1");
             txtBakeoutStabilization.Text = _config.BakeoutStabilizationSeconds.ToString();
             txtBakeoutRiseTimeout.Text = _config.BakeoutRiseTimeoutMinutes.ToString();
             txtBakeoutFeedbackInterval.Text = _config.BakeoutFeedbackIntervalSec.ToString("F1");
+
+            // 데이터 기록 컬럼 설정
+            _chkLogPressure.Checked = _config.LogColumnPressure;
+            _chkLogValves.Checked = _config.LogColumnValves;
+            _chkLogDryPump.Checked = _config.LogColumnDryPump;
+            _chkLogTurboPump.Checked = _config.LogColumnTurboPump;
+            _chkLogChiller.Checked = _config.LogColumnChiller;
+            _chkLogAdditionalAI.Checked = _config.LogColumnAdditionalAI;
+            _chkLogTempCh[0].Checked = _config.LogColumnTempCh1;
+            _chkLogTempCh[1].Checked = _config.LogColumnTempCh2;
+            _chkLogTempCh[2].Checked = _config.LogColumnTempCh3;
+            _chkLogTempCh[3].Checked = _config.LogColumnTempCh4;
+            _chkLogTempCh[4].Checked = _config.LogColumnTempCh5;
+            _chkLogTempCh[5].Checked = _config.LogColumnTempCh6;
+            _chkLogTempCh[6].Checked = _config.LogColumnTempCh7;
+            _chkLogTempCh[7].Checked = _config.LogColumnTempCh8;
+            _chkLogTempCh[8].Checked = _config.LogColumnTempCh9;
+            _chkLogTempCh[9].Checked = _config.LogColumnTempCh10;
+            _chkLogTempCh[10].Checked = _config.LogColumnTempCh11;
+            _chkLogTempCh[11].Checked = _config.LogColumnTempCh12;
 
             // 실험 유형에 따라 컨트롤 표시/숨김
             UpdateExperimentTypeUI();
@@ -233,11 +356,31 @@ namespace VacX_OutSense.Forms
                 var selected = _config.GetBakeoutMonitorChannels();
                 _config.BakeoutMonitorChannel = selected.Count > 0 ? selected[0] : 2;
                 _config.BakeoutHeaterMaxTemperature = double.Parse(txtBakeoutHeaterMax.Text);
-                _config.BakeoutMaxDeltaT = double.Parse(txtBakeoutMaxDeltaT.Text);
+                _config.BakeoutMaxDeltaT = chkBakeoutMaxDeltaTAuto.Checked ? 0 : double.Parse(txtBakeoutMaxDeltaT.Text);
                 _config.BakeoutTolerance = double.Parse(txtBakeoutTolerance.Text);
                 _config.BakeoutStabilizationSeconds = int.Parse(txtBakeoutStabilization.Text);
                 _config.BakeoutRiseTimeoutMinutes = int.Parse(txtBakeoutRiseTimeout.Text);
                 _config.BakeoutFeedbackIntervalSec = double.Parse(txtBakeoutFeedbackInterval.Text);
+
+                // 데이터 기록 컬럼 설정
+                _config.LogColumnPressure = _chkLogPressure.Checked;
+                _config.LogColumnValves = _chkLogValves.Checked;
+                _config.LogColumnDryPump = _chkLogDryPump.Checked;
+                _config.LogColumnTurboPump = _chkLogTurboPump.Checked;
+                _config.LogColumnChiller = _chkLogChiller.Checked;
+                _config.LogColumnAdditionalAI = _chkLogAdditionalAI.Checked;
+                _config.LogColumnTempCh1 = _chkLogTempCh[0].Checked;
+                _config.LogColumnTempCh2 = _chkLogTempCh[1].Checked;
+                _config.LogColumnTempCh3 = _chkLogTempCh[2].Checked;
+                _config.LogColumnTempCh4 = _chkLogTempCh[3].Checked;
+                _config.LogColumnTempCh5 = _chkLogTempCh[4].Checked;
+                _config.LogColumnTempCh6 = _chkLogTempCh[5].Checked;
+                _config.LogColumnTempCh7 = _chkLogTempCh[6].Checked;
+                _config.LogColumnTempCh8 = _chkLogTempCh[7].Checked;
+                _config.LogColumnTempCh9 = _chkLogTempCh[8].Checked;
+                _config.LogColumnTempCh10 = _chkLogTempCh[9].Checked;
+                _config.LogColumnTempCh11 = _chkLogTempCh[10].Checked;
+                _config.LogColumnTempCh12 = _chkLogTempCh[11].Checked;
             }
             catch (Exception ex)
             {
@@ -282,6 +425,7 @@ namespace VacX_OutSense.Forms
             lblBakeoutHeaterMax.Visible = isBakeout;
             txtBakeoutHeaterMax.Visible = isBakeout;
             lblBakeoutMaxDeltaT.Visible = isBakeout;
+            chkBakeoutMaxDeltaTAuto.Visible = isBakeout;
             txtBakeoutMaxDeltaT.Visible = isBakeout;
             lblBakeoutTolerance.Visible = isBakeout;
             txtBakeoutTolerance.Visible = isBakeout;
@@ -433,9 +577,12 @@ namespace VacX_OutSense.Forms
             _toolTip.SetToolTip(txtBakeoutHeaterMax,
                 "PI 피드백 제어 시 CH1이 절대 초과하지 않는 온도입니다.\n" +
                 "히터 과열 방지용 안전 상한입니다.");
+            _toolTip.SetToolTip(chkBakeoutMaxDeltaTAuto,
+                "자동: 관측된 열지연 × 2.5 (최소 15°C)로 자동 계산합니다.\n" +
+                "해제 시 수동으로 값을 지정합니다.");
             _toolTip.SetToolTip(txtBakeoutMaxDeltaT,
                 "승온/홀드 중 CH1 SV가 샘플 온도 + 이 값을 초과하지 않습니다.\n" +
-                "불균일 가열 방지용입니다. 0이면 제한 없음 (절대 상한만 적용).");
+                "불균일 가열 방지용입니다.");
             _toolTip.SetToolTip(txtBakeoutStabilization,
                 "목표±허용오차 범위 내 + 변화율 안정 상태에서\n" +
                 "이 시간(초) 동안 연속 유지되어야 홀드 타이머가 시작됩니다.\n" +

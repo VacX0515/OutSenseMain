@@ -122,10 +122,17 @@
             //
             // lblExperimentType
             //
+            // pnlExperimentType (배경 패널)
+            pnlExperimentType = new Panel();
+            pnlExperimentType.BackColor = Color.FromArgb(230, 240, 255);
+            pnlExperimentType.Location = new Point(0, 2);
+            pnlExperimentType.Size = new Size(480, 35);
+            //
             lblExperimentType = new Label();
             lblExperimentType.AutoSize = false;
+            lblExperimentType.BackColor = Color.Transparent;
             lblExperimentType.Font = new Font("맑은 고딕", 10F, FontStyle.Bold);
-            lblExperimentType.Location = new Point(15, 8);
+            lblExperimentType.Location = new Point(15, 6);
             lblExperimentType.Name = "lblExperimentType";
             lblExperimentType.Size = new Size(90, 25);
             lblExperimentType.TabIndex = 100;
@@ -138,7 +145,7 @@
             cmbExperimentType.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbExperimentType.FormattingEnabled = true;
             cmbExperimentType.Items.AddRange(new object[] { "탈가스율 측정 (OutgassingRate)", "베이크 아웃 (Bakeout)" });
-            cmbExperimentType.Location = new Point(108, 8);
+            cmbExperimentType.Location = new Point(108, 6);
             cmbExperimentType.Name = "cmbExperimentType";
             cmbExperimentType.Size = new Size(250, 25);
             cmbExperimentType.Font = new Font("맑은 고딕", 10F, FontStyle.Bold);
@@ -157,7 +164,7 @@
             tabControl1.Location = new Point(0, 38);
             tabControl1.Name = "tabControl1";
             tabControl1.SelectedIndex = 0;
-            tabControl1.Size = new Size(444, 512);
+            tabControl1.Size = new Size(444, 612);
             tabControl1.TabIndex = 0;
             // 
             // tabPressure
@@ -410,12 +417,23 @@
             lblBakeoutMaxDeltaT.Text = "CH1-샘플 최대 온도차 (°C):";
             lblBakeoutMaxDeltaT.Visible = false;
             //
+            // chkBakeoutMaxDeltaTAuto
+            //
+            chkBakeoutMaxDeltaTAuto = new CheckBox();
+            chkBakeoutMaxDeltaTAuto.AutoSize = true;
+            chkBakeoutMaxDeltaTAuto.Location = new Point(230, 183);
+            chkBakeoutMaxDeltaTAuto.Name = "chkBakeoutMaxDeltaTAuto";
+            chkBakeoutMaxDeltaTAuto.Size = new Size(52, 19);
+            chkBakeoutMaxDeltaTAuto.TabIndex = 32;
+            chkBakeoutMaxDeltaTAuto.Text = "자동";
+            chkBakeoutMaxDeltaTAuto.Visible = false;
+            //
             // txtBakeoutMaxDeltaT
             //
             txtBakeoutMaxDeltaT = new TextBox();
-            txtBakeoutMaxDeltaT.Location = new Point(230, 180);
+            txtBakeoutMaxDeltaT.Location = new Point(285, 180);
             txtBakeoutMaxDeltaT.Name = "txtBakeoutMaxDeltaT";
-            txtBakeoutMaxDeltaT.Size = new Size(120, 23);
+            txtBakeoutMaxDeltaT.Size = new Size(65, 23);
             txtBakeoutMaxDeltaT.TabIndex = 33;
             txtBakeoutMaxDeltaT.Visible = false;
             //
@@ -546,6 +564,7 @@
             tabTemperature.Controls.Add(lblBakeoutHeaterMax);
             tabTemperature.Controls.Add(txtBakeoutHeaterMax);
             tabTemperature.Controls.Add(lblBakeoutMaxDeltaT);
+            tabTemperature.Controls.Add(chkBakeoutMaxDeltaTAuto);
             tabTemperature.Controls.Add(txtBakeoutMaxDeltaT);
             tabTemperature.Controls.Add(lblBakeoutTolerance);
             tabTemperature.Controls.Add(txtBakeoutTolerance);
@@ -566,7 +585,7 @@
             tabTemperature.Controls.Add(lblVentTargetPressure);
             tabTemperature.Location = new Point(4, 24);
             tabTemperature.Name = "tabTemperature";
-            tabTemperature.Size = new Size(436, 392);
+            tabTemperature.Size = new Size(436, 492);
             tabTemperature.TabIndex = 1;
             tabTemperature.Text = "온도 설정";
             tabTemperature.UseVisualStyleBackColor = true;
@@ -623,7 +642,7 @@
             // 
             lblShutdownTempHeader.AutoSize = true;
             lblShutdownTempHeader.Font = new Font("맑은 고딕", 9F, FontStyle.Bold);
-            lblShutdownTempHeader.Location = new Point(20, 175);
+            lblShutdownTempHeader.Location = new Point(20, 330);
             lblShutdownTempHeader.Name = "lblShutdownTempHeader";
             lblShutdownTempHeader.Size = new Size(120, 15);
             lblShutdownTempHeader.TabIndex = 9;
@@ -631,7 +650,7 @@
             // 
             // txtCoolingTargetTemperature
             // 
-            txtCoolingTargetTemperature.Location = new Point(230, 200);
+            txtCoolingTargetTemperature.Location = new Point(230, 355);
             txtCoolingTargetTemperature.Name = "txtCoolingTargetTemperature";
             txtCoolingTargetTemperature.Size = new Size(120, 23);
             txtCoolingTargetTemperature.TabIndex = 11;
@@ -639,7 +658,7 @@
             // lblCoolingTargetTemperature
             // 
             lblCoolingTargetTemperature.AutoSize = true;
-            lblCoolingTargetTemperature.Location = new Point(20, 203);
+            lblCoolingTargetTemperature.Location = new Point(20, 358);
             lblCoolingTargetTemperature.Name = "lblCoolingTargetTemperature";
             lblCoolingTargetTemperature.Size = new Size(152, 15);
             lblCoolingTargetTemperature.TabIndex = 10;
@@ -647,7 +666,7 @@
             //
             // txtVentingStartTemperature
             //
-            txtVentingStartTemperature.Location = new Point(230, 237);
+            txtVentingStartTemperature.Location = new Point(230, 385);
             txtVentingStartTemperature.Name = "txtVentingStartTemperature";
             txtVentingStartTemperature.Size = new Size(120, 23);
             txtVentingStartTemperature.TabIndex = 13;
@@ -655,7 +674,7 @@
             // lblVentingStartTemperature
             //
             lblVentingStartTemperature.AutoSize = true;
-            lblVentingStartTemperature.Location = new Point(20, 240);
+            lblVentingStartTemperature.Location = new Point(20, 388);
             lblVentingStartTemperature.Name = "lblVentingStartTemperature";
             lblVentingStartTemperature.Size = new Size(175, 15);
             lblVentingStartTemperature.TabIndex = 12;
@@ -663,7 +682,7 @@
             //
             // txtVentTargetPressure
             //
-            txtVentTargetPressure.Location = new Point(230, 274);
+            txtVentTargetPressure.Location = new Point(230, 415);
             txtVentTargetPressure.Name = "txtVentTargetPressure";
             txtVentTargetPressure.Size = new Size(120, 23);
             txtVentTargetPressure.TabIndex = 15;
@@ -671,7 +690,7 @@
             // lblVentTargetPressure
             //
             lblVentTargetPressure.AutoSize = true;
-            lblVentTargetPressure.Location = new Point(20, 277);
+            lblVentTargetPressure.Location = new Point(20, 418);
             lblVentTargetPressure.Name = "lblVentTargetPressure";
             lblVentTargetPressure.Size = new Size(175, 15);
             lblVentTargetPressure.TabIndex = 14;
@@ -680,7 +699,7 @@
             // lblTempNote
             // 
             lblTempNote.ForeColor = SystemColors.GrayText;
-            lblTempNote.Location = new Point(20, 317);
+            lblTempNote.Location = new Point(20, 450);
             lblTempNote.Name = "lblTempNote";
             lblTempNote.Size = new Size(400, 40);
             lblTempNote.TabIndex = 14;
@@ -1187,9 +1206,10 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             CancelButton = btnCancel;
-            ClientSize = new Size(444, 600);
-            Controls.Add(lblExperimentType);
-            Controls.Add(cmbExperimentType);
+            ClientSize = new Size(444, 700);
+            pnlExperimentType.Controls.Add(lblExperimentType);
+            pnlExperimentType.Controls.Add(cmbExperimentType);
+            Controls.Add(pnlExperimentType);
             Controls.Add(tabControl1);
             Controls.Add(panelButtons);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -1231,6 +1251,7 @@
         #endregion
 
         // 실험 유형 선택
+        private System.Windows.Forms.Panel pnlExperimentType;
         private System.Windows.Forms.Label lblExperimentType;
         private System.Windows.Forms.ComboBox cmbExperimentType;
 
@@ -1255,6 +1276,7 @@
         private System.Windows.Forms.Label lblBakeoutHeaterMax;
         private System.Windows.Forms.TextBox txtBakeoutHeaterMax;
         private System.Windows.Forms.Label lblBakeoutMaxDeltaT;
+        private System.Windows.Forms.CheckBox chkBakeoutMaxDeltaTAuto;
         private System.Windows.Forms.TextBox txtBakeoutMaxDeltaT;
         private System.Windows.Forms.Label lblBakeoutTolerance;
         private System.Windows.Forms.TextBox txtBakeoutTolerance;

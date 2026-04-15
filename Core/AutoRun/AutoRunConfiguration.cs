@@ -224,9 +224,9 @@ namespace VacX_OutSense.Core.AutoRun
         /// <summary>
         /// [Bakeout] 승온 중 CH1-샘플 최대 허용 온도차 (°C)
         /// CH1 SV가 샘플 온도 + 이 값을 초과하지 않도록 제한합니다.
-        /// 0이면 제한 없음 (절대 상한만 적용).
+        /// 0이면 자동 (observedThermalLag × 2.5, 최소 15°C).
         /// </summary>
-        public double BakeoutMaxDeltaT { get; set; } = 50.0;
+        public double BakeoutMaxDeltaT { get; set; } = 0;
 
         /// <summary>
         /// [Bakeout] 승온 타임아웃 (분) — 0이면 자동 계산 (램프 속도 기반 × 3 + 30분)
@@ -280,6 +280,70 @@ namespace VacX_OutSense.Core.AutoRun
         /// [Bakeout] 프로파일 이름
         /// </summary>
         public string BakeoutProfileName { get; set; } = "일반 시편";
+
+        #endregion
+
+        #region 데이터 기록 컬럼 설정
+
+        /// <summary>기록 컬럼: 압력 (ATM, Pirani, Ion)</summary>
+        public bool LogColumnPressure { get; set; } = true;
+        /// <summary>기록 컬럼: 밸브 상태 (GV, VV, EV, IG HV)</summary>
+        public bool LogColumnValves { get; set; } = true;
+        /// <summary>기록 컬럼: 드라이펌프</summary>
+        public bool LogColumnDryPump { get; set; } = true;
+        /// <summary>기록 컬럼: 터보펌프</summary>
+        public bool LogColumnTurboPump { get; set; } = true;
+        /// <summary>기록 컬럼: 칠러</summary>
+        public bool LogColumnChiller { get; set; } = true;
+        /// <summary>기록 컬럼: 온도 CH1</summary>
+        public bool LogColumnTempCh1 { get; set; } = true;
+        /// <summary>기록 컬럼: 온도 CH2</summary>
+        public bool LogColumnTempCh2 { get; set; } = true;
+        /// <summary>기록 컬럼: 온도 CH3</summary>
+        public bool LogColumnTempCh3 { get; set; } = true;
+        /// <summary>기록 컬럼: 온도 CH4</summary>
+        public bool LogColumnTempCh4 { get; set; } = true;
+        /// <summary>기록 컬럼: 온도 CH5</summary>
+        public bool LogColumnTempCh5 { get; set; } = false;
+        /// <summary>기록 컬럼: 온도 CH6</summary>
+        public bool LogColumnTempCh6 { get; set; } = false;
+        /// <summary>기록 컬럼: 온도 CH7</summary>
+        public bool LogColumnTempCh7 { get; set; } = false;
+        /// <summary>기록 컬럼: 온도 CH8</summary>
+        public bool LogColumnTempCh8 { get; set; } = false;
+        /// <summary>기록 컬럼: 온도 CH9</summary>
+        public bool LogColumnTempCh9 { get; set; } = false;
+        /// <summary>기록 컬럼: 온도 CH10</summary>
+        public bool LogColumnTempCh10 { get; set; } = false;
+        /// <summary>기록 컬럼: 온도 CH11</summary>
+        public bool LogColumnTempCh11 { get; set; } = false;
+        /// <summary>기록 컬럼: 온도 CH12</summary>
+        public bool LogColumnTempCh12 { get; set; } = false;
+        /// <summary>기록 컬럼: 추가 AI</summary>
+        public bool LogColumnAdditionalAI { get; set; } = true;
+
+        /// <summary>
+        /// 특정 온도 채널의 기록 여부 반환 (1-based)
+        /// </summary>
+        public bool IsLogColumnTempChEnabled(int ch)
+        {
+            switch (ch)
+            {
+                case 1: return LogColumnTempCh1;
+                case 2: return LogColumnTempCh2;
+                case 3: return LogColumnTempCh3;
+                case 4: return LogColumnTempCh4;
+                case 5: return LogColumnTempCh5;
+                case 6: return LogColumnTempCh6;
+                case 7: return LogColumnTempCh7;
+                case 8: return LogColumnTempCh8;
+                case 9: return LogColumnTempCh9;
+                case 10: return LogColumnTempCh10;
+                case 11: return LogColumnTempCh11;
+                case 12: return LogColumnTempCh12;
+                default: return false;
+            }
+        }
 
         #endregion
 
