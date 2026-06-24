@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using VacX_OutSense.Core.AutoRun.AutoCapBakeout;
 using VacX_OutSense.Core.Control;
 using VacX_OutSense.Core.Devices.Gauges;
 using VacX_OutSense.Core.Devices.TempController;
@@ -165,6 +166,7 @@ namespace VacX_OutSense.Core.AutoRun
         public event EventHandler<AutoRunProgressEventArgs> ProgressUpdated;
         public event EventHandler<AutoRunErrorEventArgs> ErrorOccurred;
         public event EventHandler<AutoRunCompletedEventArgs> Completed;
+        public event EventHandler<AutoRunStepCompletedEventArgs> StepCompleted;
 
         #endregion
 
@@ -685,6 +687,13 @@ namespace VacX_OutSense.Core.AutoRun
                             var stepElapsed = DateTime.Now - stepStartTime;
                             string stepSummary = GetStepCompletionSummary(state);
                             LogInfo($"── 단계 {_currentStepNumber} 완료: {stepName} [{stepElapsed:mm\\:ss}] {stepSummary} ──");
+                            try
+                            {
+                                StepCompleted?.Invoke(this, new AutoRunStepCompletedEventArgs(
+                                    _currentStepNumber, TOTAL_STEPS, state, stepName,
+                                    stepElapsed, stepSummary, true));
+                            }
+                            catch { }
                             return StepResult.Success;
                         }
                     }
@@ -1494,6 +1503,13 @@ namespace VacX_OutSense.Core.AutoRun
         /// </summary>
         private async Task<bool> RunExperimentAsync(CancellationToken cancellationToken)
         {
+            // ★ AutoCap Bakeout 분기 — 베이크아웃 모드에서만 활성화 가능
+            if (IsBakeoutMode && _config.UseAutoCapBakeout)
+            {
+                LogInfo("=== AutoCap Bakeout Controller 사용 (계단식 cap 제어) ===");
+                return await RunAutoCapBakeoutAsync(cancellationToken);
+            }
+
             // 실험 유형에 따른 파라미터 결정
             double targetTemperature = IsBakeoutMode
                 ? _config.BakeoutTargetTemperature
@@ -2412,6 +2428,11 @@ namespace VacX_OutSense.Core.AutoRun
             double holdLoopIntervalSec = feedbackIntervalSec;
             int dataLogEveryN = Math.Max(1, _config.DataLoggingIntervalSeconds / (int)feedbackIntervalSec);
 
+            // ★ 칠러 PID에 Hold 진입 알림 — 승온 중 누적된 적분 windup 제거 + adaptive 윈도우 재시작.
+            // 챔버 열부하 패턴이 승온/홀드에서 크게 다르므로 적분항을 그대로 가져가면 오버슈트 유발.
+            try { _mainForm.ChillerPIDService?.OnExperimentHoldStarted(); }
+            catch (Exception ex) { LogWarning($"칠러 PID Hold hook 실패: {ex.Message}"); }
+
             LogInfo($"★ {experimentLabel} 홀드 시작 — 목표: {holdMinutes}분 ({holdMinutes / 60}시간 {holdMinutes % 60}분), CH1 SV: {lastCh1Setpoint:F1}°C, I:{integralTerm:F1}");
 
             while ((DateTime.Now - _experimentStartTime) < experimentDuration)
@@ -2730,6 +2751,258 @@ namespace VacX_OutSense.Core.AutoRun
             }
 
             return await FullShutdownAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// AutoCap Bakeout 실행 (Option 5, 계단식 cap 제어).
+        /// β 학습/모델 추정 없음. 오버슈트 수학적 보장.
+        /// </summary>
+        private async Task<bool> RunAutoCapBakeoutAsync(CancellationToken cancellationToken)
+        {
+            string monitorLabel = _config.GetBakeoutMonitorLabel();
+            int holdMinutes = _config.BakeoutHoldTimeMinutes;
+
+            // 초기 측정
+            await _mainForm._tempController.UpdateStatusAsync();
+            double T_s0 = GetMonitorChannelTemperature();
+            var ch1Status = _mainForm._tempController.Status.ChannelStatus[0];
+            double T_h0 = ch1Status.CalibratedTemperature;
+
+            // ★ CH1 모니터링 시 TM4 하드웨어 램프가 처리 → AutoCap 소프트웨어 램프 비활성화
+            //   PI 피드백 모드(CH2~5)에서만 소프트웨어 램프 사용
+            var monitorChans = _config.GetBakeoutMonitorChannels();
+            bool usePIFeedback = monitorChans.Any(ch => ch != 1);
+            double swRampRate = usePIFeedback
+                ? (_config.BakeoutRampRate > 0 ? _config.BakeoutRampRate : 20.0)
+                : 0.0;  // CH1 모드: TM4 하드웨어 램프만 사용
+
+            var acCfg = new AutoCapConfig
+            {
+                Target = _config.BakeoutTargetTemperature,
+                Tolerance = _config.BakeoutTolerance > 0 ? _config.BakeoutTolerance : 0.5,
+                HeaterMax = _config.GetEffectiveHeaterMaxTemperature(),
+                TEnv = _config.AutoCap_EnvironmentTemperature,
+                FeedbackIntervalSec = _config.BakeoutFeedbackIntervalSec > 0
+                    ? _config.BakeoutFeedbackIntervalSec : 5.0,
+                HoldTimeMinutes = holdMinutes,
+                // 안정화 유지 시간 — 사용자 설정 연동 ("안정화 유지시간" 1200초)
+                StabilizationSec = _config.BakeoutStabilizationSeconds > 0
+                    ? _config.BakeoutStabilizationSeconds : 600.0,
+                PanicStep = _config.AutoCap_PanicStep,
+                // v2 Iterative Plateau 파라미터 (Python 현실조건 시뮬 검증값)
+                //   - 위반률 7.5% (64.7% → 대폭 개선), 최대 오버슈트 0.81°C (57°C → 대폭 개선)
+                //   - 검증: VacX_TestManager/auto_cap_simulator/iterative_v2.py
+                StepK = 0.5,
+                PlateauMinSec = 1800.0,      // 30분
+                PlateauMaxSec = 6 * 3600.0,  // 6시간
+                RateThresholdPerMin = 0.02,  // 평형 판정
+                PlateauHoldSec = 600.0,      // 10분 연속 유지 요구 (robust)
+                RateWindowForPlateauSec = 600.0,  // 10분
+                ObsAvgWindowSec = 600.0,
+                EmaAlpha = 0.1,
+                PanicThresholdFactor = 0.7,
+                PanicCooldownSec = 120.0,
+                // 램프업 속도 — CH1 모드면 0(SW 램프 OFF), CH2~5 모드면 BakeoutRampRate
+                RampUpRatePerHour = swRampRate,
+                RampDownRatePerHour = swRampRate > 0 ? Math.Max(40.0, swRampRate * 2) : 0.0,
+            };
+
+            string rampMode = usePIFeedback
+                ? $"SW 램프 {swRampRate:F0}°C/h"
+                : "TM4 HW 램프만 (SW 램프 OFF)";
+            LogInfo($"  램프 모드: {rampMode}");
+            LogInfo($"AutoCap (Iterative v2) 시작 — target={acCfg.Target:F1}°C, tol={acCfg.Tolerance:F2}°C, " +
+                    $"heater_max={acCfg.HeaterMax:F0}°C, monitor={monitorLabel}");
+            LogInfo($"  T_s0={T_s0:F1}°C, T_h0={T_h0:F1}°C");
+            LogInfo($"  k={acCfg.StepK}, plateau_min={acCfg.PlateauMinSec/60:F0}min, " +
+                    $"plateau_max={acCfg.PlateauMaxSec/3600:F0}h, rate_thr={acCfg.RateThresholdPerMin}°C/min");
+
+            var ctrl = new AutoCapBakeoutController(acCfg, T_s0, T_h0);
+            // 초기 cap 결정 — 사용자 원칙:
+            //   A) T_s0 > target+tol: 강제 냉각 (cap = target+tol)
+            //   B) target > T_s 이고 T_h 가 이미 target 위: cap = T_h 유지 (식히지 마)
+            //   C) 그 외: cap = target (β 무관 점진 가열)
+            string initReason;
+            if (T_s0 > acCfg.Target + acCfg.Tolerance)
+                initReason = "샘플이 이미 target+tol 초과 — 강제 냉각";
+            else if (T_h0 > acCfg.Target + 0.5 && T_s0 < acCfg.Target - acCfg.Tolerance)
+                initReason = "히터 유지 (target > T_s, T_h 이미 위 — 식힐 필요 없음)";
+            else
+                initReason = "cap = target (β 무관 점진 가열)";
+            LogInfo($"  실제 적용 초기 cap: {ctrl.Cap:F2}°C  ({initReason})");
+
+            var startTime = DateTime.Now;
+            DateTime holdStartTime = DateTime.MinValue;
+            bool holdEntered = false;
+            int loopCount = 0;
+            int logEveryN = (int)Math.Max(1, 60 / acCfg.FeedbackIntervalSec);   // 60초마다 텔레메트리
+            AutoCapPhase lastLoggedPhase = AutoCapPhase.Warmup;
+            int lastLoggedStepCount = 0;
+            // CH1 가드 모드용: tol 안 연속 유지 시작 시각 (StabilizationSec 후 Hold 진입)
+            DateTime ch1InTolSince = DateTime.MinValue;
+            // CH1 가드 모드용: 마지막으로 TM4 에 전송한 SV. target 변경 시만 재전송.
+            //   매 사이클 SetTemperaturePriority 하면 TM4 내장 램프가 계속 리셋되어 램프업 안 됨.
+            double ch1LastSentSV = double.NaN;
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_isPaused)
+                {
+                    await Task.Delay(500, cancellationToken);
+                    continue;
+                }
+
+                // ★ 실시간 조정: target/tolerance/heater_max/holdTime 매 사이클 재읽기
+                double newTarget = _config.BakeoutTargetTemperature;
+                double newTol = _config.BakeoutTolerance > 0 ? _config.BakeoutTolerance : 0.5;
+                double newHeaterMax = _config.GetEffectiveHeaterMaxTemperature();
+                int newHoldMin = _config.BakeoutHoldTimeMinutes;
+                if (Math.Abs(acCfg.Target - newTarget) > 0.01 ||
+                    Math.Abs(acCfg.Tolerance - newTol) > 0.001 ||
+                    Math.Abs(acCfg.HeaterMax - newHeaterMax) > 0.1 ||
+                    acCfg.HoldTimeMinutes != newHoldMin)
+                {
+                    LogInfo($"[AutoCap] 실시간 조정 감지: target {acCfg.Target:F2}→{newTarget:F2}, " +
+                            $"tol {acCfg.Tolerance:F3}→{newTol:F3}, heater_max {acCfg.HeaterMax:F0}→{newHeaterMax:F0}, " +
+                            $"holdMin {acCfg.HoldTimeMinutes}→{newHoldMin}");
+                    acCfg.Target = newTarget;
+                    acCfg.Tolerance = newTol;
+                    acCfg.HeaterMax = newHeaterMax;
+                    acCfg.HoldTimeMinutes = newHoldMin;
+                    holdMinutes = newHoldMin;
+                }
+
+                await _mainForm._tempController.UpdateStatusAsync();
+                double T_s = GetMonitorChannelTemperature();
+                double T_h = _mainForm._tempController.Status.ChannelStatus[0].CalibratedTemperature;
+
+                var meas = await GetCurrentMeasurementsAsync();
+                if (meas.CurrentPressure > _config.MaxPressureDuringExperiment)
+                {
+                    LogWarning($"[AutoCap] 진공 과압: {meas.CurrentPressure:E2} Torr");
+                }
+
+                double t = (DateTime.Now - startTime).TotalSeconds;
+
+                // ★★★ CH1 모니터링 가드 (절대 침범 금지) ★★★
+                //   CH1을 모니터 채널로 쓰면 = 샘플 = 히터. AutoCap 의 어떤 cap 추정도
+                //   적용해서는 안 됨 (히터 자체를 가열하면 샘플 == 히터 == 폭주).
+                //   TM4 내장 PID + HW 램프만으로 SV=target 유지가 안전한 유일 모드.
+                //   AutoCap 알고리즘이 향후 변경되어도 이 분기로 보호.
+                double newSV;
+                bool shouldTransmitSV;
+                if (!usePIFeedback)
+                {
+                    // CH1 단독 모니터링: SV = target. AutoCap 우회.
+                    newSV = acCfg.Target;
+                    // ★ 매 사이클 전송 금지 — TM4 내장 램프가 매번 리셋되어 램프업 안 됨.
+                    //   target 이 바뀔 때만 1회 전송. 그 외엔 TM4 가 자체 PID + 램프로 알아서 함.
+                    shouldTransmitSV = double.IsNaN(ch1LastSentSV)
+                                       || Math.Abs(newSV - ch1LastSentSV) > 0.05;
+                    // ctrl.Step 는 호출하지 않음 — telem 은 last value 유지.
+                }
+                else
+                {
+                    newSV = ctrl.Step(t, T_s, T_h);
+                    shouldTransmitSV = true;
+                }
+
+                // SV 전송
+                if (shouldTransmitSV)
+                {
+                    short rawSV = ch1Status.Dot == 1
+                        ? (short)(newSV * 10)
+                        : (short)newSV;
+                    _mainForm._tempController.SetTemperaturePriority(1, rawSV);
+                    if (!usePIFeedback)
+                    {
+                        if (!double.IsNaN(ch1LastSentSV))
+                            LogInfo($"[CH1 HW PID] SV 갱신: {ch1LastSentSV:F1} → {newSV:F1}°C (target 변경)");
+                        ch1LastSentSV = newSV;
+                    }
+                }
+
+                var telem = ctrl.GetTelemetry();
+
+                // Phase 전환 or step 발생 시 로그
+                if (telem.Phase != lastLoggedPhase)
+                {
+                    LogInfo($"[AutoCap] Phase 전환: {lastLoggedPhase} → {telem.Phase} " +
+                            $"(t={t/60:F1}m, T_s={T_s:F2}, T_h={T_h:F2}, cap={telem.Cap:F1})");
+                    lastLoggedPhase = telem.Phase;
+                }
+                if (telem.StepCount > lastLoggedStepCount)
+                {
+                    LogInfo($"[AutoCap] iter #{telem.StepCount}: T_s_obs={telem.LastTsObserved:F2}, " +
+                            $"gap={telem.LastGap:+0.00;-0.00}, cap→{telem.Cap:F2}°C " +
+                            $"(β_obs≈{telem.BetaObservedLast:F3})");
+                    lastLoggedStepCount = telem.StepCount;
+                }
+
+                // Hold 진입 시점 기록
+                bool holdReady;
+                if (!usePIFeedback)
+                {
+                    // CH1 가드 모드: T_s가 tol 안 + StabilizationSec 연속 유지 시 Hold.
+                    bool inTolNow = Math.Abs(T_s - acCfg.Target) <= acCfg.Tolerance;
+                    if (inTolNow)
+                    {
+                        if (ch1InTolSince == DateTime.MinValue)
+                            ch1InTolSince = DateTime.Now;
+                        holdReady = (DateTime.Now - ch1InTolSince).TotalSeconds >= acCfg.StabilizationSec;
+                    }
+                    else
+                    {
+                        ch1InTolSince = DateTime.MinValue;
+                        holdReady = false;
+                    }
+                }
+                else
+                {
+                    holdReady = (ctrl.Phase == AutoCapPhase.Hold);
+                }
+                if (holdReady && !holdEntered)
+                {
+                    holdEntered = true;
+                    holdStartTime = DateTime.Now;
+                    string mode = usePIFeedback ? "AutoCap" : "CH1 HW PID";
+                    LogInfo($"★ {mode} Hold 진입 — 목표 유지 {holdMinutes}분 ({holdMinutes / 60.0:F1}h)");
+                }
+
+                // 주기 텔레메트리 로그
+                if (loopCount % logEveryN == 0)
+                {
+                    LogInfo($"[AutoCap] t={t/60:F1}m phase={telem.Phase} T_s={T_s:F2} T_h={T_h:F2} " +
+                            $"SV={newSV:F2} cap={telem.Cap:F1} rate={telem.SmoothedRatePerMin:+0.000;-0.000}°C/min " +
+                            $"step={telem.StepCount} panic={telem.PanicCount}");
+                }
+
+                // 진행률
+                if (!holdEntered)
+                {
+                    double progress = Math.Min(50, 50 * (T_s - T_s0) / Math.Max(0.1, acCfg.Target - T_s0));
+                    UpdateProgress($"AutoCap {telem.Phase}: T_s={T_s:F2}°C, cap={telem.Cap:F1}°C", (int)Math.Max(0, progress));
+                }
+                else
+                {
+                    var elapsedHold = DateTime.Now - holdStartTime;
+                    double holdProgress = Math.Min(100, 50 + 50 * elapsedHold.TotalMinutes / holdMinutes);
+                    UpdateProgress($"AutoCap Hold: T_s={T_s:F2}°C, 잔여 {holdMinutes - (int)elapsedHold.TotalMinutes}분",
+                                   (int)holdProgress);
+                    if (elapsedHold.TotalMinutes >= holdMinutes)
+                    {
+                        LogInfo($"★ AutoCap 베이크아웃 완료 — Hold {holdMinutes}분 경과 " +
+                                $"(총 {(DateTime.Now - startTime).TotalHours:F2}h, cap steps={telem.StepCount}, panics={telem.PanicCount})");
+                        break;
+                    }
+                }
+
+                loopCount++;
+                await Task.Delay((int)(acCfg.FeedbackIntervalSec * 1000), cancellationToken);
+            }
+
+            return await BakeoutShutdownAsync(cancellationToken);
         }
 
         /// <summary>

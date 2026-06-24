@@ -25,6 +25,19 @@ namespace VacX_OutSense.Forms
         private CheckBox[] _chkLogTempCh = new CheckBox[12];
         private CheckBox _chkLogAdditionalAI;
 
+        // AutoCap 컨트롤 (런타임 생성)
+        private TabPage _tabAutoCap;
+        private CheckBox _chkUseAutoCap;
+        private NumericUpDown _nudAutoCapMaxStep;
+        private NumericUpDown _nudAutoCapPanicStep;
+        private NumericUpDown _nudAutoCapStableRate;
+        private NumericUpDown _nudAutoCapStableDur;
+        private NumericUpDown _nudAutoCapTEnv;
+
+        // 런타임 생성 탭 (UI 재정리)
+        private TabPage _tabBakeout;
+        private TabPage _tabShutdown;
+
         private static string FormatSecondsToHM(int seconds)
         {
             int h = seconds / 3600;
@@ -43,7 +56,331 @@ namespace VacX_OutSense.Forms
             SetupHelpLabels();
             SetupHelpButton();
             SetupChannelInterlock();
+            SetupAutoCapTab();
+            ReorganizeTabsForReadability();   // ★ UI 정리 (베이크아웃/종료 탭 분리)
             LoadConfiguration();
+        }
+
+        /// <summary>
+        /// 가독성 개선: 온도 탭의 베이크아웃 컨트롤을 별도 탭으로 분리하고 GroupBox 섹션화.
+        /// 종료 시퀀스도 별도 탭으로.
+        /// </summary>
+        private void ReorganizeTabsForReadability()
+        {
+            _tabBakeout = new TabPage("베이크아웃") { Padding = new Padding(3) };
+            _tabShutdown = new TabPage("종료 시퀀스") { Padding = new Padding(3) };
+
+            // AutoCap 탭은 이미 추가됨 — 위치 조정 위해 임시 제거 후 순서 재배치
+            int autoCapIdx = _tabAutoCap != null ? tabControl1.TabPages.IndexOf(_tabAutoCap) : -1;
+            if (autoCapIdx >= 0) tabControl1.TabPages.Remove(_tabAutoCap);
+
+            // 온도 탭 다음에 [베이크아웃] [AutoCap] [종료시퀀스] 순으로 삽입
+            int tempIdx = tabControl1.TabPages.IndexOf(tabTemperature);
+            tabControl1.TabPages.Insert(tempIdx + 1, _tabBakeout);
+            if (_tabAutoCap != null) tabControl1.TabPages.Insert(tempIdx + 2, _tabAutoCap);
+            tabControl1.TabPages.Insert(
+                tabControl1.TabPages.IndexOf(_tabAutoCap ?? _tabBakeout) + 1, _tabShutdown);
+
+            // 베이크아웃 탭 — 4개 GroupBox 섹션
+            var grpBasic = new GroupBox
+            {
+                Text = "기본 설정",
+                Location = new Point(8, 8),
+                Size = new Size(420, 110),
+                Font = new Font(Font, FontStyle.Bold),
+            };
+            var grpMonitor = new GroupBox
+            {
+                Text = "샘플 온도 모니터링 채널 (선택된 채널 중 MAX로 제어)",
+                Location = new Point(8, 124),
+                Size = new Size(420, 90),
+                Font = new Font(Font, FontStyle.Bold),
+            };
+            var grpSafety = new GroupBox
+            {
+                Text = "안전 설정",
+                Location = new Point(8, 220),
+                Size = new Size(420, 130),
+                Font = new Font(Font, FontStyle.Bold),
+            };
+            var grpAdvanced = new GroupBox
+            {
+                Text = "고급 (PI 제어 — v2 기본 컨트롤러용)",
+                Location = new Point(8, 356),
+                Size = new Size(420, 100),
+                Font = new Font(Font, FontStyle.Bold),
+            };
+            _tabBakeout.Controls.Add(grpBasic);
+            _tabBakeout.Controls.Add(grpMonitor);
+            _tabBakeout.Controls.Add(grpSafety);
+            _tabBakeout.Controls.Add(grpAdvanced);
+
+            // 기본 설정
+            MoveControl(lblBakeoutTargetTemp, grpBasic, 10, 25);
+            MoveControl(txtBakeoutTargetTemp, grpBasic, 220, 22);
+            AddUnitLabel(grpBasic, "°C", 350, 25);
+            MoveControl(lblBakeoutRampRate, grpBasic, 10, 55);
+            MoveControl(txtBakeoutRampRate, grpBasic, 220, 52);
+            AddUnitLabel(grpBasic, "°C/h", 350, 55);
+            var lblHoldHint = new Label
+            {
+                Text = "▸ 홀드 시간·종료 동작은 [시간 설정] 탭에서 설정",
+                Location = new Point(10, 82),
+                Size = new Size(400, 18),
+                ForeColor = Color.DarkSlateGray,
+                Font = new Font(Font.FontFamily, 8),
+            };
+            grpBasic.Controls.Add(lblHoldHint);
+
+            // 모니터 채널 (4열 × 3행)
+            for (int i = 0; i < 12; i++)
+            {
+                int col = i % 4;
+                int row = i / 4;
+                CheckBox? chk = i switch
+                {
+                    0 => chkBakeoutMonitorCh1, 1 => chkBakeoutMonitorCh2, 2 => chkBakeoutMonitorCh3,
+                    3 => chkBakeoutMonitorCh4, 4 => chkBakeoutMonitorCh5, 5 => chkBakeoutMonitorCh6,
+                    6 => chkBakeoutMonitorCh7, 7 => chkBakeoutMonitorCh8, 8 => chkBakeoutMonitorCh9,
+                    9 => chkBakeoutMonitorCh10, 10 => chkBakeoutMonitorCh11, 11 => chkBakeoutMonitorCh12,
+                    _ => null,
+                };
+                if (chk != null)
+                {
+                    chk.Text = $"CH{i + 1}";
+                    MoveControl(chk, grpMonitor, 12 + col * 100, 22 + row * 22);
+                    chk.Size = new Size(80, 20);
+                }
+            }
+            lblBakeoutMonitorChannel.Visible = false;
+
+            // 안전 설정
+            MoveControl(lblBakeoutHeaterMax, grpSafety, 10, 25);
+            MoveControl(txtBakeoutHeaterMax, grpSafety, 220, 22);
+            AddUnitLabel(grpSafety, "°C", 350, 25);
+            MoveControl(lblBakeoutMaxDeltaT, grpSafety, 10, 55);
+            MoveControl(chkBakeoutMaxDeltaTAuto, grpSafety, 220, 55);
+            chkBakeoutMaxDeltaTAuto.Text = "자동";
+            chkBakeoutMaxDeltaTAuto.Size = new Size(50, 20);
+            MoveControl(txtBakeoutMaxDeltaT, grpSafety, 275, 52);
+            txtBakeoutMaxDeltaT.Size = new Size(70, 23);
+            AddUnitLabel(grpSafety, "°C", 350, 55);
+            MoveControl(lblBakeoutTolerance, grpSafety, 10, 85);
+            MoveControl(txtBakeoutTolerance, grpSafety, 220, 82);
+            AddUnitLabel(grpSafety, "±°C", 350, 85);
+
+            // 고급
+            MoveControl(lblBakeoutStabilization, grpAdvanced, 10, 25);
+            MoveControl(txtBakeoutStabilization, grpAdvanced, 220, 22);
+            AddUnitLabel(grpAdvanced, "초", 350, 25);
+            MoveControl(lblBakeoutRiseTimeout, grpAdvanced, 10, 55);
+            MoveControl(txtBakeoutRiseTimeout, grpAdvanced, 220, 52);
+            AddUnitLabel(grpAdvanced, "분 (0=자동)", 350, 55);
+            MoveControl(lblBakeoutFeedbackInterval, grpAdvanced, 10, 75);
+            MoveControl(txtBakeoutFeedbackInterval, grpAdvanced, 220, 72);
+            AddUnitLabel(grpAdvanced, "초", 350, 75);
+
+            // 종료 시퀀스 탭
+            var grpCoolDown = new GroupBox
+            {
+                Text = "쿨링 / 벤팅 온도",
+                Location = new Point(8, 8),
+                Size = new Size(420, 130),
+                Font = new Font(Font, FontStyle.Bold),
+            };
+            MoveControl(lblCoolingTargetTemperature, grpCoolDown, 10, 25);
+            MoveControl(txtCoolingTargetTemperature, grpCoolDown, 220, 22);
+            AddUnitLabel(grpCoolDown, "°C", 350, 25);
+            MoveControl(lblVentingStartTemperature, grpCoolDown, 10, 55);
+            MoveControl(txtVentingStartTemperature, grpCoolDown, 220, 52);
+            AddUnitLabel(grpCoolDown, "°C", 350, 55);
+            MoveControl(lblVentTargetPressure, grpCoolDown, 10, 85);
+            MoveControl(txtVentTargetPressure, grpCoolDown, 220, 82);
+            AddUnitLabel(grpCoolDown, "kPa", 350, 85);
+            _tabShutdown.Controls.Add(grpCoolDown);
+
+            lblShutdownTempHeader.Visible = false;
+            lblBakeoutDecelZone.Visible = false;
+            txtBakeoutDecelZone.Visible = false;
+
+            // 온도 탭 안내
+            var lblTempTabHint = new Label
+            {
+                Text = "▸ 베이크아웃은 [베이크아웃] 탭에서 설정\n▸ 종료 시퀀스(쿨링/벤팅)는 [종료 시퀀스] 탭",
+                Location = new Point(20, 200),
+                Size = new Size(400, 40),
+                ForeColor = Color.DarkSlateGray,
+                Font = new Font(Font.FontFamily, 8),
+            };
+            tabTemperature.Controls.Add(lblTempTabHint);
+        }
+
+        private static void MoveControl(Control ctrl, Control newParent, int x, int y)
+        {
+            ctrl.Parent?.Controls.Remove(ctrl);
+            newParent.Controls.Add(ctrl);
+            ctrl.Location = new Point(x, y);
+            ctrl.Visible = true;
+        }
+
+        private static void AddUnitLabel(Control parent, string text, int x, int y)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                Location = new Point(x, y),
+                Size = new Size(70, 18),
+                ForeColor = Color.DarkSlateGray,
+            });
+        }
+
+        /// <summary>
+        /// AutoCap Bakeout 설정 탭 (Option 5 — 계단식 cap 제어).
+        /// </summary>
+        private void SetupAutoCapTab()
+        {
+            var tabControl = (TabControl)Controls.Find("tabControl1", true)[0];
+            _tabAutoCap = new TabPage("AutoCap (신규)") { Padding = new Padding(3) };
+            tabControl.Controls.Add(_tabAutoCap);
+
+            int y = 10;
+            int xLbl = 10, xCtrl = 260, w = 140;
+
+            var lblTitle = new Label
+            {
+                Text = "AutoCap Bakeout — 계단식 cap 제어 (오버슈트 수학적 보장)",
+                Location = new Point(xLbl, y),
+                Size = new Size(450, 20),
+                Font = new Font(Font, FontStyle.Bold),
+                ForeColor = Color.DarkGreen,
+            };
+            _tabAutoCap.Controls.Add(lblTitle);
+            y += 28;
+
+            _chkUseAutoCap = new CheckBox
+            {
+                Text = "AutoCap 컨트롤러 사용 (체크 해제 시 기존 v2 PI)",
+                Location = new Point(xLbl, y),
+                Size = new Size(450, 22),
+                Font = new Font(Font, FontStyle.Bold),
+            };
+            _tabAutoCap.Controls.Add(_chkUseAutoCap);
+            y += 30;
+
+            // Max step up
+            _tabAutoCap.Controls.Add(new Label
+            {
+                Text = "Cap 한번에 올릴 최대값 (°C):",
+                Location = new Point(xLbl, y + 4),
+                Size = new Size(240, 20),
+            });
+            _nudAutoCapMaxStep = new NumericUpDown
+            {
+                Location = new Point(xCtrl, y),
+                Size = new Size(w, 23),
+                Minimum = 1M, Maximum = 30M,
+                DecimalPlaces = 1, Increment = 0.5M, Value = 5M,
+            };
+            _toolTip.SetToolTip(_nudAutoCapMaxStep,
+                "안정 관측 후 cap을 한 번에 올리는 최대값. 작으면 안전하지만 느림.\n" +
+                "기본 5°C, 범위 1-30°C. 느린 샘플에는 10-15°C 권장.");
+            _tabAutoCap.Controls.Add(_nudAutoCapMaxStep);
+            y += 30;
+
+            // Panic step
+            _tabAutoCap.Controls.Add(new Label
+            {
+                Text = "Panic 시 cap 즉시 감소량 (°C):",
+                Location = new Point(xLbl, y + 4),
+                Size = new Size(240, 20),
+            });
+            _nudAutoCapPanicStep = new NumericUpDown
+            {
+                Location = new Point(xCtrl, y),
+                Size = new Size(w, 23),
+                Minimum = 1M, Maximum = 30M,
+                DecimalPlaces = 1, Increment = 1M, Value = 5M,
+            };
+            _toolTip.SetToolTip(_nudAutoCapPanicStep,
+                "T_s가 target+tol×0.7 초과 감지 시 cap을 즉시 이만큼 감소. 기본 5°C.");
+            _tabAutoCap.Controls.Add(_nudAutoCapPanicStep);
+            y += 30;
+
+            // Stable rate threshold
+            _tabAutoCap.Controls.Add(new Label
+            {
+                Text = "안정 판정 rate 임계값 (°C/min):",
+                Location = new Point(xLbl, y + 4),
+                Size = new Size(240, 20),
+            });
+            _nudAutoCapStableRate = new NumericUpDown
+            {
+                Location = new Point(xCtrl, y),
+                Size = new Size(w, 23),
+                Minimum = 0.01M, Maximum = 1M,
+                DecimalPlaces = 3, Increment = 0.01M, Value = 0.05M,
+            };
+            _toolTip.SetToolTip(_nudAutoCapStableRate,
+                "|dT_s/dt| < 이 값이면 안정 판정. 기본 0.05°C/min.\n" +
+                "작을수록 엄격 (안전하지만 느림), 클수록 관대 (빠르지만 노이즈 영향).");
+            _tabAutoCap.Controls.Add(_nudAutoCapStableRate);
+            y += 30;
+
+            // Stable duration
+            _tabAutoCap.Controls.Add(new Label
+            {
+                Text = "안정 판정 유지 시간 (초):",
+                Location = new Point(xLbl, y + 4),
+                Size = new Size(240, 20),
+            });
+            _nudAutoCapStableDur = new NumericUpDown
+            {
+                Location = new Point(xCtrl, y),
+                Size = new Size(w, 23),
+                Minimum = 30M, Maximum = 3600M,
+                Increment = 30M, Value = 180M,
+            };
+            _toolTip.SetToolTip(_nudAutoCapStableDur,
+                "안정 상태를 이 시간 동안 유지해야 다음 cap 단계 상승. 기본 180초(3분).\n" +
+                "느린 샘플은 더 길게 (600-1200초).");
+            _tabAutoCap.Controls.Add(_nudAutoCapStableDur);
+            y += 30;
+
+            // T_env
+            _tabAutoCap.Controls.Add(new Label
+            {
+                Text = "환경(챔버 벽) 온도 (°C):",
+                Location = new Point(xLbl, y + 4),
+                Size = new Size(240, 20),
+            });
+            _nudAutoCapTEnv = new NumericUpDown
+            {
+                Location = new Point(xCtrl, y),
+                Size = new Size(w, 23),
+                Minimum = 0M, Maximum = 200M,
+                DecimalPlaces = 1, Increment = 1M, Value = 25M,
+            };
+            _toolTip.SetToolTip(_nudAutoCapTEnv, "챔버 벽/주변 온도. 보통 실온 25°C.");
+            _tabAutoCap.Controls.Add(_nudAutoCapTEnv);
+            y += 40;
+
+            // 안내
+            var lblNote = new Label
+            {
+                Location = new Point(xLbl, y),
+                Size = new Size(450, 140),
+                Text = "▸ 작동 원리:\n" +
+                       "  1. 초기 cap = target + tolerance (절대 안전 시작점)\n" +
+                       "  2. 샘플이 cap에서 안정 관측되면 β 관측 후 cap 단계 상승\n" +
+                       "  3. T_s가 target+tol×0.7 초과 시 cap 즉시 감소 (panic)\n" +
+                       "  4. target 도달 후 holding\n\n" +
+                       "▸ 오버슈트 수학적 보장: T_s ≤ T_h ≤ cap (열역학 2법칙)\n" +
+                       "▸ β 학습/모델 추정 없음 → 구조적으로 단순, 실패 지점 적음\n" +
+                       "▸ 단점: 매우 느린 샘플은 수렴 시간 길 수 있음 (물리 한계)",
+                ForeColor = Color.DarkSlateGray,
+                Font = new Font(Font.FontFamily, 8),
+            };
+            _tabAutoCap.Controls.Add(lblNote);
         }
 
         private void SetupChannelInterlock()
@@ -264,6 +601,14 @@ namespace VacX_OutSense.Forms
             txtBakeoutRiseTimeout.Text = _config.BakeoutRiseTimeoutMinutes.ToString();
             txtBakeoutFeedbackInterval.Text = _config.BakeoutFeedbackIntervalSec.ToString("F1");
 
+            // AutoCap Bakeout 설정 로드
+            _chkUseAutoCap.Checked = _config.UseAutoCapBakeout;
+            _nudAutoCapMaxStep.Value = (decimal)Math.Clamp(_config.AutoCap_MaxStepUp, 1, 30);
+            _nudAutoCapPanicStep.Value = (decimal)Math.Clamp(_config.AutoCap_PanicStep, 1, 30);
+            _nudAutoCapStableRate.Value = (decimal)Math.Clamp(_config.AutoCap_StableRateThreshold, 0.01, 1);
+            _nudAutoCapStableDur.Value = (decimal)Math.Clamp(_config.AutoCap_StableDurationSec, 30, 3600);
+            _nudAutoCapTEnv.Value = (decimal)Math.Clamp(_config.AutoCap_EnvironmentTemperature, 0, 200);
+
             // 데이터 기록 컬럼 설정
             _chkLogPressure.Checked = _config.LogColumnPressure;
             _chkLogValves.Checked = _config.LogColumnValves;
@@ -362,6 +707,14 @@ namespace VacX_OutSense.Forms
                 _config.BakeoutRiseTimeoutMinutes = int.Parse(txtBakeoutRiseTimeout.Text);
                 _config.BakeoutFeedbackIntervalSec = double.Parse(txtBakeoutFeedbackInterval.Text);
 
+                // AutoCap Bakeout 설정 저장
+                _config.UseAutoCapBakeout = _chkUseAutoCap.Checked;
+                _config.AutoCap_MaxStepUp = (double)_nudAutoCapMaxStep.Value;
+                _config.AutoCap_PanicStep = (double)_nudAutoCapPanicStep.Value;
+                _config.AutoCap_StableRateThreshold = (double)_nudAutoCapStableRate.Value;
+                _config.AutoCap_StableDurationSec = (int)_nudAutoCapStableDur.Value;
+                _config.AutoCap_EnvironmentTemperature = (double)_nudAutoCapTEnv.Value;
+
                 // 데이터 기록 컬럼 설정
                 _config.LogColumnPressure = _chkLogPressure.Checked;
                 _config.LogColumnValves = _chkLogValves.Checked;
@@ -397,48 +750,21 @@ namespace VacX_OutSense.Forms
         {
             bool isBakeout = cmbExperimentType.SelectedIndex == 1;
 
-            // 온도 탭: 탈가스율 vs 베이크아웃 컨트롤 전환
+            // 온도 탭 — 아웃게싱 전용 (베이크아웃은 별도 탭)
             txtHeaterCh1SetTemperature.Visible = !isBakeout;
             lblHeaterCh1SetTemperature.Visible = !isBakeout;
             txtHeaterRampUpRate.Visible = !isBakeout;
             lblHeaterRampUpRate.Visible = !isBakeout;
             txtTemperatureStabilityTolerance.Visible = !isBakeout;
             lblTemperatureStabilityTolerance.Visible = !isBakeout;
+            lblTempNote.Visible = !isBakeout;
 
-            txtBakeoutTargetTemp.Visible = isBakeout;
-            lblBakeoutTargetTemp.Visible = isBakeout;
-            txtBakeoutRampRate.Visible = isBakeout;
-            lblBakeoutRampRate.Visible = isBakeout;
-            lblBakeoutMonitorChannel.Visible = isBakeout;
-            chkBakeoutMonitorCh1.Visible = isBakeout;
-            chkBakeoutMonitorCh2.Visible = isBakeout;
-            chkBakeoutMonitorCh3.Visible = isBakeout;
-            chkBakeoutMonitorCh4.Visible = isBakeout;
-            chkBakeoutMonitorCh5.Visible = isBakeout;
-            chkBakeoutMonitorCh6.Visible = isBakeout;
-            chkBakeoutMonitorCh7.Visible = isBakeout;
-            chkBakeoutMonitorCh8.Visible = isBakeout;
-            chkBakeoutMonitorCh9.Visible = isBakeout;
-            chkBakeoutMonitorCh10.Visible = isBakeout;
-            chkBakeoutMonitorCh11.Visible = isBakeout;
-            chkBakeoutMonitorCh12.Visible = isBakeout;
-            lblBakeoutHeaterMax.Visible = isBakeout;
-            txtBakeoutHeaterMax.Visible = isBakeout;
-            lblBakeoutMaxDeltaT.Visible = isBakeout;
-            chkBakeoutMaxDeltaTAuto.Visible = isBakeout;
-            txtBakeoutMaxDeltaT.Visible = isBakeout;
-            lblBakeoutTolerance.Visible = isBakeout;
-            txtBakeoutTolerance.Visible = isBakeout;
-            lblBakeoutStabilization.Visible = isBakeout;
-            txtBakeoutStabilization.Visible = isBakeout;
-            lblBakeoutRiseTimeout.Visible = isBakeout;
-            txtBakeoutRiseTimeout.Visible = isBakeout;
-            lblBakeoutDecelZone.Visible = false;
-            txtBakeoutDecelZone.Visible = false;
-            lblBakeoutFeedbackInterval.Visible = isBakeout;
-            txtBakeoutFeedbackInterval.Visible = isBakeout;
+            // 베이크아웃/AutoCap 탭 — 베이크아웃 모드일 때만
+            ToggleTab(_tabBakeout, isBakeout);
+            ToggleTab(_tabAutoCap, isBakeout);
+            // 종료 시퀀스 탭은 항상 표시 (아웃게싱도 사용)
 
-            // 시간 탭: 탈가스율 vs 베이크아웃 컨트롤 전환
+            // 시간 탭 — 실험 유형별 전환
             nudExperimentHours.Visible = !isBakeout;
             nudExperimentMinutes.Visible = !isBakeout;
             lblExperimentDuration.Visible = !isBakeout;
@@ -453,36 +779,29 @@ namespace VacX_OutSense.Forms
             lblBakeoutEndAction.Visible = isBakeout;
             cmbBakeoutEndAction.Visible = isBakeout;
 
-            // 온도 탭: 베이크아웃 모드에서 항목이 4개(+허용오차)로 늘어나므로
-            // TemperatureStabilityTolerance 이하 컨트롤을 아래로 이동
-            int yTolerance = isBakeout ? 165 : 131;
-            int yShutdownHeader = isBakeout ? 315 : 175;
-            int yCooling = isBakeout ? 340 : 200;
-            int yVentTemp = isBakeout ? 377 : 237;
-            int yVentPressure = isBakeout ? 414 : 274;
-            int yNote = isBakeout ? 450 : 317;
+            // 모드 시각화 (콤보박스 배경색)
+            cmbExperimentType.BackColor = isBakeout
+                ? Color.FromArgb(255, 230, 230)   // 연빨강 — 베이크아웃
+                : Color.FromArgb(220, 255, 220);  // 연녹색 — 아웃게싱
+        }
 
-            txtTemperatureStabilityTolerance.Location = new Point(230, yTolerance);
-            lblTemperatureStabilityTolerance.Location = new Point(20, yTolerance + 3);
-            lblShutdownTempHeader.Location = new Point(20, yShutdownHeader);
-            txtCoolingTargetTemperature.Location = new Point(230, yCooling);
-            lblCoolingTargetTemperature.Location = new Point(20, yCooling + 3);
-            txtVentingStartTemperature.Location = new Point(230, yVentTemp);
-            lblVentingStartTemperature.Location = new Point(20, yVentTemp + 3);
-            txtVentTargetPressure.Location = new Point(230, yVentPressure);
-            lblVentTargetPressure.Location = new Point(20, yVentPressure + 3);
-            lblTempNote.Location = new Point(20, yNote);
-
-            // 온도 탭: 종료 시퀀스 설정은 HeaterOff일 때만 의미 있음
-            bool showShutdownSettings = !isBakeout ||
-                (cmbBakeoutEndAction.SelectedIndex == 0); // 냉각 → 벤트 → 종료
-            lblShutdownTempHeader.Visible = showShutdownSettings;
-            txtCoolingTargetTemperature.Visible = showShutdownSettings;
-            lblCoolingTargetTemperature.Visible = showShutdownSettings;
-            txtVentingStartTemperature.Visible = showShutdownSettings;
-            lblVentingStartTemperature.Visible = showShutdownSettings;
-            txtVentTargetPressure.Visible = showShutdownSettings;
-            lblVentTargetPressure.Visible = showShutdownSettings;
+        /// <summary>탭 표시/숨김 (TabPages add/remove).</summary>
+        private void ToggleTab(TabPage? tab, bool show)
+        {
+            if (tab == null) return;
+            bool present = tabControl1.TabPages.Contains(tab);
+            if (show && !present)
+            {
+                // 베이크아웃/AutoCap: 온도 다음에 삽입
+                int insertAt = tabControl1.TabPages.IndexOf(tabTemperature) + 1;
+                if (tab == _tabAutoCap && _tabBakeout != null && tabControl1.TabPages.Contains(_tabBakeout))
+                    insertAt = tabControl1.TabPages.IndexOf(_tabBakeout) + 1;
+                tabControl1.TabPages.Insert(Math.Min(insertAt, tabControl1.TabPages.Count), tab);
+            }
+            else if (!show && present)
+            {
+                tabControl1.TabPages.Remove(tab);
+            }
         }
 
         private void BtnOk_Click(object sender, EventArgs e)

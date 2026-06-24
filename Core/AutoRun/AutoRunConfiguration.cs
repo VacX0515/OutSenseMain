@@ -283,6 +283,40 @@ namespace VacX_OutSense.Core.AutoRun
 
         #endregion
 
+        #region AutoCap Bakeout Controller (Option 5 — 실험적)
+
+        /// <summary>
+        /// [AutoCap] 사용 여부 (true=계단식 cap 제어, false=기존 v2 PI).
+        /// </summary>
+        public bool UseAutoCapBakeout { get; set; } = false;
+
+        /// <summary>
+        /// [AutoCap] cap 한 번에 올릴 최대값 (°C). 기본 5°C.
+        /// </summary>
+        public double AutoCap_MaxStepUp { get; set; } = 5.0;
+
+        /// <summary>
+        /// [AutoCap] Panic 발동 시 cap 즉시 감소량 (°C). 기본 5°C.
+        /// </summary>
+        public double AutoCap_PanicStep { get; set; } = 5.0;
+
+        /// <summary>
+        /// [AutoCap] 안정 판정 rate 임계값 (°C/min). 기본 0.05.
+        /// </summary>
+        public double AutoCap_StableRateThreshold { get; set; } = 0.05;
+
+        /// <summary>
+        /// [AutoCap] 안정 판정 유지 시간 (초). 기본 180초 (3분).
+        /// </summary>
+        public int AutoCap_StableDurationSec { get; set; } = 180;
+
+        /// <summary>
+        /// [AutoCap] 환경(챔버 벽) 온도 (°C). 기본 25°C.
+        /// </summary>
+        public double AutoCap_EnvironmentTemperature { get; set; } = 25.0;
+
+        #endregion
+
         #region 데이터 기록 컬럼 설정
 
         /// <summary>기록 컬럼: 압력 (ATM, Pirani, Ion)</summary>
@@ -569,6 +603,14 @@ namespace VacX_OutSense.Core.AutoRun
             BakeoutMonitorCh11 = defaultConfig.BakeoutMonitorCh11;
             BakeoutMonitorCh12 = defaultConfig.BakeoutMonitorCh12;
             BakeoutProfileName = defaultConfig.BakeoutProfileName;
+
+            // AutoCap Bakeout 설정
+            UseAutoCapBakeout = defaultConfig.UseAutoCapBakeout;
+            AutoCap_MaxStepUp = defaultConfig.AutoCap_MaxStepUp;
+            AutoCap_PanicStep = defaultConfig.AutoCap_PanicStep;
+            AutoCap_StableRateThreshold = defaultConfig.AutoCap_StableRateThreshold;
+            AutoCap_StableDurationSec = defaultConfig.AutoCap_StableDurationSec;
+            AutoCap_EnvironmentTemperature = defaultConfig.AutoCap_EnvironmentTemperature;
         }
 
         #endregion

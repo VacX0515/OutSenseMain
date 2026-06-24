@@ -5,9 +5,31 @@ namespace VacX_OutSense.Utils
     /// </summary>
     public static class AppVersion
     {
-        public const string Version = "2.7.0";
-        public const string BuildDate = "2026-04-15";
+        public const string Version = "2.7.4";
         public const string AppTitle = "VacX OutSense";
+
+        /// <summary>
+        /// 실제 빌드 시각 — 어셈블리 파일 LastWriteTime 기반.
+        /// 어떤 빌드가 실행 중인지 정보 다이얼로그에서 확인 가능.
+        /// </summary>
+        public static string BuildDate
+        {
+            get
+            {
+                try
+                {
+                    var asmPath = typeof(AppVersion).Assembly.Location;
+                    if (string.IsNullOrEmpty(asmPath))
+                        return "unknown";
+                    var info = new System.IO.FileInfo(asmPath);
+                    return info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
+                }
+                catch
+                {
+                    return "unknown";
+                }
+            }
+        }
 
         public static string FullTitle => $"{AppTitle} v{Version}";
 
@@ -16,6 +38,42 @@ namespace VacX_OutSense.Utils
         /// </summary>
         public static readonly string[] PatchNotes = new[]
         {
+            "v2.7.4 (2026-06-24)",
+            "─────────────────────────────────",
+            "[신규] 칠러 PID 설정 UI — 메뉴 [설정 → 칠러 PID 설정...]",
+            "       Kp/Ki/Kd, 목표 채널/온도, Update 주기, Deadband, Adaptive on/off 편집",
+            "       적용 시 baseline + PID 게인 동시 갱신 → XML 저장",
+            "[개선] Deadband를 XML 설정에 포함 (이전: 코드 하드코드 0.5)",
+            "",
+            "v2.7.3 (2026-06-24)",
+            "─────────────────────────────────",
+            "[수정] 칠러 PID saturation anti-windup 추가",
+            "       출력이 한계(-15/+15)에 박힌 채로 같은 방향 오차가 지속되면 적분 동결",
+            "       기존엔 deadband freeze만 있어서 saturate 구간 5분간 적분이 -882까지 누적",
+            "       → ±2.8°C, 25분 주기 대형 limit cycle 유발하던 windup 차단",
+            "",
+            "v2.7.2 (2026-06-18)",
+            "─────────────────────────────────",
+            "[수정] 칠러 PID limit cycle 차단 — deadband 안에서 적분 freeze",
+            "       기존엔 deadband 내 P=0 상태로 적분만 누적해 6분 주기 ±0.4°C 진동 유발",
+            "[개선] Adaptive 임계값 하향 — limit cycle 자동 감지",
+            "       OscillationThreshold 0.4 → 0.3 (분당 영점교차)",
+            "       SwingAmplitudeThreshold 1.5 → 0.6°C (min-max swing)",
+            "[개선] UI — 헤더에서 버전 제거(VacX OutSense만), 상태바에 빌드 일시 동적 표시",
+            "",
+            "v2.7.1 (2026-06-15)",
+            "─────────────────────────────────",
+            "[수정] 칠러 PID 적응 학습 발산 차단",
+            "       · 오버슈트+정상오차 동시 출현을 oscillation으로 판정 (이전: Ki 계속 증가)",
+            "       · 저주파 진동(min-max swing) 감지 추가 — 칠러 5~10분 주기 사이클",
+            "       · 진동 감지 시 Ki 강제 감소(이전: Kp만 감소)",
+            "[수정] Adaptive baseline drift 방지 — 사용자 baseline을 별도 저장,",
+            "       학습된 게인이 다음 실행의 baseline을 덮어쓰지 못하도록 분리",
+            "[개선] 칠러 setpoint 변화율 제한 (±2°C/cycle) — dead-time 큰 시스템 진동 억제",
+            "[개선] PID Deadband 0.3 → 0.5°C, UpdateInterval 기본 10s → 30s",
+            "[신규] AutoRun Hold 진입 시 ChillerPID 적분 windup 자동 제거",
+            "[개선] PID 기본 게인 보수적 값으로 (Kp:0.8/Ki:0.003/Kd:0.5 → 0.5/0.005/0.7)",
+            "",
             "v2.7.0 (2026-04-15)",
             "─────────────────────────────────",
             "[개선] ΔT 제한 자동화: 관측 열지연 기반 자동 계산 (수동 설정도 가능)",

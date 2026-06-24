@@ -198,6 +198,32 @@ namespace VacX_OutSense.Core.AutoRun
     }
 
     /// <summary>
+    /// 단계 완료 이벤트 인자 — UI 로그에 단계별 소요시간 표시용.
+    /// </summary>
+    public class AutoRunStepCompletedEventArgs : EventArgs
+    {
+        public int StepNumber { get; }
+        public int TotalSteps { get; }
+        public AutoRunState State { get; }
+        public string StepName { get; }
+        public TimeSpan Duration { get; }
+        public string Summary { get; }
+        public bool IsSuccess { get; }
+
+        public AutoRunStepCompletedEventArgs(int stepNumber, int totalSteps,
+            AutoRunState state, string stepName, TimeSpan duration, string summary, bool isSuccess)
+        {
+            StepNumber = stepNumber;
+            TotalSteps = totalSteps;
+            State = state;
+            StepName = stepName;
+            Duration = duration;
+            Summary = summary;
+            IsSuccess = isSuccess;
+        }
+    }
+
+    /// <summary>
     /// AutoRun 현재 측정값
     /// </summary>
     public class AutoRunMeasurements

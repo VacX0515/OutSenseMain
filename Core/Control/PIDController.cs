@@ -153,26 +153,38 @@ namespace VacX_OutSense.Core.Control
             // 오차 계산
             double error = setpoint - processValue;
 
-            // 적분항 계산 — 데드밴드 적용 전 실제 오차로 누적 (offset 제거용)
-            _integral += error * dt;
+            // 데드밴드 적용
+            bool inDeadband = Math.Abs(error) < _deadband;
+            double pdError = inDeadband ? 0 : error;
 
-            // 데드밴드 적용 (비례/미분항에만 — 적분은 위에서 실제 오차로 누적)
-            double pdError = Math.Abs(error) < _deadband ? 0 : error;
+            // 미분항 (적분 갱신 판단에 잠정 출력이 필요해 먼저 계산)
+            double errorRate = 0;
+            if (_lastUpdateTime != DateTime.MinValue)
+                errorRate = (pdError - _previousError) / dt;
+            double derivative = _kd * errorRate;
+
+            // 잠정 출력 — 적분을 갱신하기 전에 saturation 판정용으로 미리 계산
+            double tentative = _kp * pdError + _ki * _integral + derivative;
+
+            // Saturation anti-windup:
+            //   출력이 한계에 박혀 있고, error가 더 그 방향으로 밀어붙이면 적분 동결.
+            //   (ex. 최대 냉각(-15) 중인데 여전히 PV>SV → error<0이라 적분이 더 음수로 가려는 상황)
+            bool atMaxPushing = tentative >= _outputMax && error > 0;
+            bool atMinPushing = tentative <= _outputMin && error < 0;
+            bool saturatedSameSign = atMaxPushing || atMinPushing;
+
+            // 적분항 갱신 — deadband 안이거나 saturate-same-sign이면 freeze.
+            //   deadband freeze: P=0 상태에서 적분만 swing 시키는 limit cycle 차단
+            //   saturation freeze: 출력 박힌 상태에서 적분 무한 누적되어 회복 지연되는 windup 차단
+            if (!inDeadband && !saturatedSameSign)
+                _integral += error * dt;
 
             // 비례항 계산
             double proportional = _kp * pdError;
 
-            // 적분 와인드업 방지
+            // 적분 와인드업 방지 (적분 자체 클램프 — 이중 안전망)
             _integral = Math.Max(_integralMin, Math.Min(_integralMax, _integral));
             double integral = _ki * _integral;
-
-            // 미분항 계산
-            double derivative = 0;
-            if (_lastUpdateTime != DateTime.MinValue)
-            {
-                double errorRate = (pdError - _previousError) / dt;
-                derivative = _kd * errorRate;
-            }
 
             // 전체 출력 계산
             double output = proportional + integral + derivative;

@@ -35,8 +35,11 @@ namespace VacX_OutSense.Utils
         /// <summary>기준값 대비 최대 누적 변동 비율 (0.5 = ±50%)</summary>
         public double MaxDriftRatio { get; set; } = 0.5;
 
-        /// <summary>진동 판정 임계값 — 윈도우 내 영점교차 횟수/분</summary>
-        public double OscillationThreshold { get; set; } = 0.4;
+        /// <summary>진동 판정 임계값 — 윈도우 내 영점교차 횟수/분. 6~10분 주기 limit cycle도 감지하도록 0.3.</summary>
+        public double OscillationThreshold { get; set; } = 0.3;
+
+        /// <summary>저주파 진동 진폭(min-max swing) 임계값 (°C). 작은 limit cycle(±0.4°C)도 잡도록 0.6.</summary>
+        public double SwingAmplitudeThreshold { get; set; } = 0.6;
 
         /// <summary>오버슈트 판정 임계값 (°C)</summary>
         public double OvershootThreshold { get; set; } = 0.5;
@@ -192,39 +195,61 @@ namespace VacX_OutSense.Utils
             // 4. 오차 추세 (감소 중인지 정체 중인지)
             double errorTrend = CalculateErrorTrend(samples);
 
+            // 5. 저주파 진동 진폭 — 영점교차로는 못 잡히는 칠러의 5~10분 사이클 감지
+            double swingAmplitude = CalculateSwingAmplitude(samples);
+
+            // 통합 진동 신호: 영점교차 OR 큰 진폭 OR (오버슈트 + 정상오차 동시)
+            bool highFreqOsc = oscillationIndex > OscillationThreshold;
+            bool lowFreqOsc = swingAmplitude > SwingAmplitudeThreshold;
+            bool overshootAndError = maxOvershoot > OvershootThreshold &&
+                                     meanAbsError > SteadyStateErrorThreshold;
+            bool isOscillating = highFreqOsc || lowFreqOsc || overshootAndError;
+
             // 조정 결정
             double dKp = 0, dKi = 0, dKd = 0;
             var reasons = new List<string>();
 
-            // 진동 감지 → Kp 줄이고 Kd 올림
-            if (oscillationIndex > OscillationThreshold)
+            // 진동 감지 → Kp/Ki 줄이고 Kd 올림.
+            // Ki 감소 폭이 핵심 — 칠러 진동의 주범은 적분 windup이므로 강하게 줄인다.
+            if (isOscillating)
             {
-                double severity = Math.Min(1.0, oscillationIndex / OscillationThreshold - 1.0);
-                dKp -= MaxAdjustRate * (0.5 + 0.5 * severity);
-                dKd += MaxAdjustRate * 0.3 * (1 + severity);
-                dKi -= MaxAdjustRate * 0.2 * severity; // 적분도 약간 줄임
-                reasons.Add($"진동({oscillationIndex:F2}/min)");
-            }
+                double oscSeverity = 0.5;
+                if (highFreqOsc)
+                    oscSeverity = Math.Max(oscSeverity, Math.Min(1.0, oscillationIndex / OscillationThreshold));
+                if (lowFreqOsc)
+                    oscSeverity = Math.Max(oscSeverity, Math.Min(1.0, swingAmplitude / (SwingAmplitudeThreshold * 2)));
 
-            // 오버슈트 감지 → Kp 줄임
-            if (maxOvershoot > OvershootThreshold)
+                dKp -= MaxAdjustRate * (0.5 + 0.5 * oscSeverity);
+                dKi -= MaxAdjustRate * (0.8 + 0.4 * oscSeverity); // ★ Ki 강하게 감소
+                dKd += MaxAdjustRate * 0.3 * (1 + oscSeverity);
+
+                string tag = highFreqOsc ? $"진동({oscillationIndex:F2}/min)"
+                           : lowFreqOsc  ? $"저주파진동(swing {swingAmplitude:F1}°C)"
+                                         : $"오버+오차동시({maxOvershoot:F1}/{meanAbsError:F2}°C)";
+                reasons.Add(tag);
+            }
+            else if (maxOvershoot > OvershootThreshold)
             {
+                // 진동 없는 단일 오버슈트 → Kp만 줄임 (Ki도 살짝)
                 double severity = Math.Min(1.0, (maxOvershoot - OvershootThreshold) / 2.0);
                 dKp -= MaxAdjustRate * (0.3 + 0.3 * severity);
+                dKi -= MaxAdjustRate * 0.2 * severity;
                 reasons.Add($"오버슈트({maxOvershoot:F1}°C)");
             }
 
-            // 정상상태 오차 지속 + 진동 없음 → Ki 올림
-            if (meanAbsError > SteadyStateErrorThreshold && oscillationIndex < OscillationThreshold * 0.5)
+            // 정상상태 오차 지속 + 진동 없음 + 오버슈트 없음 → Ki 올림
+            // ★ overshootAndError가 isOscillating에 포함되므로 여기까지 오면 진짜 단조 오차
+            if (!isOscillating && maxOvershoot <= OvershootThreshold &&
+                meanAbsError > SteadyStateErrorThreshold)
             {
                 double severity = Math.Min(1.0, (meanAbsError - SteadyStateErrorThreshold) / 2.0);
                 dKi += MaxAdjustRate * (0.3 + 0.3 * severity);
                 reasons.Add($"정상오차({meanAbsError:F2}°C)");
             }
 
-            // 응답 둔감 (큰 오차 + 감소 안 함 + 진동 없음) → Kp 올림
-            if (meanAbsError > SluggishErrorThreshold && errorTrend > -0.001 &&
-                oscillationIndex < OscillationThreshold * 0.3)
+            // 응답 둔감 (큰 오차 + 감소 안 함 + 진동/오버슈트 모두 없음) → Kp 올림
+            if (!isOscillating && maxOvershoot <= OvershootThreshold * 0.5 &&
+                meanAbsError > SluggishErrorThreshold && errorTrend > -0.001)
             {
                 double severity = Math.Min(1.0, (meanAbsError - SluggishErrorThreshold) / 3.0);
                 dKp += MaxAdjustRate * (0.3 + 0.3 * severity);
@@ -305,6 +330,21 @@ namespace VacX_OutSense.Utils
                     maxOvershoot = Math.Max(maxOvershoot, Math.Abs(s.Error));
             }
             return maxOvershoot;
+        }
+
+        /// <summary>
+        /// 오차의 min-max swing (°C). 윈도우 내 최대오차와 최소오차의 차.
+        /// 영점교차로는 못 잡히는 저주파(주기가 윈도우 길이 비슷) 진동의 진폭 지표.
+        /// </summary>
+        private double CalculateSwingAmplitude(Sample[] samples)
+        {
+            double minErr = double.PositiveInfinity, maxErr = double.NegativeInfinity;
+            foreach (var s in samples)
+            {
+                if (s.Error < minErr) minErr = s.Error;
+                if (s.Error > maxErr) maxErr = s.Error;
+            }
+            return double.IsInfinity(minErr) ? 0 : (maxErr - minErr);
         }
 
         /// <summary>오차 추세 (음수 = 감소 중, 양수 = 증가/정체)</summary>

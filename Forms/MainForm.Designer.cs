@@ -228,6 +228,8 @@ namespace VacX_OutSense
             menuStrip = new MenuStrip();
             menuFile = new ToolStripMenuItem();
             menuFileExit = new ToolStripMenuItem();
+            menuSettings = new ToolStripMenuItem();
+            menuSettingsChillerPID = new ToolStripMenuItem();
             menuHelp = new ToolStripMenuItem();
             menuHelpPatchNotes = new ToolStripMenuItem();
             menuHelpAbout = new ToolStripMenuItem();
@@ -2486,7 +2488,7 @@ namespace VacX_OutSense
             // menuStrip
             // 
             menuStrip.ImageScalingSize = new Size(24, 24);
-            menuStrip.Items.AddRange(new ToolStripItem[] { menuFile, menuHelp });
+            menuStrip.Items.AddRange(new ToolStripItem[] { menuFile, menuSettings, menuHelp });
             menuStrip.Location = new Point(0, 0);
             menuStrip.Name = "menuStrip";
             menuStrip.Size = new Size(1171, 24);
@@ -2505,7 +2507,21 @@ namespace VacX_OutSense
             menuFileExit.Size = new Size(113, 22);
             menuFileExit.Text = "종료(&X)";
             menuFileExit.Click += menuFileExit_Click;
-            // 
+            //
+            // menuSettings
+            //
+            menuSettings.DropDownItems.AddRange(new ToolStripItem[] { menuSettingsChillerPID });
+            menuSettings.Name = "menuSettings";
+            menuSettings.Size = new Size(57, 20);
+            menuSettings.Text = "설정(&S)";
+            //
+            // menuSettingsChillerPID
+            //
+            menuSettingsChillerPID.Name = "menuSettingsChillerPID";
+            menuSettingsChillerPID.Size = new Size(180, 22);
+            menuSettingsChillerPID.Text = "칠러 PID 설정...";
+            menuSettingsChillerPID.Click += MenuSettingsChillerPID_Click;
+            //
             // menuHelp
             // 
             menuHelp.DropDownItems.AddRange(new ToolStripItem[] { menuHelpPatchNotes, menuHelpAbout });
@@ -2655,6 +2671,8 @@ namespace VacX_OutSense
         private MenuStrip menuStrip;
         private ToolStripMenuItem menuFile;
         private ToolStripMenuItem menuFileExit;
+        private ToolStripMenuItem menuSettings;
+        private ToolStripMenuItem menuSettingsChillerPID;
         private ToolStripMenuItem menuHelp;
         private ToolStripMenuItem menuHelpPatchNotes;
         private ToolStripMenuItem menuHelpAbout;

@@ -75,7 +75,7 @@ namespace VacX_OutSense
         private Label _lblMeasThermal;
         private GroupBox _groupBoxAutoRunStatus;
         private GroupBox _grpLiveAdjust;
-        private NumericUpDown _numAdjTarget, _numAdjMaxTemp, _numAdjTolerance, _numAdjStabilization;
+        private NumericUpDown _numAdjTarget, _numAdjMaxTemp, _numAdjTolerance, _numAdjStabilization, _numAdjHoldMin;
         private Button _btnAdjApply;
 
         // AutoRun 차트 관련 필드
@@ -223,7 +223,10 @@ namespace VacX_OutSense
         public MainForm()
         {
             InitializeComponent();
-            this.Text = AppVersion.FullTitle;
+            this.Text = AppVersion.AppTitle;
+            // 좌측 하단 상태바: "준비 v2.1.0" 고정값 제거 → 빌드 일시 표시
+            toolStripStatusConnection.Text = "";
+            toolStripStatusVersion.Text = $"빌드 {AppVersion.BuildDate}";
             this.FormClosing += MainForm_FormClosing;
             InitializeTimers();
         }
@@ -1006,6 +1009,7 @@ namespace VacX_OutSense
                 _autoRunService.ProgressUpdated += OnAutoRunProgressUpdated;
                 _autoRunService.ErrorOccurred += OnAutoRunErrorOccurred;
                 _autoRunService.Completed += OnAutoRunCompleted;
+                _autoRunService.StepCompleted += OnAutoRunStepCompleted;
 
                 _autoRunTimer = new System.Windows.Forms.Timer { Interval = 1000 };
                 _autoRunTimer.Tick += AutoRunTimer_Tick;
@@ -1095,7 +1099,7 @@ namespace VacX_OutSense
             {
                 Text = "실시간 조정",
                 Location = new Point(780, 10),
-                Size = new Size(360, 110),
+                Size = new Size(360, 140),
                 Visible = false
             };
             _panelAutoRun.Controls.Add(_grpLiveAdjust);
@@ -1108,19 +1112,23 @@ namespace VacX_OutSense
             _numAdjTolerance = new NumericUpDown { Location = new Point(75, 53), Size = new Size(65, 23), DecimalPlaces = 1, Minimum = 0.1M, Maximum = 10, Value = 1, Increment = 0.1M };
             var lblAdj4 = new Label { Text = "안정화(초):", Location = new Point(145, 55), Size = new Size(65, 20), TextAlign = ContentAlignment.MiddleRight };
             _numAdjStabilization = new NumericUpDown { Location = new Point(210, 53), Size = new Size(65, 23), Minimum = 0, Maximum = 3600, Value = 600, Increment = 30 };
-            _btnAdjApply = new Button { Text = "적용", Location = new Point(285, 23), Size = new Size(65, 53), BackColor = Color.LightYellow };
+            var lblAdj5 = new Label { Text = "홀드(분):", Location = new Point(10, 85), Size = new Size(60, 20), TextAlign = ContentAlignment.MiddleRight };
+            _numAdjHoldMin = new NumericUpDown { Location = new Point(75, 83), Size = new Size(85, 23), Minimum = 1, Maximum = 10000, Value = 1440, Increment = 30 };
+            var lblAdj5b = new Label { Text = "(= Hold 지속)", Location = new Point(165, 85), Size = new Size(110, 20), Font = new Font("맑은 고딕", 7.5F), ForeColor = Color.Gray };
+            _btnAdjApply = new Button { Text = "적용", Location = new Point(285, 23), Size = new Size(65, 83), BackColor = Color.LightYellow };
             _btnAdjApply.Click += BtnLiveAdjust_Click;
 
             _grpLiveAdjust.Controls.AddRange(new Control[]
             {
                 lblAdj1, _numAdjTarget, lblAdj2, _numAdjMaxTemp,
-                lblAdj3, _numAdjTolerance, lblAdj4, _numAdjStabilization, _btnAdjApply
+                lblAdj3, _numAdjTolerance, lblAdj4, _numAdjStabilization,
+                lblAdj5, _numAdjHoldMin, lblAdj5b, _btnAdjApply
             });
 
             var lblAdjNote = new Label
             {
                 Text = "※ 적용 버튼을 눌러야 반영됩니다",
-                Location = new Point(10, 82), Size = new Size(340, 18),
+                Location = new Point(10, 112), Size = new Size(340, 18),
                 Font = new Font("맑은 고딕", 7.5F), ForeColor = Color.Gray
             };
             _grpLiveAdjust.Controls.Add(lblAdjNote);
@@ -1238,11 +1246,13 @@ namespace VacX_OutSense
                 Size = new Size(1110, 170),
                 View = View.Details,
                 FullRowSelect = true,
-                GridLines = true
+                GridLines = true,
+                Scrollable = true,
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
             };
-            listViewAutoRunLog.Columns.Add("시간", 160);
-            listViewAutoRunLog.Columns.Add("상태", 140);
-            listViewAutoRunLog.Columns.Add("메시지", 790);
+            listViewAutoRunLog.Columns.Add("시간", 140);
+            listViewAutoRunLog.Columns.Add("상태", 100);
+            listViewAutoRunLog.Columns.Add("메시지", 850);
             groupBoxLog.Controls.Add(listViewAutoRunLog);
             _panelAutoRun.Controls.Add(groupBoxLog);
 
@@ -1345,6 +1355,7 @@ namespace VacX_OutSense
             double newMax = (double)_numAdjMaxTemp.Value;
             double newTol = (double)_numAdjTolerance.Value;
             int newStab = (int)_numAdjStabilization.Value;
+            int newHoldMin = (int)_numAdjHoldMin.Value;
 
             // PI 피드백 모드(모니터 채널 ≠ CH1)에서만 상한 검증 — CH1 직접 모니터링 시 목표=SV이므로 상한 불필요
             bool usePIFeedback = _autoRunConfig.GetBakeoutMonitorChannels().Any(ch => ch != 1);
@@ -1359,7 +1370,8 @@ namespace VacX_OutSense
                 $"목표 온도: {_autoRunConfig.BakeoutTargetTemperature:F1} → {newTarget:F1}°C\n" +
                 $"CH1 상한: {_autoRunConfig.BakeoutHeaterMaxTemperature:F1} → {newMax:F1}°C\n" +
                 $"허용오차: {_autoRunConfig.BakeoutTolerance:F1} → {newTol:F1}°C\n" +
-                $"안정화 시간: {_autoRunConfig.BakeoutStabilizationSeconds} → {newStab}초\n\n" +
+                $"안정화 시간: {_autoRunConfig.BakeoutStabilizationSeconds} → {newStab}초\n" +
+                $"홀드 시간: {_autoRunConfig.BakeoutHoldTimeMinutes} → {newHoldMin}분\n\n" +
                 $"즉시 적용됩니다. 계속하시겠습니까?",
                 "실시간 설정 변경",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
@@ -1375,11 +1387,14 @@ namespace VacX_OutSense
                 changes += $"허용오차:{_autoRunConfig.BakeoutTolerance:F1}→{newTol:F1}°C ";
             if (_autoRunConfig.BakeoutStabilizationSeconds != newStab)
                 changes += $"안정화:{_autoRunConfig.BakeoutStabilizationSeconds}→{newStab}초 ";
+            if (_autoRunConfig.BakeoutHoldTimeMinutes != newHoldMin)
+                changes += $"홀드:{_autoRunConfig.BakeoutHoldTimeMinutes}→{newHoldMin}분 ";
 
             _autoRunConfig.BakeoutTargetTemperature = newTarget;
             _autoRunConfig.BakeoutHeaterMaxTemperature = newMax;
             _autoRunConfig.BakeoutTolerance = newTol;
             _autoRunConfig.BakeoutStabilizationSeconds = newStab;
+            _autoRunConfig.BakeoutHoldTimeMinutes = newHoldMin;
 
             LogInfo($"[실시간 조정] {changes.Trim()}");
             AddAutoRunLog("CONFIG", $"설정 변경: {changes.Trim()}");
@@ -1990,6 +2005,7 @@ namespace VacX_OutSense
                     _autoRunService.ProgressUpdated += OnAutoRunProgressUpdated;
                     _autoRunService.ErrorOccurred += OnAutoRunErrorOccurred;
                     _autoRunService.Completed += OnAutoRunCompleted;
+                    _autoRunService.StepCompleted += OnAutoRunStepCompleted;
                 }
             }
         }
@@ -2222,6 +2238,7 @@ namespace VacX_OutSense
                             _numAdjMaxTemp.Value = (decimal)_autoRunConfig.BakeoutHeaterMaxTemperature;
                             _numAdjTolerance.Value = (decimal)_autoRunConfig.BakeoutTolerance;
                             _numAdjStabilization.Value = _autoRunConfig.BakeoutStabilizationSeconds;
+                            _numAdjHoldMin.Value = _autoRunConfig.BakeoutHoldTimeMinutes;
                         }
                         catch { }
                     }
@@ -2377,6 +2394,22 @@ namespace VacX_OutSense
             }
         }
 
+        private void OnAutoRunStepCompleted(object sender, AutoRunStepCompletedEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new EventHandler<AutoRunStepCompletedEventArgs>(OnAutoRunStepCompleted), sender, e);
+                return;
+            }
+            string durationStr = e.Duration.TotalHours >= 1
+                ? $"{(int)e.Duration.TotalHours}:{e.Duration.Minutes:D2}:{e.Duration.Seconds:D2}"
+                : $"{e.Duration.Minutes:D2}:{e.Duration.Seconds:D2}";
+            string detail = string.IsNullOrEmpty(e.Summary)
+                ? $"단계 {e.StepNumber}/{e.TotalSteps} '{e.StepName}' 완료 [{durationStr}]"
+                : $"단계 {e.StepNumber}/{e.TotalSteps} '{e.StepName}' 완료 [{durationStr}] — {e.Summary}";
+            AddAutoRunLog("STEP_DONE", detail, e.IsSuccess ? Color.DarkGreen : Color.DarkOrange);
+        }
+
         private void AddAutoRunLog(string state, string message, Color? color = null)
         {
             var item = new ListViewItem(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -2386,8 +2419,12 @@ namespace VacX_OutSense
                 item.ForeColor = color.Value;
 
             listViewAutoRunLog.Items.Insert(0, item);
-            while (listViewAutoRunLog.Items.Count > 100)
+            // 최대 500개 보관 (스크롤로 과거 항목 확인 가능)
+            while (listViewAutoRunLog.Items.Count > 500)
                 listViewAutoRunLog.Items.RemoveAt(listViewAutoRunLog.Items.Count - 1);
+            // 새 항목 보이도록 최상단으로 스크롤
+            if (listViewAutoRunLog.Items.Count > 0)
+                listViewAutoRunLog.EnsureVisible(0);
         }
 
         private void UpdateStepSequenceDisplay(AutoRunState currentState)
@@ -5596,6 +5633,21 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             MessageBox.Show(
                 $"{AppVersion.AppTitle}\nv{AppVersion.Version} ({AppVersion.BuildDate})\n\n© 2024-2026 VacX Inc.",
                 "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void MenuSettingsChillerPID_Click(object sender, EventArgs e)
+        {
+            if (_chillerPIDService == null)
+            {
+                MessageBox.Show(this, "칠러 PID 서비스가 초기화되지 않았습니다.",
+                    "칠러 PID 설정", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using (var dlg = new ChillerPIDSettingsForm(_chillerPIDService))
+            {
+                dlg.ShowDialog(this);
+            }
         }
 
         private void MenuHelpPatchNotes_Click(object sender, EventArgs e)
