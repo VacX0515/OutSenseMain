@@ -19,6 +19,9 @@ namespace VacX_OutSense.Models
         public double IonPressure { get; set; }
         public string IonGaugeStatus { get; set; } = "";
 
+        // 피라니 게이지 장착 여부 (미장착이면 PiraniPressure=0, UI에 "미장착" 표시).
+        public bool PiraniInstalled { get; set; } = true;
+
         // 밸브 상태
         public string GateValveStatus { get; set; } = "";
         public string VentValveStatus { get; set; } = "";

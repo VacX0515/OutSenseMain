@@ -210,6 +210,24 @@ namespace VacX_OutSense
         private AutoRunLock _autoRunLock;
         private Panel _chamberWorkOverlay;
         private bool _chamberWorkMode;
+
+        /// <summary>
+        /// 피라니 게이지 장착 여부 (InterlockConfiguration.PiraniInstalled).
+        /// 로드 실패 시 true(장착)로 안전 폴백.
+        /// PTR225(Cold Cathode 전용) 선택 시 저장된 값과 무관하게 true 강제 —
+        /// HV 활성화 전 압력을 가늠할 다른 수단이 없어 피라니가 필수 안전장치.
+        /// </summary>
+        public bool IsPiraniInstalled
+        {
+            get
+            {
+                if (_interlockConfig?.PiraniInstalled != false) return true;
+                var model = _tempCalibrationConfig?.IonGauge?.Model
+                    ?? _ionGauge?.Model
+                    ?? Core.Devices.Gauges.IonGaugeModel.PTR225;
+                return model == Core.Devices.Gauges.IonGaugeModel.PTR225;
+            }
+        }
         #endregion
 
         #region 통신 포트 설정
@@ -397,6 +415,9 @@ namespace VacX_OutSense
 
         #endregion
 
+        // 워치독 터보펌프 정지의 중복 실행 방지 플래그 (Interlocked)
+        private int _watchdogTurboStopInFlight = 0;
+
         /// <summary>
         /// 안전 워치독 트리거 — 장비 자동 정지
         /// </summary>
@@ -407,10 +428,32 @@ namespace VacX_OutSense
                 switch (action)
                 {
                     case WatchdogAction.StopTurboPump:
-                        if (_turboPump?.IsConnected == true && _turboPump.Status?.IsRunning == true)
+                        // IsStartCommanded 기준: 회전 비트(Bit 11)는 정지 후 관성 회전
+                        // (수 시간)에도 참이라, 그걸 기준으로 하면 10초마다 정지가 재실행된다
+                        if (_turboPump?.IsConnected == true && _turboPump.IsStartCommanded)
                         {
-                            _turboPump.Stop();
-                            LogError("[워치독] 터보펌프 자동 정지 실행");
+                            // Stop()은 통신 왕복으로 수 초가 걸릴 수 있어 수집 루프
+                            // 스레드(이 이벤트의 호출 스레드)를 막지 않도록 비동기 실행
+                            if (Interlocked.CompareExchange(ref _watchdogTurboStopInFlight, 1, 0) == 0)
+                            {
+                                Task.Run(() =>
+                                {
+                                    try
+                                    {
+                                        bool ok = _turboPump.Stop();
+                                        LogError(ok ? "[워치독] 터보펌프 자동 정지 실행"
+                                                    : "[워치독] 터보펌프 자동 정지 실패 — 통신 상태 확인 필요");
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        LogError($"[워치독] 터보펌프 정지 오류: {ex.Message}");
+                                    }
+                                    finally
+                                    {
+                                        Interlocked.Exchange(ref _watchdogTurboStopInFlight, 0);
+                                    }
+                                });
+                            }
                             if (InvokeRequired)
                                 BeginInvoke(new Action(() => ForceToggleButtonAppearance("turbopump", false)));
                             else
@@ -564,10 +607,15 @@ namespace VacX_OutSense
                     try
                     {
                         var commSettings = cfg.ToCommunicationSettings();
+
+                        // 터보펌프(USS)는 고정 24바이트 프레임 — 자동 감지 모드와 동일하게
+                        // 정확한 길이 프레이밍을 적용 (0 = 무음 구간 감지 방식)
+                        int expectedLength = deviceName == PortAutoDetectionService.DEVICE_TURBO_PUMP ? 24 : 0;
+
                         var commManager = _channelManager.CreateCommunicationManager(
                             cfg.PortName,
                             commSettings,
-                            defaultExpectedResponseLength: 0,
+                            defaultExpectedResponseLength: expectedLength,
                             defaultTimeoutMs: 500);
 
                         _commManagers[deviceName] = commManager;
@@ -576,7 +624,7 @@ namespace VacX_OutSense
                             DeviceName = deviceName,
                             PortName = cfg.PortName,
                             Settings = commSettings,
-                            ExpectedResponseLength = 0,
+                            ExpectedResponseLength = expectedLength,
                             TimeoutMs = 500
                         };
                         _detectionResult.PortToDeviceMap[cfg.PortName] = deviceName;
@@ -653,6 +701,10 @@ namespace VacX_OutSense
                 if (_turboPump != null) _deviceList.Add(_turboPump);
                 if (_bathCirculator != null) _deviceList.Add(_bathCirculator);
                 if (_tempController != null) _deviceList.Add(_tempController);
+
+                // 드라이브 오류(에러 코드 200 등)가 파일 로그에 남도록 구독
+                if (_turboPump != null)
+                    _turboPump.ErrorOccurred += OnTurboPumpDeviceError;
             });
 
             SetupDataBindings();
@@ -3271,13 +3323,16 @@ namespace VacX_OutSense
 
             bool isOn = btn_iongauge.Text == "HV on";
 
-            // ON 시: 피라니 압력 ≤ 7.5E-4 Torr 체크
-            double piraniPressure = GetCurrentPiraniPressure();
-            if (!isOn && !CheckInterlock(
-                piraniPressure > 7.5E-4 || piraniPressure <= 0,
-                _interlockConfig.IonGaugeHV_RequireLowPressure,
-                $"피라니 압력이 너무 높습니다.\n현재: {(piraniPressure > 0 ? $"{piraniPressure:E2}" : "N/A")} Torr (기준: ≤ 7.5E-4 Torr)\n이온게이지가 손상될 수 있습니다."))
-                return;
+            // ON 시: 피라니 압력 ≤ 7.5E-4 Torr 체크 — 피라니 미장착이면 스킵.
+            if (IsPiraniInstalled)
+            {
+                double piraniPressure = GetCurrentPiraniPressure();
+                if (!isOn && !CheckInterlock(
+                    piraniPressure > 7.5E-4 || piraniPressure <= 0,
+                    _interlockConfig.IonGaugeHV_RequireLowPressure,
+                    $"피라니 압력이 너무 높습니다.\n현재: {(piraniPressure > 0 ? $"{piraniPressure:E2}" : "N/A")} Torr (기준: ≤ 7.5E-4 Torr)\n이온게이지가 손상될 수 있습니다."))
+                    return;
+            }
 
             btn_iongauge.Enabled = false;
             try
@@ -3361,6 +3416,29 @@ private async void btnDryPumpStandby_Click(object sender, EventArgs e)
             finally { btnDryPumpNormal.Enabled = true; }
         }
 
+        // 터보펌프 장치 오류를 파일 로그로 남긴다.
+        // 통신 장애 시 폴링 주기마다 여러 종류의 메시지가 번갈아 반복되므로
+        // 숫자를 지운 정규화 키별로 5초 스로틀을 적용한다.
+        private readonly Dictionary<string, DateTime> _turboPumpErrorLogTimes = new Dictionary<string, DateTime>();
+        private readonly object _turboPumpErrorLogLock = new object();
+
+        private void OnTurboPumpDeviceError(object sender, string message)
+        {
+            string key = System.Text.RegularExpressions.Regex.Replace(message, "[0-9]+", "#");
+
+            lock (_turboPumpErrorLogLock)
+            {
+                DateTime last;
+                if (_turboPumpErrorLogTimes.TryGetValue(key, out last) &&
+                    (DateTime.Now - last).TotalSeconds < 5)
+                    return;
+
+                _turboPumpErrorLogTimes[key] = DateTime.Now;
+            }
+
+            LogError($"[터보펌프] {message}");
+        }
+
         private async void btnTurboPumpStart_Click(object sender, EventArgs e)
         {
             if (!CheckAutoRunInterlock(_interlockConfig.AutoRun_BlockManualPumpControl, "펌프"))
@@ -3371,14 +3449,22 @@ private async void btnDryPumpStandby_Click(object sender, EventArgs e)
             {
                 // 실제 장비 상태를 직접 조회
                 bool checkOk = await Task.Run(() => _turboPump.CheckStatus());
-                bool isRunning = checkOk && (_turboPump.Status?.IsRunning == true);
+                if (!checkOk)
+                {
+                    // 확인 실패를 '정지 상태'로 간주하면 정지하려던 펌프에
+                    // 시작 명령이 나가는 오동작이 된다 — 아무 명령도 보내지 않음
+                    LogWarning("터보펌프 상태 확인 실패 — 명령을 보내지 않았습니다. 통신 상태를 확인하세요.");
+                    return;
+                }
+                bool isRunning = _turboPump.Status?.IsRunning == true;
 
                 if (isRunning)
                 {
                     // Stop 로직
-                    await Task.Run(() => _turboPump.Stop());
+                    bool stopOk = await Task.Run(() => _turboPump.Stop());
                     ForceToggleButtonAppearance("turbopump", false);
-                    LogInfo("터보펌프 정지");
+                    if (stopOk) LogInfo("터보펌프 정지");
+                    else LogWarning("터보펌프 정지 명령 실패 — 통신 상태를 확인하세요.");
                 }
                 else
                 {
@@ -3404,9 +3490,10 @@ private async void btnDryPumpStandby_Click(object sender, EventArgs e)
                         "게이트밸브가 열려있지 않습니다."))
                         return;
 
-                    await Task.Run(() => _turboPump.Start());
+                    bool startOk = await Task.Run(() => _turboPump.Start());
                     ForceToggleButtonAppearance("turbopump", true);
-                    LogInfo("터보펌프 시작");
+                    if (startOk) LogInfo("터보펌프 시작");
+                    else LogWarning("터보펌프 시작 명령 실패 — 통신 상태를 확인하세요.");
                 }
             }
             finally { btnTurboPumpStart.Enabled = true; }
@@ -3428,8 +3515,22 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             btnTurboPumpReset.Enabled = false;
             try
             {
-                await Task.Run(() => _turboPump.ResetError());
-                LogInfo("터보펌프 리셋");
+                bool ok = await Task.Run(() => _turboPump.ResetError());
+                if (ok)
+                {
+                    LogInfo("터보펌프 리셋");
+                }
+                else if (_turboPump.HasError)
+                {
+                    // 원인이 남아 있으면 드라이브가 리셋을 무시한다.
+                    // 감속 중 발생한 컨버터 오류는 로터 정지 후에만 해제 가능.
+                    LogWarning($"터보펌프 리셋 후에도 오류 지속 (코드: {_turboPump.Status?.ErrorCode}) — " +
+                        "로터가 완전히 정지한 뒤 다시 시도하세요.");
+                }
+                else
+                {
+                    LogWarning("터보펌프 리셋 명령 실패 — 통신 상태를 확인하세요.");
+                }
             }
             finally { btnTurboPumpReset.Enabled = true; }
         }
@@ -4274,6 +4375,16 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             if (_ionGauge != null)
                 _ionGauge.Model = _tempCalibrationConfig.IonGauge.Model;
 
+            // PTR225(Cold Cathode 전용) → 피라니 필수. 저장값이 false여도 true로 강제 후 재저장.
+            if (_tempCalibrationConfig.IonGauge.Model == IonGaugeModel.PTR225
+                && _interlockConfig != null
+                && !_interlockConfig.PiraniInstalled)
+            {
+                _interlockConfig.PiraniInstalled = true;
+                try { _interlockConfig.SaveToFile(); } catch { }
+                LogInfo("PTR225 선택 — 피라니 필수 규칙에 따라 PiraniInstalled=true로 자동 설정");
+            }
+
             // PTR90: IG와 동일하게 표시하되 HV 버튼만 숨김
             bool isPTR90 = _tempCalibrationConfig.IonGauge.Model == IonGaugeModel.PTR90;
             if (txtIG != null)
@@ -4493,10 +4604,18 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             {
                 double piraniPressure = GetCurrentPiraniPressure();
 
-                if (piraniPressure > 0 && piraniPressure <= 1E-3 && !_igAutoActivating)
+                // 피라니 미장착 시: 압력 게이팅 없이 즉시 IG 활성화 (통합게이지가 자체적으로 안전 관리).
+                bool canActivate = IsPiraniInstalled
+                    ? (piraniPressure > 0 && piraniPressure <= 1E-3)
+                    : true;
+
+                if (canActivate && !_igAutoActivating)
                 {
                     _igAutoActivating = true;
-                    LogInfo($"피라니 압력 {piraniPressure:E2} Torr — 이온게이지 자동 활성화");
+                    if (IsPiraniInstalled)
+                        LogInfo($"피라니 압력 {piraniPressure:E2} Torr — 이온게이지 자동 활성화");
+                    else
+                        LogInfo("피라니 미장착 — 이온게이지 즉시 활성화");
                     Task.Run(async () =>
                     {
                         try
@@ -4537,6 +4656,7 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
                 else
                 {
                     // IG 꺼져있고 피라니도 아직 높음 → 피라니 압력 표시
+                    // (미장착이면 위 canActivate=true 분기로 빠지므로 여기에는 장착 케이스만 도달)
                     string pressureText = piraniPressure > 0 ? $"{piraniPressure:E2}" : "N/A";
                     lblCh1TimeRemainingValue.Text =
                         $"진공 대기 ({pressureText} / {_ch1TargetPressure:E1} Torr) [IG OFF]";
@@ -4732,7 +4852,21 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             try
             {
                 var aiData = _dataCollectionService?.GetLatestAIData();
-                if (aiData != null && _piraniGauge != null)
+                if (aiData == null) return -1;
+
+                // 피라니 미장착 시: 이온게이지 값으로 폴백 (챔버 압력 판정용).
+                if (!IsPiraniInstalled)
+                {
+                    if (_ionGauge == null) return -1;
+                    double igVoltage = aiData.ExpansionVoltageValues[2];
+                    var igCal = _tempCalibrationConfig?.IonGauge;
+                    if (igCal != null) igVoltage = igCal.ApplyVoltageOffset(igVoltage);
+                    double igP = _ionGauge.ConvertVoltageToPressureInTorr(igVoltage);
+                    if (igCal != null) igP = igCal.Apply(igP);
+                    return igP > 0 ? igP : -1;
+                }
+
+                if (_piraniGauge != null)
                     return _piraniGauge.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]);
             }
             catch { }
@@ -4957,8 +5091,8 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
                 {
                     await ExecuteWithRetry("터보펌프 정지", async () =>
                     {
-                        await Task.Run(() => _turboPump.Stop());
-                        return true;
+                        // 실제 결과를 반환해야 실패 시 재시도가 동작한다
+                        return await Task.Run(() => _turboPump.Stop());
                     }, null, 3, 2000);
 
                     LogInfo("[종료 시퀀스] 터보펌프 감속 대기 중...");
@@ -5281,7 +5415,10 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
             var menuInterlockSettings = new ToolStripMenuItem("인터락 설정");
             menuInterlockSettings.Click += (s, e) =>
             {
-                using (var dlg = new InterlockSettingsForm(_interlockConfig))
+                var currentModel = _tempCalibrationConfig?.IonGauge?.Model
+                    ?? _ionGauge?.Model
+                    ?? Core.Devices.Gauges.IonGaugeModel.PTR225;
+                using (var dlg = new InterlockSettingsForm(_interlockConfig, currentModel))
                 {
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
@@ -5521,11 +5658,16 @@ private async void btnTurboPumpVent_Click(object sender, EventArgs e)
         {
             try
             {
+                // DeviceName(예: "MAG integra Turbo Pump")과 Model(예: "MAG W 1300")
+                // 어느 쪽이 넘어와도 매칭되도록 두 이름을 모두 등록
                 string logType = deviceName switch
                 {
                     "ECODRY 25 plus" => "DryPump",
+                    "ECODRY Dry Pump" => "DryPump",
                     "MAG W 1300" => "TurboPump",
+                    "MAG integra Turbo Pump" => "TurboPump",
                     "LK-1000" => "BathCirculator",
+                    "Bath Circulator" => "BathCirculator",
                     _ when deviceName.Contains("TM4") => "TempController",
                     "IO Module" => "Pressure",
                     _ => null

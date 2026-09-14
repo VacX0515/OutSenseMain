@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using VacX_OutSense.Core.Devices.Gauges;
 using VacX_OutSense.Core.Safety;
 
 namespace VacX_OutSense.Forms
@@ -8,7 +9,12 @@ namespace VacX_OutSense.Forms
     public class InterlockSettingsForm : Form
     {
         private InterlockConfiguration _config;
+        private readonly IonGaugeModel _ionGaugeModel;
         public InterlockConfiguration Configuration => _config;
+
+        // 하드웨어
+        private CheckBox chkPiraniInstalled;
+        private Label lblPiraniLock;
 
         // 밸브
         private CheckBox chkVV_TurboBlock;
@@ -47,8 +53,18 @@ namespace VacX_OutSense.Forms
         private CheckBox chkAR_BlockHeater;
 
         public InterlockSettingsForm(InterlockConfiguration config)
+            : this(config, IonGaugeModel.PTR225)
+        {
+        }
+
+        public InterlockSettingsForm(InterlockConfiguration config, IonGaugeModel ionGaugeModel)
         {
             _config = config ?? new InterlockConfiguration();
+            _ionGaugeModel = ionGaugeModel;
+            // PTR225는 Cold Cathode 전용 → HV 활성화 전 압력 판정 불가하므로 피라니 필수.
+            if (_ionGaugeModel == IonGaugeModel.PTR225)
+                _config.PiraniInstalled = true;
+
             InitializeUI();
             LoadFromConfig();
         }
@@ -56,7 +72,7 @@ namespace VacX_OutSense.Forms
         private void InitializeUI()
         {
             Text = "인터락 설정";
-            Size = new Size(460, 670);
+            Size = new Size(460, 720);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -71,6 +87,26 @@ namespace VacX_OutSense.Forms
             Controls.Add(panel);
 
             int y = 10;
+
+            // ── 하드웨어 ──
+            y = AddGroupLabel(panel, "하드웨어", y);
+            chkPiraniInstalled = AddCheckBox(panel, "피라니 게이지 장착됨 (해제 시 이온게이지만 사용)", ref y);
+
+            // PTR225 선택 시 피라니 필수 — 체크박스 잠금.
+            if (_ionGaugeModel == IonGaugeModel.PTR225)
+            {
+                chkPiraniInstalled.Enabled = false;
+                lblPiraniLock = new Label
+                {
+                    Text = "   ※ PTR225(Cold Cathode) 선택 시 피라니 필수 — 변경 불가",
+                    ForeColor = Color.Firebrick,
+                    Location = new Point(30, y),
+                    AutoSize = true
+                };
+                panel.Controls.Add(lblPiraniLock);
+                y += 22;
+            }
+            y += 8;
 
             // ── 밸브 ──
             y = AddGroupLabel(panel, "밸브", y);
@@ -192,6 +228,7 @@ namespace VacX_OutSense.Forms
 
         private void LoadFromConfig()
         {
+            chkPiraniInstalled.Checked = _config.PiraniInstalled;
             chkVV_TurboBlock.Checked = _config.VentValve_BlockIfTurboRunning;
             chkVV_AutoExhaust.Checked = _config.VentValve_AutoOpenExhaustAtHighPressure;
             chkEV_TurboBlock.Checked = _config.ExhaustValve_BlockIfTurboRunning;
@@ -222,6 +259,10 @@ namespace VacX_OutSense.Forms
 
         private void SaveToConfig()
         {
+            // PTR225는 어떤 UI 상태와도 무관하게 피라니 필수.
+            _config.PiraniInstalled = (_ionGaugeModel == IonGaugeModel.PTR225)
+                ? true
+                : chkPiraniInstalled.Checked;
             _config.VentValve_BlockIfTurboRunning = chkVV_TurboBlock.Checked;
             _config.VentValve_AutoOpenExhaustAtHighPressure = chkVV_AutoExhaust.Checked;
             _config.ExhaustValve_BlockIfTurboRunning = chkEV_TurboBlock.Checked;

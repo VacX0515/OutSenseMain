@@ -11,6 +11,19 @@ namespace VacX_OutSense.Core.Safety
     [Serializable]
     public class InterlockConfiguration
     {
+        #region 하드웨어 구성
+
+        /// <summary>
+        /// 피라니 게이지 장착 여부. false면 통합 이온게이지(PTR90 등)만으로 압력을 판정.
+        /// 미장착 시:
+        ///  · 이온게이지 HV ON 인터락(피라니 ≤ 7.5E-4)은 건너뜀
+        ///  · AutoRun 진공 대기 단계에서 IG 자동 활성화 게이팅 없이 즉시 IG 사용
+        ///  · UI/제어 로직에서 피라니 압력 값 대신 이온게이지 값으로 폴백
+        /// </summary>
+        public bool PiraniInstalled { get; set; } = true;
+
+        #endregion
+
         #region 밸브 인터락
 
         /// <summary>
@@ -198,6 +211,8 @@ namespace VacX_OutSense.Core.Safety
         public void ResetToDefaults()
         {
             var defaults = new InterlockConfiguration();
+
+            PiraniInstalled = defaults.PiraniInstalled;
 
             VentValve_BlockIfTurboRunning = defaults.VentValve_BlockIfTurboRunning;
             ExhaustValve_BlockIfTurboRunning = defaults.ExhaustValve_BlockIfTurboRunning;

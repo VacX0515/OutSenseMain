@@ -1,11 +1,13 @@
 ﻿using System;
 using System.ComponentModel;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using VacX_OutSense.Core.Communication.Interfaces;
 using VacX_OutSense.Core.Communication;
 using VacX_OutSense.Core.Devices.Base;
+using VacX_OutSense.Utils;
 
 namespace VacX_OutSense.Core.Devices.TurboPump
 {
@@ -33,8 +35,8 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         private const int PKE_WRITE_16BIT = 0x2000;   // 16비트 파라미터 값 쓰기
         private const int PKE_WRITE_32BIT = 0x3000;   // 32비트 파라미터 값 쓰기
         private const int PKE_READ_ARRAY = 0x6000;    // 배열 값 요청
-        private const int PKE_WRITE_ARRAY_16BIT = 0x7000;  // 16비트 배열 값 쓰기
-        private const int PKE_WRITE_ARRAY_32BIT = 0x8000;  // 32비트 배열 값 쓰기
+        // 주의: 0x7000/0x8000은 '쓰기' 요청 지정자가 아니라 응답 지정자
+        // (명령 실행 불가/쓰기 권한 없음)이다 — 매뉴얼 p.15 참조.
 
         // Reply Designator (펌프 → 호스트)
         private const int PKE_REPLY_16BIT = 0x1000;   // 16비트 값 응답
@@ -105,7 +107,7 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
         private readonly ICommunicationManager _communicationManager;
         private int _timeout = 1000;
-        private bool _isUpdatingStatus = false;
+        private int _statusUpdateGate = 0;   // UpdateStatus 중복 진입 방지 (Interlocked)
         private int _deviceAddress = 0;
         private string _model;
 
@@ -115,7 +117,16 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         private int _currentControlWord = 0;
         private ushort _currentSetpointFrequency = 0;  // PZD2로 전송할 속도 설정값
         private bool _isInitialized = false;
+        private bool _hasValidStatusWord = false;    // 유효한 상태 워드를 한 번이라도 읽었는지
+        private bool _controlWordInitialized = false; // 재시작 후 초기 제어 워드 결정을 마쳤는지
+        private int _failureReported = 0;            // 드라이브 오류 진단을 이미 기록했는지 (Interlocked)
         private readonly object _controlWordLock = new object();
+
+        // 통신 트랜잭션(버퍼 정리→전송→수신)을 직렬화하는 잠금.
+        // 폴링 스레드와 UI 명령 스레드가 같은 포트에서 교차하면
+        // 응답이 뒤섞이거나, 정지 직후 폴링이 예전 제어 워드(START=1)를
+        // 다시 보내는 경합이 발생한다.
+        private readonly object _commLock = new object();
         private Dictionary<ushort, ushort> _parameterCache = new Dictionary<ushort, ushort>();
 
         /// <summary>
@@ -180,6 +191,13 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         /// 현재 설정된 목표 주파수 (PZD2)
         /// </summary>
         public ushort CurrentSetpointFrequency => _currentSetpointFrequency;
+
+        /// <summary>
+        /// 시작 명령이 걸려 있는지 (제어 워드 Bit 0).
+        /// 상태 워드의 회전 비트(Bit 11)는 정지 후 관성 회전 중에도 참이므로,
+        /// '펌프를 세워야 하는가' 판단에는 이 명령 상태를 사용해야 한다.
+        /// </summary>
+        public bool IsStartCommanded => (_currentControlWord & CTL_START_STOP) != 0;
 
         // 상태 프로퍼티들
         public bool IsRunning => _currentStatus.IsRunning;
@@ -283,11 +301,17 @@ namespace VacX_OutSense.Core.Devices.TurboPump
                     _parameterCache[PARAM_STANDBY_FREQUENCY] = value;
                 }
 
-                // 상태 워드 읽기
+                // 상태 워드 읽기 — 재시작 시 START 유지 판정의 근거이므로
+                // 첫 응답이 깨질 수 있는 포트 오픈 직후를 감안해 최대 3회 재시도
                 ushort statusWord;
-                if (ReadStatusWord(out statusWord))
+                for (int attempt = 0; attempt < 3; attempt++)
                 {
-                    UpdateStatusFromStatusWord(statusWord);
+                    if (ReadStatusWord(out statusWord))
+                    {
+                        UpdateStatusFromStatusWord(statusWord);
+                        break;
+                    }
+                    Thread.Sleep(150);
                 }
             }
             catch (Exception ex)
@@ -300,16 +324,150 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         {
             lock (_controlWordLock)
             {
-                // 원격 제어 활성화
-                _currentControlWord = CTL_ENABLE_REMOTE;
+                // 이미 초기 결정이 끝났거나 사용자가 명시적 명령을 내렸다면
+                // 절대 다시 결정하지 않는다 — 방금 시작한 펌프를 지연 초기화가
+                // 덮어써서 정지시키는 사고를 막는다
+                if (_controlWordInitialized)
+                    return;
 
-                // 펌프가 이미 실행 중이면 시작 비트 유지
-                if (_currentStatus.IsRunning)
+                // 유효한 상태 워드를 한 번도 읽지 못했다면 제어 워드를 보내지 않는다.
+                // Bit 10(원격 제어)이 켜진 텔레그램의 Bit 0은 곧바로 명령으로 적용되므로,
+                // 상태를 모르는 채 START=0을 보내면 구동 중인 펌프가 정지된다.
+                // 이후 첫 성공한 상태 갱신(UpdateStatus)에서 재시도한다.
+                if (!_hasValidStatusWord)
                 {
-                    _currentControlWord |= CTL_START_STOP;
+                    OnErrorOccurred("초기 상태 확인 실패 — 제어 워드 전송을 보류합니다 (상태 확인 후 자동 재시도).");
+                    return;
                 }
 
+                // 프로그램 재시작 시 구동 중인 펌프를 멈추지 않도록 시작 비트를 복원한다.
+                // 회전 비트(Bit 11)는 정지 명령 후 관성 회전(run-out) 중에도 참이므로
+                // 상태 비트만으로는 '구동 명령 상태'를 판별할 수 없다. 따라서:
+                //  1순위: 마지막으로 저장된 명령 이력 (대기 모드/설정 주파수도 함께 복원)
+                //  2순위(이력 없음): 회전 중이면서 감속 중이 아닐 때만 유지
+                // 어떤 경우든 오류 상태거나 회전하지 않는 펌프에는 START를 보내지 않는다.
+                bool startCommanded, standbyCommanded, setpointEnabled;
+                ushort savedSetpoint;
+                bool hasSaved = TryLoadCommandedState(out startCommanded, out standbyCommanded,
+                                                     out setpointEnabled, out savedSetpoint);
+
+                bool keepStart;
+                if (_currentStatus.HasError || !_currentStatus.IsRunning)
+                {
+                    keepStart = false;
+                }
+                else if (hasSaved)
+                {
+                    keepStart = startCommanded;
+
+                    // 이력은 '전속 구동(대기/설정값 없음)'인데 드라이브가 감속 중이면
+                    // 앱이 꺼진 사이 외부(전면 패널 등)에서 정지시킨 것으로 판단한다.
+                    // 이때 START를 재전송하면 남이 세운 펌프를 재가속시키게 된다
+                    if (keepStart && _currentStatus.IsDecelerating &&
+                        !standbyCommanded && !setpointEnabled)
+                    {
+                        keepStart = false;
+                        OnErrorOccurred("저장된 구동 이력과 달리 펌프가 감속 중입니다 — " +
+                            "외부 정지로 판단해 시작 명령을 복원하지 않습니다.");
+                    }
+                }
+                else
+                {
+                    keepStart = !_currentStatus.IsDecelerating;
+                }
+
+                // 제어 워드는 로컬로 완성한 뒤 한 번에 게시한다 — 필드를 단계적으로
+                // 고치면 그 사이 폴링 텔레그램이 START=0 중간 상태를 전송한다
+                int word = CTL_ENABLE_REMOTE;
+                if (keepStart)
+                {
+                    word |= CTL_START_STOP;
+                    if (standbyCommanded)
+                        word |= CTL_STANDBY;
+                    if (setpointEnabled &&
+                        savedSetpoint >= FREQ_MIN_SETPOINT && savedSetpoint <= FREQ_MAX_SETPOINT)
+                    {
+                        // 설정값을 먼저 게시한 뒤 Bit 6이 담긴 워드를 게시한다
+                        _currentSetpointFrequency = savedSetpoint;
+                        word |= CTL_ENABLE_SETPOINT;
+                    }
+                }
+                _currentControlWord = word;
+
+                // 결정은 유효한 상태에서 내렸으므로 확정한다. 전송이 실패해도
+                // 이후 폴링 텔레그램이 같은 제어 워드를 계속 전달한다.
+                _controlWordInitialized = true;
+                SaveCommandedState();
                 SendControlCommand(_currentControlWord, _currentSetpointFrequency);
+            }
+        }
+
+        /// <summary>
+        /// 마지막으로 '명령한' 운전 상태를 파일에 기록합니다.
+        /// 재시작 시 상태 유지의 근거로 사용됩니다 — 상태 워드의 회전 비트는
+        /// 관성 회전 중에도 참이라 구동 의도의 근거가 될 수 없습니다.
+        /// </summary>
+        private static string CommandedStateFilePath =>
+            Path.Combine(PathSettings.Instance.ConfigPath, "TurboPumpCommandedState.txt");
+
+        private void SaveCommandedState()
+        {
+            try
+            {
+                string content =
+                    $"start={(((_currentControlWord & CTL_START_STOP) != 0) ? 1 : 0)}\r\n" +
+                    $"standby={(((_currentControlWord & CTL_STANDBY) != 0) ? 1 : 0)}\r\n" +
+                    $"setpointEnabled={(((_currentControlWord & CTL_ENABLE_SETPOINT) != 0) ? 1 : 0)}\r\n" +
+                    $"setpointFrequency={_currentSetpointFrequency}\r\n" +
+                    $"savedAt={DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+
+                // 원자적 교체: 쓰기 도중 전원이 나가도 빈/반쪽 파일이 남지 않도록
+                // 임시 파일에 쓴 뒤 이동한다
+                string tempPath = CommandedStateFilePath + ".tmp";
+                File.WriteAllText(tempPath, content);
+                File.Move(tempPath, CommandedStateFilePath, overwrite: true);
+            }
+            catch
+            {
+                // 이력 저장 실패는 동작에 치명적이지 않음 (재시작 시 상태 추정으로 폴백)
+            }
+        }
+
+        private bool TryLoadCommandedState(out bool startCommanded, out bool standbyCommanded,
+                                           out bool setpointEnabled, out ushort setpointFrequency)
+        {
+            startCommanded = false;
+            standbyCommanded = false;
+            setpointEnabled = false;
+            setpointFrequency = 0;
+
+            try
+            {
+                if (!File.Exists(CommandedStateFilePath))
+                    return false;
+
+                bool sawStart = false;
+                foreach (var line in File.ReadAllLines(CommandedStateFilePath))
+                {
+                    var parts = line.Split('=');
+                    if (parts.Length != 2) continue;
+
+                    switch (parts[0].Trim())
+                    {
+                        case "start": startCommanded = parts[1].Trim() == "1"; sawStart = true; break;
+                        case "standby": standbyCommanded = parts[1].Trim() == "1"; break;
+                        case "setpointEnabled": setpointEnabled = parts[1].Trim() == "1"; break;
+                        case "setpointFrequency": ushort.TryParse(parts[1].Trim(), out setpointFrequency); break;
+                    }
+                }
+
+                // 핵심 키가 없으면(빈 파일/손상) 이력 없음으로 처리해
+                // 상태 기반 추정으로 폴백한다
+                return sawStart;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -329,15 +487,26 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             {
                 lock (_controlWordLock)
                 {
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    _controlWordInitialized = true;
+
+                    int previousWord = _currentControlWord;
                     _currentControlWord |= CTL_ENABLE_REMOTE | CTL_START_STOP;
 
                     bool result = SendControlCommand(_currentControlWord, _currentSetpointFrequency);
                     if (result)
                     {
+                        SaveCommandedState();
                         Thread.Sleep(100);
-                        UpdateStatus();
+                        CheckStatus();
                         OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                             "터보 펌프 시작", DeviceStatusCode.Running));
+                    }
+                    else
+                    {
+                        // 전송이 확인되지 않은 START를 남겨두면 이후 폴링이
+                        // 승인되지 않은 시작 명령을 계속 내보내므로 원복한다
+                        _currentControlWord = previousWord;
                     }
                     return result;
                 }
@@ -362,6 +531,9 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             {
                 lock (_controlWordLock)
                 {
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    _controlWordInitialized = true;
+
                     // [수정] Bit 0(START)과 Bit 6(ENABLE_SETPOINT)을 모두 해제
                     // 정지 시 PZD2 설정값 활성화를 유지할 이유가 없으며,
                     // 이후 Start() 호출 시 Parameter 24 기반으로 깨끗하게 시작
@@ -370,11 +542,14 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
                     _currentSetpointFrequency = 0;
 
+                    // 정지 의도는 전송 성패와 무관하게 유지된다 (fail-safe):
+                    // 전송이 실패해도 이후 폴링 텔레그램이 정지 명령을 계속 전달한다
                     bool result = SendControlCommand(_currentControlWord, 0);
+                    SaveCommandedState();
                     if (result)
                     {
                         Thread.Sleep(100);
-                        UpdateStatus();
+                        CheckStatus();
                         OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                             "터보 펌프 정지 명령 전송", DeviceStatusCode.Idle));
                     }
@@ -415,24 +590,40 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
                 lock (_controlWordLock)
                 {
-                    // PZD2 설정값 활성화 (Bit 6)
-                    _currentControlWord |= CTL_ENABLE_REMOTE | CTL_ENABLE_SETPOINT;
-
-                    // 펌프가 실행 중이면 시작 비트 유지
-                    if (_currentStatus.IsRunning)
+                    // '명령된' 시작 상태에서만 허용한다. 상태 워드의 회전 비트(Bit 11)는
+                    // 정지 후 관성 회전(run-out) 중에도 참이므로, 그것을 근거로 START를
+                    // 다시 켜면 사용자가 정지시킨 펌프가 재가속된다.
+                    if ((_currentControlWord & CTL_START_STOP) == 0)
                     {
-                        _currentControlWord |= CTL_START_STOP;
+                        OnErrorOccurred("펌프가 시작 명령 상태가 아닙니다. 속도 설정은 펌프 시작 후에 가능합니다.");
+                        return false;
                     }
 
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    // (가드 통과 후에만 — 거부된 명령이 복원을 취소하면 안 됨)
+                    _controlWordInitialized = true;
+
+                    int previousWord = _currentControlWord;
+                    ushort previousSetpoint = _currentSetpointFrequency;
+
+                    // 폴링이 (제어 워드, 설정값) 쌍을 찢어 읽어도 안전하도록
+                    // 설정값을 먼저 기록한 뒤 Bit 6을 켠다
                     _currentSetpointFrequency = frequencyHz;
+                    _currentControlWord |= CTL_ENABLE_REMOTE | CTL_ENABLE_SETPOINT;
 
                     bool result = SendControlCommand(_currentControlWord, frequencyHz);
                     if (result)
                     {
+                        SaveCommandedState();
                         Thread.Sleep(100);
-                        UpdateStatus();
+                        CheckStatus();
                         OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                             $"속도 설정: {frequencyHz} Hz", DeviceStatusCode.Running));
+                    }
+                    else
+                    {
+                        _currentControlWord = previousWord;
+                        _currentSetpointFrequency = previousSetpoint;
                     }
                     return result;
                 }
@@ -553,23 +744,33 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
             try
             {
-                if (!_currentStatus.IsRunning)
-                {
-                    OnErrorOccurred("펌프가 실행 중이 아닐 때는 대기 모드로 전환할 수 없습니다.");
-                    return false;
-                }
-
                 lock (_controlWordLock)
                 {
-                    _currentControlWord |= CTL_STANDBY | CTL_ENABLE_REMOTE | CTL_START_STOP;
+                    // 명령된 시작 상태에서만 허용 (회전 비트는 run-out에도 참이므로 부적합)
+                    if ((_currentControlWord & CTL_START_STOP) == 0)
+                    {
+                        OnErrorOccurred("펌프가 시작 명령 상태가 아닐 때는 대기 모드로 전환할 수 없습니다.");
+                        return false;
+                    }
+
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    _controlWordInitialized = true;
+
+                    int previousWord = _currentControlWord;
+                    _currentControlWord |= CTL_STANDBY | CTL_ENABLE_REMOTE;
 
                     bool result = SendControlCommand(_currentControlWord, _currentSetpointFrequency);
                     if (result)
                     {
+                        SaveCommandedState();
                         Thread.Sleep(100);
-                        UpdateStatus();
+                        CheckStatus();
                         OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                             "대기 모드 활성화", DeviceStatusCode.Standby));
+                    }
+                    else
+                    {
+                        _currentControlWord = previousWord;
                     }
                     return result;
                 }
@@ -591,24 +792,34 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
             try
             {
-                if (!_currentStatus.IsRunning)
-                {
-                    OnErrorOccurred("펌프가 실행 중이 아닐 때는 정상 모드로 전환할 수 없습니다.");
-                    return false;
-                }
-
                 lock (_controlWordLock)
                 {
+                    // 명령된 시작 상태에서만 허용 (회전 비트는 run-out에도 참이므로 부적합)
+                    if ((_currentControlWord & CTL_START_STOP) == 0)
+                    {
+                        OnErrorOccurred("펌프가 시작 명령 상태가 아닐 때는 정상 모드로 전환할 수 없습니다.");
+                        return false;
+                    }
+
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    _controlWordInitialized = true;
+
+                    int previousWord = _currentControlWord;
                     _currentControlWord &= ~CTL_STANDBY;
-                    _currentControlWord |= CTL_ENABLE_REMOTE | CTL_START_STOP;
+                    _currentControlWord |= CTL_ENABLE_REMOTE;
 
                     bool result = SendControlCommand(_currentControlWord, _currentSetpointFrequency);
                     if (result)
                     {
+                        SaveCommandedState();
                         Thread.Sleep(100);
-                        UpdateStatus();
+                        CheckStatus();
                         OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                             "정상 모드 전환", DeviceStatusCode.Running));
+                    }
+                    else
+                    {
+                        _currentControlWord = previousWord;
                     }
                     return result;
                 }
@@ -637,25 +848,54 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             {
                 lock (_controlWordLock)
                 {
-                    // START 비트 해제 상태에서 리셋
-                    int resetControlWord = CTL_ENABLE_REMOTE | CTL_ERROR_RESET;
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    _controlWordInitialized = true;
 
-                    bool result = SendControlCommand(resetControlWord, 0);
-                    if (result)
+                    // 벤트 밸브 상태(Bit 12)는 리셋과 무관하므로 유지한다 —
+                    // 제어 워드는 매 텔레그램에 적용되므로 지우면 벤트 중 밸브가 닫힌다
+                    int keepBits = _currentControlWord & CTL_VENTING;
+
+                    // START 비트 해제 상태에서 리셋 (0→1 전환 시에만 동작)
+                    // 필드에도 즉시 반영해, 펄스 도중 폴링이 예전 제어 워드
+                    // (START 포함 가능)를 다시 보내지 않도록 한다
+                    _currentControlWord = CTL_ENABLE_REMOTE | CTL_ERROR_RESET | keepBits;
+                    _currentSetpointFrequency = 0;
+
+                    bool result = SendControlCommand(_currentControlWord, 0);
+                    if (!result)
                     {
-                        Thread.Sleep(200);
-
-                        // 리셋 비트 해제
-                        _currentControlWord = CTL_ENABLE_REMOTE;
-                        _currentSetpointFrequency = 0;
-                        SendControlCommand(_currentControlWord, 0);
-
-                        Thread.Sleep(100);
-                        UpdateStatus();
-                        OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
-                            "오류 리셋 완료", DeviceStatusCode.Ready));
+                        // 전송 실패 시에도 START는 되살리지 않는다(성공 경로와 대칭):
+                        // 응답만 유실됐다면 드라이브는 이미 정지+리셋 펄스를 받았을 수
+                        // 있어, START를 복원하면 폴링이 펌프를 임의로 재시작하게 된다.
+                        // 리셋 비트만 지워 다음 시도의 0→1 에지를 보장한다
+                        _currentControlWord = CTL_ENABLE_REMOTE | keepBits;
+                        SaveCommandedState();
+                        return false;
                     }
-                    return result;
+
+                    Thread.Sleep(200);
+
+                    // 리셋 비트 해제
+                    _currentControlWord = CTL_ENABLE_REMOTE | keepBits;
+                    SendControlCommand(_currentControlWord, 0);
+                    SaveCommandedState();
+
+                    Thread.Sleep(100);
+                    CheckStatus();
+
+                    // 원인이 남아 있으면 드라이브는 리셋을 무시한다 (매뉴얼 p.17 Bit 7).
+                    // 예: 감속 중 발생한 컨버터 오류(코드 2xx)는 로터 정지 후에만 해제된다
+                    if (_currentStatus.HasError)
+                    {
+                        OnErrorOccurred(
+                            $"오류 리셋이 적용되지 않았습니다 (코드: {_currentStatus.ErrorCode}). " +
+                            "원인이 해소되지 않은 상태입니다 — 로터가 완전히 정지한 뒤 다시 시도하세요.");
+                        return false;
+                    }
+
+                    OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
+                        "오류 리셋 완료", DeviceStatusCode.Ready));
+                    return true;
                 }
             }
             catch (Exception ex)
@@ -680,7 +920,14 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
             try
             {
-                UpdateStatus();
+                // CheckStatus: 폴링과 겹쳐도 건너뛰지 않고 최신 상태 워드를 읽는다.
+                // 확인에 실패하면 오래된 상태로 판단하지 않고 벤트를 보류한다
+                // (회전 중 벤트는 매뉴얼이 명시한 위험 상황)
+                if (!CheckStatus())
+                {
+                    OnErrorOccurred("상태 확인 실패 — 벤트를 보류합니다. 통신 상태를 확인하세요.");
+                    return false;
+                }
                 if (_currentStatus.IsRunning)
                 {
                     OnErrorOccurred("펌프가 회전 중일 때는 벤트할 수 없습니다. 먼저 정지하세요.");
@@ -689,12 +936,16 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
                 lock (_controlWordLock)
                 {
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    _controlWordInitialized = true;
+
                     _currentControlWord |= CTL_VENTING | CTL_ENABLE_REMOTE;
                     _currentControlWord &= ~CTL_START_STOP;
 
                     bool result = SendControlCommand(_currentControlWord, 0);
                     if (result)
                     {
+                        SaveCommandedState();
                         Thread.Sleep(100);
                         _currentStatus.IsVented = true;
                         OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
@@ -722,12 +973,16 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             {
                 lock (_controlWordLock)
                 {
+                    // 명시적 명령은 재시작 시 지연 복원(SetInitialControlWord)을 대체한다
+                    _controlWordInitialized = true;
+
                     _currentControlWord &= ~CTL_VENTING;
                     _currentControlWord |= CTL_ENABLE_REMOTE;
 
                     bool result = SendControlCommand(_currentControlWord, 0);
                     if (result)
                     {
+                        SaveCommandedState();
                         Thread.Sleep(100);
                         _currentStatus.IsVented = false;
                         OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
@@ -758,10 +1013,13 @@ namespace VacX_OutSense.Core.Devices.TurboPump
 
             try
             {
-                bool rs232Result = WriteParameter(PARAM_RS232_WATCHDOG, 0);
-                bool profibusResult = WriteParameter(PARAM_PROFIBUS_WATCHDOG, 0);
+                // 이미 0이면 다시 쓰지 않는다 — 연결할 때마다 쓰고 EEPROM에
+                // 저장하면 비휘발성 메모리가 불필요하게 마모된다 (매뉴얼 p.12)
+                bool rs232Written, profibusWritten;
+                bool rs232Result = EnsureParameterValue(PARAM_RS232_WATCHDOG, 0, out rs232Written);
+                bool profibusResult = EnsureParameterValue(PARAM_PROFIBUS_WATCHDOG, 0, out profibusWritten);
 
-                if (rs232Result && profibusResult)
+                if (rs232Result && profibusResult && (rs232Written || profibusWritten))
                 {
                     SaveParameters();
                     OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
@@ -775,6 +1033,22 @@ namespace VacX_OutSense.Core.Devices.TurboPump
                 OnErrorOccurred($"와치독 비활성화 실패: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 파라미터가 목표 값이 아닐 때만 씁니다.
+        /// </summary>
+        /// <returns>파라미터가 목표 값임을 보장하면 true</returns>
+        private bool EnsureParameterValue(ushort paramNumber, ushort targetValue, out bool written)
+        {
+            written = false;
+
+            ushort current;
+            if (ReadParameter(paramNumber, out current) && current == targetValue)
+                return true;
+
+            written = WriteParameter(paramNumber, targetValue);
+            return written;
         }
 
         /// <summary>
@@ -835,17 +1109,17 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         /// <returns>상태 업데이트 성공 여부</returns>
         public bool UpdateStatus()
         {
-            if (_isUpdatingStatus) return false;
-
             EnsureConnected();
-            _isUpdatingStatus = true;
+
+            if (Interlocked.CompareExchange(ref _statusUpdateGate, 1, 0) != 0) return false;
 
             try
             {
                 // [수정] 텔레그램 1회로 PZD1~PZD6 전체를 가져옴
+                // 제어 워드는 SendAndReceive가 _commLock 획득 후에 읽으므로
+                // 직전에 완료된 제어 명령(정지 등)이 항상 반영된다
                 byte[] response;
-                if (!SendAndReceive(0, PKE_NO_ACCESS, 0, _currentControlWord,
-                                    _currentSetpointFrequency, out response))
+                if (!SendAndReceive(0, PKE_NO_ACCESS, 0, out response))
                 {
                     return false;
                 }
@@ -853,6 +1127,11 @@ namespace VacX_OutSense.Core.Devices.TurboPump
                 // PZD1 (상태 워드): byte 11-12
                 ushort statusWord = (ushort)((response[11] << 8) | response[12]);
                 UpdateStatusFromStatusWord(statusWord);
+
+                // 재시작 직후 초기 제어 워드 결정이 보류됐다면(초기 상태 읽기 실패)
+                // 유효한 상태를 얻은 지금 다시 시도한다
+                if (!_controlWordInitialized)
+                    SetInitialControlWord();
 
                 // PZD2 (실제 로터 주파수 = P3): byte 13-14
                 _currentStatus.CurrentSpeed = (ushort)((response[13] << 8) | response[14]);
@@ -863,16 +1142,21 @@ namespace VacX_OutSense.Core.Devices.TurboPump
                 // PZD4 (모터 전류 = P5, 0.1A 단위): byte 17-18
                 _currentStatus.MotorCurrent = ((response[17] << 8) | response[18]) / 10.0;
 
-                // PZD5 (펌프 온도 = P127): byte 19-20
-                _currentStatus.MotorTemperature = (ushort)((response[19] << 8) | response[20]);
+                // PZD5(P127 펌프 온도)는 이 드라이브 파라미터 목록에 없어 항상 0이 오므로
+                // 사용하지 않는다 (매뉴얼 p.20). 실측 모터 온도는 P7에서 읽고,
+                // 읽기 실패 시 마지막 값을 유지한다 (0으로 덮어쓰지 않음)
+                ushort motorTemp;
+                if (ReadParameter(PARAM_MOTOR_TEMP, out motorTemp))
+                    _currentStatus.MotorTemperature = motorTemp;
 
                 // PZD에 포함되지 않는 파라미터만 별도 요청
                 ushort temp;
                 if (ReadParameter(PARAM_BEARING_TEMP, out temp))
                     _currentStatus.BearingTemperature = temp;
 
+                // P171은 인덱스 파라미터 — index 0이 최신 오류 코드 (매뉴얼 p.21)
                 ushort code;
-                if (ReadParameter(PARAM_ERROR_CODE, out code))
+                if (ReadParameterField(PARAM_ERROR_CODE, 0, out code))
                     _currentStatus.ErrorCode = code;
                 if (ReadParameter(PARAM_WARNING_BITS1, out code))
                     _currentStatus.WarningCode = code;
@@ -892,8 +1176,59 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             }
             finally
             {
-                _isUpdatingStatus = false;
+                Interlocked.Exchange(ref _statusUpdateGate, 0);
             }
+        }
+
+        /// <summary>
+        /// 드라이브 FAILURE 비트(상태 워드 Bit 3)의 진입/해제를 감지합니다.
+        /// 어떤 경로(폴링 UpdateStatus, CheckStatus, 초기화)로 상태 워드를 읽었든
+        /// 오류 진입 시점의 진단을 정확히 한 번만 기록하기 위해 중앙에서 처리합니다.
+        /// </summary>
+        private void DetectFailureTransition()
+        {
+            if (_currentStatus.HasError)
+            {
+                if (Interlocked.CompareExchange(ref _failureReported, 1, 0) == 0)
+                {
+                    // 진단 수집은 통신 왕복 수 회(최대 수 초)가 걸릴 수 있다.
+                    // 이 메서드는 명령 경로의 CheckStatus에서 _controlWordLock을 쥔 채
+                    // 호출될 수 있으므로, 잠금 밖(백그라운드)에서 읽는다 —
+                    // 워치독 정지 등 다른 명령을 지연시키지 않기 위함
+                    Task.Run(() => ReportDriveFailure());
+                }
+            }
+            else
+            {
+                Interlocked.Exchange(ref _failureReported, 0);
+            }
+        }
+
+        /// <summary>
+        /// 드라이브 FAILURE 비트(상태 워드 Bit 3) 감지 시 진단 정보를 수집해
+        /// 오류 이벤트로 알립니다. P174(오류 시점 주파수)와 P176(오류 시점
+        /// 운전 시간)은 오류 메모리(P171)와 같은 인덱스로 저장됩니다 (매뉴얼 p.21).
+        /// </summary>
+        private void ReportDriveFailure()
+        {
+            // 오류 코드는 폴링 주기와 무관하게 이 시점에 직접 읽는다
+            ushort code;
+            if (ReadParameterField(PARAM_ERROR_CODE, 0, out code))
+                _currentStatus.ErrorCode = code;
+
+            string description = GetErrorDescription() ?? "코드 미확인";
+
+            string detail = "";
+            ushort errorFrequency;
+            if (ReadParameterField(PARAM_ERROR_FREQUENCY, 0, out errorFrequency))
+                detail += $", 발생 시점 주파수: {errorFrequency} Hz";
+
+            uint errorHours;
+            if (ReadParameterField32(PARAM_ERROR_HOURS, 0, out errorHours))
+                detail += $", 발생 시점 운전 시간: {errorHours * 0.01:F1} h";
+
+            OnErrorOccurred($"터보 펌프 드라이브 오류 발생: {description} " +
+                $"(현재 주파수: {_currentStatus.CurrentSpeed} Hz{detail})");
         }
 
         /// <summary>
@@ -915,6 +1250,11 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             _currentStatus.HasError = (statusWord & STS_FAILURE) != 0;
             _currentStatus.IsReady = (statusWord & STS_READY) != 0;
             _currentStatus.IsRemoteActive = (statusWord & STS_REMOTE_ACTIVE) != 0;
+
+            _hasValidStatusWord = true;
+
+            // 오류 진입/해제 감지 — 진단 기록은 에피소드당 한 번
+            DetectFailureTransition();
         }
 
         private void ReadPumpInfo()
@@ -969,14 +1309,33 @@ namespace VacX_OutSense.Core.Devices.TurboPump
                 case 65: return "펌프 통신 오류";
                 case 66: return "자기 베어링 전류 과부하";
                 case 67: return "내부 과부하";
+                case 71: return "최초 초기화 실패 (First Time Initialisation Failure)";
                 case 73: return "작동 사이클 한계 초과";
                 case 74: return "작동 시간 한계 초과";
+                case 75: return "펌프 초기화 실패 (Pump Initialisation Failure)";
                 case 77: return "베어링 접촉 횟수 오류";
                 case 78: return "베어링 접촉 시간 오류";
+                case 79: return "컨버터 내부 통신 오류 (Internal Communication Failure)";
+                case 80: return "인터페이스 모듈 조합 오류 (Invalid Interface Module Combination)";
                 case 81: return "RS232/RS485 통신 중단";
                 case 82: return "필드버스 통신 중단";
                 case 90: return "속도 조정 오류 (Pump Speed Adjustment Failure)";
-                default: return $"알 수 없는 오류 (코드: {_currentStatus.ErrorCode})";
+                case 91: return "펌프 케이블 길이 감지 오류 (Pump Cable Length Failure)";
+                case 92: return "외부 컨버터 케이블 미인식 (Cable Length 0 m Failure)";
+                case 93: return "케이블 파라미터 오류 (Cable Parameter Faulty)";
+                case 201: return "컨버터 컨트롤러 하드웨어 오류 (Controller Hardware Failure)";
+                case 203: return "컨버터 셀프테스트 오류 (Failure during Selftest)";
+                case 204: return "컨버터 RAM 오류 (RAM Array Insufficient)";
+                case 206: return "펌프 파라미터 오류 (Pump Parameter Failure)";
+                case 209: return "펌프 초기화 오류 (Pump Initialisation Failure)";
+                case 213: return "공급 전압 과전압 (Supply Voltage Too High)";
+                default:
+                    // 200번대는 문서화되지 않은 코드라도 컨버터 내부 오류 계열이다.
+                    // 매뉴얼 p.29: 정지 대기 → 전원 재투입, 지속 시 Leybold 문의
+                    if (_currentStatus.ErrorCode >= 200 && _currentStatus.ErrorCode < 300)
+                        return $"컨버터 내부 오류 (코드: {_currentStatus.ErrorCode}) — " +
+                               "로터 정지 후 전원 재투입 필요, 지속 시 Leybold 문의";
+                    return $"알 수 없는 오류 (코드: {_currentStatus.ErrorCode})";
             }
         }
 
@@ -1039,13 +1398,56 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         /// <param name="setpointFrequency">속도 설정값 (PZD2 HSW)</param>
         /// <param name="response">수신된 응답 바이트 배열</param>
         /// <returns>통신 및 검증 성공 여부</returns>
+        /// <summary>
+        /// 현재 제어 워드를 실어 보내는 트랜잭션 (상태 폴링/파라미터 액세스용).
+        /// 제어 워드와 설정값은 _commLock 획득 '후'에 읽으므로, 직전에 완료된
+        /// 제어 명령(정지 등)이 뒤늦게 예전 제어 워드로 덮어써지지 않습니다.
+        /// </summary>
+        private bool SendAndReceive(ushort paramNumber, int pke, ushort paramValue,
+                                     out byte[] response)
+        {
+            return SendAndReceive(paramNumber, pke, paramValue, (byte)0, out response);
+        }
+
+        /// <summary>
+        /// 현재 제어 워드를 실어 보내는 트랜잭션 (인덱스 파라미터 액세스용).
+        /// </summary>
+        private bool SendAndReceive(ushort paramNumber, int pke, ushort paramValue,
+                                     byte index, out byte[] response)
+        {
+            lock (_commLock)
+            {
+                return SendAndReceiveCore(paramNumber, pke, paramValue, index,
+                                          _currentControlWord, _currentSetpointFrequency,
+                                          out response);
+            }
+        }
+
+        /// <summary>
+        /// 명시적 제어 워드로 보내는 트랜잭션 (제어 명령용).
+        /// </summary>
         private bool SendAndReceive(ushort paramNumber, int pke, ushort paramValue,
                                      int controlWord, ushort setpointFrequency,
                                      out byte[] response)
         {
+            lock (_commLock)
+            {
+                return SendAndReceiveCore(paramNumber, pke, paramValue, 0,
+                                          controlWord, setpointFrequency, out response);
+            }
+        }
+
+        /// <summary>
+        /// 텔레그램 전송~응답 수신. 반드시 _commLock을 잡은 상태에서 호출해야
+        /// 버퍼 정리/전송/수신이 다른 스레드의 트랜잭션과 뒤섞이지 않습니다.
+        /// </summary>
+        private bool SendAndReceiveCore(ushort paramNumber, int pke, ushort paramValue,
+                                        byte index, int controlWord, ushort setpointFrequency,
+                                        out byte[] response)
+        {
             response = null;
 
-            byte[] telegram = CreateUssTelegram(paramNumber, pke, paramValue,
+            byte[] telegram = CreateUssTelegram(paramNumber, pke, paramValue, index,
                                                 controlWord, setpointFrequency);
 
             _communicationManager.DiscardInBuffer();
@@ -1068,9 +1470,7 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             statusWord = 0;
 
             byte[] response;
-            if (!SendAndReceive(0, PKE_NO_ACCESS, 0,
-                                _currentControlWord, _currentSetpointFrequency,
-                                out response))
+            if (!SendAndReceive(0, PKE_NO_ACCESS, 0, out response))
             {
                 OnErrorOccurred("상태 읽기 요청 실패");
                 return false;
@@ -1106,29 +1506,96 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         {
             value = 0;
 
-            int pke = PKE_READ_16BIT | (paramNumber & 0x0FFF);
+            int pke = PKE_READ_16BIT | (paramNumber & 0x07FF);
 
             byte[] response;
-            if (!SendAndReceive(paramNumber, pke, 0,
-                                _currentControlWord, _currentSetpointFrequency,
-                                out response))
+            if (!SendAndReceive(paramNumber, pke, 0, out response))
             {
                 OnErrorOccurred($"파라미터 {paramNumber} 읽기 요청 실패");
                 return false;
             }
 
-            // PKE 응답 확인
-            int pkeResponse = (response[3] << 8) | response[4];
-            int responseType = pkeResponse & 0xF000;
-
-            if (responseType == PKE_REPLY_CANNOT_EXECUTE)
-            {
-                OnErrorOccurred($"파라미터 {paramNumber}: 명령 실행 불가");
+            if (!ValidateParameterReply(response, paramNumber, "읽기"))
                 return false;
-            }
 
             // PWE에서 값 추출: byte 9-10 (16비트)
             value = (ushort)((response[9] << 8) | response[10]);
+            return true;
+        }
+
+        /// <summary>
+        /// 인덱스(필드) 파라미터를 읽습니다.
+        /// </summary>
+        /// <remarks>
+        /// 매뉴얼 p.15: 필드 값 요청은 액세스 타입 0110, 요소는 IND로 선택.
+        /// 펌웨어가 필드 액세스를 거부하면 기존에 동작이 확인된 일반 읽기로
+        /// 폴백합니다 (이 경우에도 IND는 함께 전송됨).
+        /// </remarks>
+        private bool ReadParameterField(ushort paramNumber, byte index, out ushort value)
+        {
+            value = 0;
+
+            int pke = PKE_READ_ARRAY | (paramNumber & 0x07FF);
+
+            byte[] response;
+            if (!SendAndReceive(paramNumber, pke, 0, index, out response))
+            {
+                OnErrorOccurred($"파라미터 {paramNumber}[{index}] 읽기 요청 실패");
+                return false;
+            }
+
+            int responseType = ((response[3] << 8) | response[4]) & 0xF000;
+            if (responseType == PKE_REPLY_CANNOT_EXECUTE)
+            {
+                // 폴백: 일반 읽기 — 일반 읽기는 IND를 무시하고 요소 0을 돌려주므로
+                // index 0 요청에만 의미가 같다. 다른 인덱스는 실패로 처리한다
+                if (index != 0)
+                    return false;
+
+                pke = PKE_READ_16BIT | (paramNumber & 0x07FF);
+                if (!SendAndReceive(paramNumber, pke, 0, index, out response))
+                    return false;
+            }
+
+            if (!ValidateParameterReply(response, paramNumber, "읽기"))
+                return false;
+
+            // PWE에서 값 추출: byte 9-10 (16비트)
+            value = (ushort)((response[9] << 8) | response[10]);
+            return true;
+        }
+
+        /// <summary>
+        /// 32비트 인덱스(필드) 파라미터를 읽습니다.
+        /// </summary>
+        private bool ReadParameterField32(ushort paramNumber, byte index, out uint value)
+        {
+            value = 0;
+
+            int pke = PKE_READ_ARRAY | (paramNumber & 0x07FF);
+
+            byte[] response;
+            if (!SendAndReceive(paramNumber, pke, 0, index, out response))
+                return false;
+
+            int responseType = ((response[3] << 8) | response[4]) & 0xF000;
+            if (responseType == PKE_REPLY_CANNOT_EXECUTE)
+            {
+                // 폴백: 일반 읽기 — index 0 요청에만 의미가 같다 (위 16비트판과 동일)
+                if (index != 0)
+                    return false;
+
+                pke = PKE_READ_16BIT | (paramNumber & 0x07FF);
+                if (!SendAndReceive(paramNumber, pke, 0, index, out response))
+                    return false;
+            }
+
+            if (!ValidateParameterReply(response, paramNumber, "읽기"))
+                return false;
+
+            // PWE에서 32비트 값 추출: byte 7-10
+            value = (uint)((response[7] << 24) | (response[8] << 16) |
+                          (response[9] << 8) | response[10]);
             return true;
         }
 
@@ -1139,15 +1606,16 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         {
             value = 0;
 
-            int pke = PKE_READ_16BIT | (paramNumber & 0x0FFF);
+            int pke = PKE_READ_16BIT | (paramNumber & 0x07FF);
 
             byte[] response;
-            if (!SendAndReceive(paramNumber, pke, 0,
-                                _currentControlWord, _currentSetpointFrequency,
-                                out response))
+            if (!SendAndReceive(paramNumber, pke, 0, out response))
             {
                 return false;
             }
+
+            if (!ValidateParameterReply(response, paramNumber, "읽기"))
+                return false;
 
             // PWE에서 32비트 값 추출: byte 7-10
             value = (uint)((response[7] << 24) | (response[8] << 16) |
@@ -1160,31 +1628,46 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         /// </summary>
         private bool WriteParameter(ushort paramNumber, ushort value)
         {
-            int pke = PKE_WRITE_16BIT | (paramNumber & 0x0FFF);
+            int pke = PKE_WRITE_16BIT | (paramNumber & 0x07FF);
 
             byte[] response;
-            if (!SendAndReceive(paramNumber, pke, value,
-                                _currentControlWord, _currentSetpointFrequency,
-                                out response))
+            if (!SendAndReceive(paramNumber, pke, value, out response))
             {
                 OnErrorOccurred($"파라미터 {paramNumber} 쓰기 요청 실패");
                 return false;
             }
 
-            // PKE 응답 확인
+            return ValidateParameterReply(response, paramNumber, "쓰기");
+        }
+
+        /// <summary>
+        /// 파라미터 응답의 액세스 타입과 파라미터 번호를 검증합니다.
+        /// 다른 요청의 응답이 뒤섞여 도착한 경우를 걸러냅니다.
+        /// </summary>
+        private bool ValidateParameterReply(byte[] response, ushort paramNumber, string operation)
+        {
             int pkeResponse = (response[3] << 8) | response[4];
             int responseType = pkeResponse & 0xF000;
 
             if (responseType == PKE_REPLY_CANNOT_EXECUTE)
             {
-                int errorCode = (response[9] << 8) | response[10];
-                OnErrorOccurred($"파라미터 {paramNumber} 쓰기 실패: 오류 코드 {errorCode}");
+                // 실행 불가 응답의 PWE에는 사유 코드가 들어있다 (매뉴얼 p.16)
+                int faultNumber = (response[9] << 8) | response[10];
+                OnErrorOccurred($"파라미터 {paramNumber} {operation} 실패: 명령 실행 불가 (사유 코드 {faultNumber})");
                 return false;
             }
 
             if (responseType == PKE_REPLY_NO_WRITE_PERM)
             {
                 OnErrorOccurred($"파라미터 {paramNumber}: 쓰기 권한 없음");
+                return false;
+            }
+
+            // 응답 PKE의 PNU(bit 0-10)가 요청한 파라미터인지 확인 (매뉴얼 p.15 Fig 4.1)
+            int replyParamNumber = pkeResponse & 0x07FF;
+            if (replyParamNumber != paramNumber)
+            {
+                OnErrorOccurred($"파라미터 {paramNumber} {operation} 응답 불일치 (응답 파라미터: {replyParamNumber})");
                 return false;
             }
 
@@ -1214,7 +1697,7 @@ namespace VacX_OutSense.Core.Devices.TurboPump
         /// [23]    BCC: 체크섬 (XOR)
         /// </remarks>
         private byte[] CreateUssTelegram(ushort paramNumber, int pke, ushort paramValue,
-                                          int controlWord, ushort setpointFrequency)
+                                          byte index, int controlWord, ushort setpointFrequency)
         {
             byte[] telegram = new byte[24];
 
@@ -1227,9 +1710,9 @@ namespace VacX_OutSense.Core.Devices.TurboPump
             telegram[3] = (byte)(pke >> 8);
             telegram[4] = (byte)(pke & 0xFF);
 
-            // Reserved + IND
+            // Reserved + IND (인덱스 파라미터의 요소 선택, 매뉴얼 p.15)
             telegram[5] = 0;
-            telegram[6] = 0;
+            telegram[6] = index;
 
             // PWE (파라미터 값) - 16비트 값은 하위 2바이트에
             telegram[7] = 0;

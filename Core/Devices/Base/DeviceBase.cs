@@ -62,14 +62,21 @@ namespace VacX_OutSense.Core.Devices.Base
             }
             protected set
             {
+                bool changed = false;
                 lock (_lockObject)
                 {
                     if (_isConnected != value)
                     {
                         _isConnected = value;
-                        OnPropertyChanged(nameof(IsConnected)); // PropertyChanged 이벤트 발생
+                        changed = true;
                     }
                 }
+
+                // 이벤트는 잠금 밖에서 발생시킨다 — 구독자가 UI Invoke 등으로
+                // 대기하는 동안 잠금을 쥐고 있으면, 같은 잠금을 기다리는
+                // UI 스레드와 교착 상태(deadlock)가 생긴다
+                if (changed)
+                    OnPropertyChanged(nameof(IsConnected));
             }
         }
 
@@ -151,11 +158,8 @@ namespace VacX_OutSense.Core.Devices.Base
         {
             if (!e.IsConnected && IsConnected)
             {
-                // ★ 연결 끊김 감지됨
+                // ★ 연결 끊김 감지됨 — setter가 PropertyChanged를 발생시킨다
                 IsConnected = false;
-
-                // PropertyChanged 명시적 발생 (UI 바인딩 업데이트 보장)
-                OnPropertyChanged(nameof(IsConnected));
 
                 OnStatusChanged(new DeviceStatusEventArgs(false, DeviceId,
                     $"통신 상태 변경: {e.StatusMessage}", DeviceStatusCode.Disconnected));
@@ -166,8 +170,6 @@ namespace VacX_OutSense.Core.Devices.Base
             {
                 // ★ 재연결 감지됨 (SerialPortChannel의 자동 재연결 성공 시)
                 IsConnected = true;
-
-                OnPropertyChanged(nameof(IsConnected));
 
                 OnStatusChanged(new DeviceStatusEventArgs(true, DeviceId,
                     $"재연결됨: {e.StatusMessage}", DeviceStatusCode.Connected));

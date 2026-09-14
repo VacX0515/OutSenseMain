@@ -190,12 +190,13 @@ namespace VacX_OutSense.Forms.UserControls
                         if (value is bool boolValue)
                         {
                             // UI 스레드에서 실행 확인
+                            // BeginInvoke 사용: 동기 Invoke는 호출 스레드(통신 스레드)가
+                            // UI 스레드를 기다리게 만들어 교착 상태를 유발할 수 있다.
+                            // 값은 캡처하지 않고 UI 스레드에서 다시 읽는다 — 연속 전환 시
+                            // 게시 순서가 뒤바뀌어 낡은 값이 마지막에 반영되는 것을 방지
                             if (this.InvokeRequired)
                             {
-                                this.Invoke(new Action(() =>
-                                {
-                                    IsConnected = boolValue;
-                                }));
+                                this.BeginInvoke(new Action(UpdateBindings));
                             }
                             else
                             {

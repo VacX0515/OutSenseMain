@@ -111,10 +111,16 @@ namespace VacX_OutSense.Utils
             {
                 var doData = GetLatestDOData();
                 bool useIonGauge = false;
+                bool piraniInstalled = _mainForm.IsPiraniInstalled;
 
                 if (_mainForm._ionGauge != null)
                 {
-                    if (_mainForm._ionGauge.Model == Core.Devices.Gauges.IonGaugeModel.PTR90)
+                    if (!piraniInstalled)
+                    {
+                        // 피라니 미장착 — 이온게이지만 사용.
+                        useIonGauge = true;
+                    }
+                    else if (_mainForm._ionGauge.Model == Core.Devices.Gauges.IonGaugeModel.PTR90)
                     {
                         // PTR90: HV ON 불필요 — 자체 Cold Cathode 관리, 피라니가 1E-2 이하면 사용
                         double piraniP = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
@@ -138,6 +144,7 @@ namespace VacX_OutSense.Utils
                         return ionPressure;
                 }
 
+                if (!piraniInstalled) return 0;  // 미장착이면 피라니 폴백 없음
                 return _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
             }
             return 0;
@@ -590,9 +597,12 @@ namespace VacX_OutSense.Utils
             {
                 if (aiData != null)
                 {
-                    // 압력 데이터 계산
+                    // 압력 데이터 계산 — 피라니 미장착이면 0 (UI에서 "미장착"으로 표시).
                     snapshot.AtmPressure = _mainForm._atmSwitch?.ConvertVoltageToPressureInkPa(aiData.ExpansionVoltageValues[0]) ?? 0;
-                    snapshot.PiraniPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
+                    snapshot.PiraniInstalled = _mainForm.IsPiraniInstalled;
+                    snapshot.PiraniPressure = snapshot.PiraniInstalled
+                        ? (_mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0)
+                        : 0;
 
                     // 이온게이지: 캘리브레이션 적용
                     double igVoltage = aiData.ExpansionVoltageValues[2];
@@ -815,8 +825,9 @@ namespace VacX_OutSense.Utils
         {
             try
             {
-                // 이온게이지 버튼 상태
-                snapshot.ButtonStates.IonGaugeEnabled = snapshot.PiraniPressure <= 7.5E-4;
+                // 이온게이지 버튼 상태 — 피라니 미장착이면 상시 허용 (통합게이지가 자체 관리).
+                snapshot.ButtonStates.IonGaugeEnabled = !snapshot.PiraniInstalled
+                    || snapshot.PiraniPressure <= 7.5E-4;
 
                 // 드라이펌프 버튼 상태
                 if (_mainForm._dryPump?.Status != null)

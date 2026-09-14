@@ -394,6 +394,19 @@ namespace VacX_OutSense.Core.Safety
             {
                 var aiData = _mainForm._ioModule?.LastValidAIValues;
                 if (aiData == null) return 0;
+
+                // 피라니 미장착 시 이온게이지 값으로 폴백.
+                if (!_mainForm.IsPiraniInstalled)
+                {
+                    if (_mainForm._ionGauge == null) return 0;
+                    double igVoltage = aiData.ExpansionVoltageValues[2];
+                    var igCal = _mainForm._tempCalibrationConfig?.IonGauge;
+                    if (igCal != null) igVoltage = igCal.ApplyVoltageOffset(igVoltage);
+                    double igP = _mainForm._ionGauge.ConvertVoltageToPressureInTorr(igVoltage);
+                    if (igCal != null) igP = igCal.Apply(igP);
+                    return igP > 0 ? igP : 0;
+                }
+
                 return _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(
                     aiData.ExpansionVoltageValues[1]) ?? 0;
             }

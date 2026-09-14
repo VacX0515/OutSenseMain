@@ -109,7 +109,9 @@ namespace VacX_OutSense.Core.Communication
                     },
                     CreateTestPacket = CreateUssTelegram,
                     ValidateResponse = ValidateUssResponse,
-                    ExpectedResponseLength = 14,
+                    // USS 텔레그램은 고정 24바이트 — 14로 두면 응답 수신이
+                    // 프레임 중간(14~23바이트째)에서 잘려 검증 실패가 간헐적으로 발생
+                    ExpectedResponseLength = 24,
                     ChannelTimeoutMs = 500
                 },
 

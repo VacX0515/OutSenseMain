@@ -5,7 +5,7 @@ namespace VacX_OutSense.Utils
     /// </summary>
     public static class AppVersion
     {
-        public const string Version = "2.7.4";
+        public const string Version = "2.7.6";
         public const string AppTitle = "VacX OutSense";
 
         /// <summary>
@@ -38,6 +38,24 @@ namespace VacX_OutSense.Utils
         /// </summary>
         public static readonly string[] PatchNotes = new[]
         {
+            "v2.7.6 (2026-07-27)",
+            "─────────────────────────────────",
+            "[규칙] PTR225(Cold Cathode 전용) 선택 시 피라니 게이지 필수",
+            "       · 인터락 설정 다이얼로그: PTR225일 때 \"피라니 장착됨\" 체크박스 잠금 + 경고 표시",
+            "       · 저장 시: PTR225면 저장값과 무관하게 PiraniInstalled=true 강제",
+            "       · 캘리브레이션 적용 시 모델이 PTR225로 바뀌면 자동으로 PiraniInstalled=true 저장",
+            "       · 런타임: IsPiraniInstalled 접근자에도 PTR225 방어 규칙 내장",
+            "       사유: PTR225는 HV 활성화 전 압력을 알 수 없어 피라니가 유일한 안전 게이트",
+            "",
+            "v2.7.5 (2026-07-27)",
+            "─────────────────────────────────",
+            "[신규] 피라니 게이지 미장착 옵션 — 인터락 설정에 \"피라니 게이지 장착됨\" 체크박스",
+            "       해제 시 통합 이온게이지(PTR90 등)만으로 챔버 압력 판정",
+            "        · IG HV 활성화 인터락(피라니 ≤ 7.5E-4) 자동 스킵",
+            "        · AutoRun 진공 대기 단계에서 IG 즉시 자동 활성화",
+            "        · 모든 압력 판정 로직(SafetyInterlock/AutoRun/UI/데이터수집)이 IG로 폴백",
+            "        · UI 피라니 표시 필드에 \"미장착\" 표기",
+            "",
             "v2.7.4 (2026-06-24)",
             "─────────────────────────────────",
             "[신규] 칠러 PID 설정 UI — 메뉴 [설정 → 칠러 PID 설정...]",

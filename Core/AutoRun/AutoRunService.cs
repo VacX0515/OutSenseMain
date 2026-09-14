@@ -379,16 +379,26 @@ namespace VacX_OutSense.Core.AutoRun
                 var aiData = _mainForm._ioModule?.LastValidAIValues;
                 if (aiData != null)
                 {
-                    assessment.CurrentPressure =
-                        _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(
-                            aiData.ExpansionVoltageValues[1]) ?? 0;
-
-                    if (assessment.IonGaugeActive && assessment.CurrentPressure < 1E-3)
+                    bool piraniInstalled = _mainForm.IsPiraniInstalled;
+                    if (piraniInstalled)
                     {
-                        var ionPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(
+                        assessment.CurrentPressure =
+                            _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(
+                                aiData.ExpansionVoltageValues[1]) ?? 0;
+
+                        if (assessment.IonGaugeActive && assessment.CurrentPressure < 1E-3)
+                        {
+                            var ionPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(
+                                aiData.ExpansionVoltageValues[2]) ?? 0;
+                            if (ionPressure > 0 && ionPressure < assessment.CurrentPressure)
+                                assessment.CurrentPressure = ionPressure;
+                        }
+                    }
+                    else
+                    {
+                        // 피라니 미장착 — 이온게이지 값을 챔버 압력으로 채택.
+                        assessment.CurrentPressure = _mainForm._ionGauge?.ConvertVoltageToPressureInTorr(
                             aiData.ExpansionVoltageValues[2]) ?? 0;
-                        if (ionPressure > 0 && ionPressure < assessment.CurrentPressure)
-                            assessment.CurrentPressure = ionPressure;
                     }
                 }
 
@@ -3414,14 +3424,20 @@ namespace VacX_OutSense.Core.AutoRun
                     if (aiData != null)
                     {
                         measurements.AtmPressure = _mainForm._atmSwitch?.ConvertVoltageToPressureInkPa(aiData.ExpansionVoltageValues[0]) ?? 0;
-                        measurements.CurrentPressure = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
+                        bool piraniInstalled = _mainForm.IsPiraniInstalled;
+                        measurements.CurrentPressure = piraniInstalled
+                            ? (_mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0)
+                            : 0;
 
-                        // ★ 이온게이지 압력: PTR90은 HV 불필요, PTR225는 HV ON 필요
-                        if (_mainForm._ionGauge != null && measurements.CurrentPressure < 1E-2)
+                        // ★ 이온게이지 압력: PTR90은 HV 불필요, PTR225는 HV ON 필요.
+                        //   피라니 미장착이면 IG 값을 무조건 사용.
+                        bool considerIG = !piraniInstalled || measurements.CurrentPressure < 1E-2;
+                        if (_mainForm._ionGauge != null && considerIG)
                         {
-                            bool useIG = _mainForm._ionGauge.Model == IonGaugeModel.PTR90
-                                ? measurements.CurrentPressure > 0
-                                : doData?.IsIonGaugeHVOn == true;
+                            bool useIG = !piraniInstalled
+                                || (_mainForm._ionGauge.Model == IonGaugeModel.PTR90
+                                    ? measurements.CurrentPressure > 0
+                                    : doData?.IsIonGaugeHVOn == true);
 
                             if (useIG)
                             {
@@ -3430,7 +3446,7 @@ namespace VacX_OutSense.Core.AutoRun
                                 if (igCal != null) igVoltage = igCal.ApplyVoltageOffset(igVoltage);
                                 double ionPressure = _mainForm._ionGauge.ConvertVoltageToPressureInTorr(igVoltage);
                                 if (igCal != null) ionPressure = igCal.Apply(ionPressure);
-                                if (ionPressure > 0 && ionPressure < measurements.CurrentPressure)
+                                if (ionPressure > 0 && (!piraniInstalled || ionPressure < measurements.CurrentPressure))
                                 {
                                     measurements.CurrentPressure = ionPressure;
                                 }
@@ -3693,10 +3709,15 @@ namespace VacX_OutSense.Core.AutoRun
                 if (aiData == null) return 0;
 
                 var doData = _mainForm._ioModule.LastValidDOValues;
+                bool piraniInstalled = _mainForm.IsPiraniInstalled;
                 bool useIG = false;
                 if (_mainForm._ionGauge != null)
                 {
-                    if (_mainForm._ionGauge.Model == IonGaugeModel.PTR90)
+                    if (!piraniInstalled)
+                    {
+                        useIG = true;
+                    }
+                    else if (_mainForm._ionGauge.Model == IonGaugeModel.PTR90)
                     {
                         double piraniP = _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
                         useIG = piraniP > 0 && piraniP < 1E-2;
@@ -3717,6 +3738,7 @@ namespace VacX_OutSense.Core.AutoRun
                     if (ionPressure > 0) return ionPressure;
                 }
 
+                if (!piraniInstalled) return 0;
                 return _mainForm._piraniGauge?.ConvertVoltageToPressureInTorr(aiData.ExpansionVoltageValues[1]) ?? 0;
             }
             catch { return 0; }

@@ -132,7 +132,9 @@ namespace VacX_OutSense.Utils
         {
             // MainForm의 public 메서드를 통해 업데이트
             _mainForm.SetAtmPressureText(snapshot.AtmPressure.ToString("F1"));
-            _mainForm.SetPiraniPressureText(snapshot.PiraniPressure.ToString("E2"));
+            _mainForm.SetPiraniPressureText(snapshot.PiraniInstalled
+                ? snapshot.PiraniPressure.ToString("E2")
+                : "미장착");
             _mainForm.SetIonPressureText(snapshot.IonPressure.ToString("E2"));
             _mainForm.SetIonGaugeStatusText(snapshot.IonGaugeStatus);
         }
